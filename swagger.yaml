@@ -1,0 +1,302 @@
+openapi: 3.0.3
+info:
+  title: MADSuite API
+  version: "1.0"
+  description: |-
+    API documentation for MADSuite SaaS backend. Includes authentication, client, project, timesheet, invoicing, billing assistant and Stripe integration.
+servers:
+  - url: https://api.madsuite.ca
+    description: Production server
+  - url: http://localhost:5000
+    description: Local development server
+components:
+  securitySchemes:
+    CookieAuth:
+      type: apiKey
+      in: cookie
+      name: token
+  schemas:
+    LoginRequest:
+      type: object
+      required:
+        - email
+        - password
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+    LoginResponse:
+      type: object
+      properties:
+        token:
+          type: string
+        refreshToken:
+          type: string
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        email:
+          type: string
+        role:
+          type: string
+    Client:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        contactEmail:
+          type: string
+    Project:
+      type: object
+      properties:
+        id:
+          type: integer
+        clientId:
+          type: integer
+        name:
+          type: string
+        hourlyRate:
+          type: number
+          format: float
+    TimeEntry:
+      type: object
+      properties:
+        id:
+          type: integer
+        projectId:
+          type: integer
+        durationMinutes:
+          type: integer
+        date:
+          type: string
+          format: date
+    Invoice:
+      type: object
+      properties:
+        id:
+          type: integer
+        clientId:
+          type: integer
+        amountCents:
+          type: integer
+        status:
+          type: string
+        pdfUrl:
+          type: string
+    BillingSuggestion:
+      type: object
+      properties:
+        projectId:
+          type: integer
+        suggestedHours:
+          type: number
+          format: float
+        reason:
+          type: string
+paths:
+  /api/login:
+    post:
+      summary: User login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Successful login
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+        '401':
+          description: Invalid credentials
+  /api/logout:
+    post:
+      summary: Logout user (clear auth cookie)
+      responses:
+        '200':
+          description: Logged out
+  /api/clients:
+    get:
+      summary: Get list of clients for organisation
+      security:
+        - CookieAuth: []
+      responses:
+        '200':
+          description: Array of clients
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Client'
+    post:
+      summary: Create a new client
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Client'
+      responses:
+        '201':
+          description: Client created
+  /api/clients/{id}:
+    get:
+      summary: Get client by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      security:
+        - CookieAuth: []
+      responses:
+        '200':
+          description: Client object
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Client'
+  /api/projets:
+    get:
+      summary: List projects
+      security:
+        - CookieAuth: []
+      responses:
+        '200':
+          description: Projects array
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Project'
+    post:
+      summary: Create a project
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Project'
+      responses:
+        '201':
+          description: Project created
+  /api/time-entries:
+    post:
+      summary: Record a time entry
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TimeEntry'
+      responses:
+        '201':
+          description: Entry recorded
+  /api/invoices:
+    get:
+      summary: List invoices
+      security:
+        - CookieAuth: []
+      responses:
+        '200':
+          description: Invoices array
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Invoice'
+    post:
+      summary: Create invoice draft
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Invoice'
+      responses:
+        '201':
+          description: Invoice created
+  /api/billing-assistant/apply:
+    post:
+      summary: Apply billing suggestion to a project
+      security:
+        - CookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                projectId:
+                  type: integer
+                hours:
+                  type: number
+      responses:
+        '200':
+          description: Suggestion applied
+        '400':
+          description: Missing fields or validation error
+  /api/billing-assistant/suggestions:
+    get:
+      summary: Get billing suggestions for a date range
+      security:
+        - CookieAuth: []
+      parameters:
+        - name: date
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Array of suggestions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BillingSuggestion'
+  /api/stripe/webhook:
+    post:
+      summary: Stripe webhook endpoint
+      # Stripe sends raw body; no auth required
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Event processed
+        '400':
+          description: Bad request
+  /api-docs:
+    get:
+      summary: Swagger UI documentation
+      responses:
+        '200':
+          description: Swagger UI
