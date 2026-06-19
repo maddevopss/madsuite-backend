@@ -1,7 +1,7 @@
 // Validation stricte des variables d'environnement requises.
 // Objectif: echouer tot avec des messages clairs, sans exposer de secrets.
 
-const requiredEnvVars = ["DB_USER", "DB_HOST", "DB_NAME", "DB_PASSWORD", "DB_PORT", "NODE_ENV", "JWT_SECRET"];
+const requiredEnvVars = ["NODE_ENV", "JWT_SECRET"];
 
 function fail(message) {
   console.error(`ENV: ${message}`);
@@ -52,13 +52,23 @@ function validateEnv() {
     return value === undefined || value === "";
   });
 
+  const hasDbUrl = process.env.DATABASE_URL !== undefined && process.env.DATABASE_URL !== "";
+  const dbVars = ["DB_USER", "DB_HOST", "DB_NAME", "DB_PASSWORD", "DB_PORT"];
+  const missingDbVars = dbVars.filter(envVar => process.env[envVar] === undefined || process.env[envVar] === "");
+
+  if (!hasDbUrl && missingDbVars.length > 0) {
+    missing.push(...missingDbVars);
+  }
+
   if (missing.length > 0) {
     fail(`variables manquantes: ${missing.join(", ")}`);
   }
 
-  const parsedPort = Number(process.env.DB_PORT);
-  if (!Number.isInteger(parsedPort) || parsedPort <= 0) {
-    fail(`DB_PORT invalide (attendu entier > 0): ${process.env.DB_PORT}`);
+  if (!hasDbUrl && process.env.DB_PORT) {
+    const parsedPort = Number(process.env.DB_PORT);
+    if (!Number.isInteger(parsedPort) || parsedPort <= 0) {
+      fail(`DB_PORT invalide (attendu entier > 0): ${process.env.DB_PORT}`);
+    }
   }
 
   const nodeEnv = String(process.env.NODE_ENV).toLowerCase();
