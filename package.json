@@ -9,7 +9,7 @@
   "type": "commonjs",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/index.js",
+    "start": "node server.js",
     "dev": "nodemon server.js",
     "postinstall": "prisma generate",
     "test": "cross-env NODE_ENV=test jest --detectOpenHandles",
