@@ -6,7 +6,7 @@
  * All functions expect a `organisationId` (extracted from JWT) for multi‑tenant isolation.
  */
 
-const db = require('../utils/db'); // assume a pg client wrapper exists
+const db = require('../../db');
 
 /** Helper to enforce organisation scoping */
 function scopedQuery(query, orgId, params = []) {
