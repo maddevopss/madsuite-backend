@@ -8,10 +8,10 @@
 const express = require('express');
 const router = express.Router();
 const hubService = require('../services/hub.service');
-const auth = require('../middleware/auth.middleware');
+const auth = require('../middleware/auth');
 
 // Apply auth to all hub routes
-router.use(auth.requireAuth);
+router.use(auth);
 
 // ---------- Projects ----------
 router.get('/projects', async (req, res) => {
