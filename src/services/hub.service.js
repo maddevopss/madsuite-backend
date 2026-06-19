@@ -71,7 +71,8 @@ module.exports = {
     return rows[0];
   },
 
-  // ---------- Invoices (list) ----------,
+  // ---------- Invoices (from quote) ----------
+  async createInvoiceFromQuote(orgId, quoteId) {
     // simple conversion: copy quote data into invoice, set status pending
     const { rows: qRows } = await db.query(
       `SELECT * FROM quotes WHERE id = $2 AND organisation_id = $1`,
