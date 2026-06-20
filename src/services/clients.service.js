@@ -35,7 +35,7 @@ async function createClient({ data, organisationId }) {
     VALUES ($1, $2, $3, $4, $5)
     RETURNING *
     `,
-    [data.nom, data.hourly_rate_defaut, data.email ?? null, data.phone ?? null, organisationValue(organisationId)],
+    [data.nom, data.hourly_rate_defaut ?? 0, data.email ?? null, data.phone ?? null, organisationValue(organisationId)],
   );
 
   return result.rows[0];
