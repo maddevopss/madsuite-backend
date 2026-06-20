@@ -8,8 +8,11 @@ const allowedOrigins = [
   ...(isProd
     ? []
     : ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3001", "http://127.0.0.1:3001", "http://localhost:5000", "http://127.0.0.1:5000"]),
-  process.env.FRONTEND_URL,
+  process.env.FRONTEND_URL,       // ex: https://madsuite.ca
   process.env.ELECTRON_URL,
+  // Domaines Vercel (production + previews)
+  "https://madsuite.vercel.app",
+  process.env.VERCEL_FRONTEND_URL, // URL preview spécifique si nécessaire
 ].filter(Boolean);
 
 const corsConfig = cors({
