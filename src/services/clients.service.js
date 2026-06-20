@@ -29,13 +29,23 @@ async function getClientById({ clientId, organisationId }) {
 }
 
 async function createClient({ data, organisationId }) {
+  const phone = data.telephone || data.phone || null;
   const result = await db.query(
     `
-    INSERT INTO clients (nom, hourly_rate_defaut, email, phone, organisation_id)
-    VALUES ($1, $2, $3, $4, $5)
+    INSERT INTO clients (nom, hourly_rate_defaut, email, phone, contact_name, adresse, notes, organisation_id)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
     RETURNING *
     `,
-    [data.nom, data.hourly_rate_defaut ?? 0, data.email ?? null, data.phone ?? null, organisationValue(organisationId)],
+    [
+      data.nom, 
+      data.hourly_rate_defaut ?? 0, 
+      data.email ?? null, 
+      phone, 
+      data.contact_name ?? null,
+      data.adresse ?? null,
+      data.notes ?? null,
+      organisationValue(organisationId)
+    ],
   );
 
   return result.rows[0];
@@ -55,7 +65,16 @@ async function updateClient({ clientId, data, organisationId }) {
   addUpdateField({ data, field: "nom", setClauses, params });
   addUpdateField({ data, field: "hourly_rate_defaut", setClauses, params });
   addUpdateField({ data, field: "email", setClauses, params });
-  addUpdateField({ data, field: "phone", setClauses, params });
+  
+  if (data.telephone !== undefined || data.phone !== undefined) {
+    const phoneVal = data.telephone !== undefined ? data.telephone : data.phone;
+    params.push(phoneVal);
+    setClauses.push(`phone = $${params.length}`);
+  }
+
+  addUpdateField({ data, field: "contact_name", setClauses, params });
+  addUpdateField({ data, field: "adresse", setClauses, params });
+  addUpdateField({ data, field: "notes", setClauses, params });
 
   if (setClauses.length === 0) {
     const err = new Error("Aucune mise a jour fournie.");
@@ -82,69 +101,97 @@ async function updateClient({ clientId, data, organisationId }) {
 }
 
 async function deleteClient({ clientId, organisationId }) {
+  const client = await db.pool.connect();
   try {
-    const existing = await db.query(
+    await client.query('BEGIN');
+
+    const params = [clientId];
+    const condition = scopedOrganisationCondition(params, organisationId);
+
+    // 1. Verifier si le client existe (avec verrou)
+    const existing = await client.query(
       `
       SELECT id
       FROM clients
       WHERE id = $1
-        AND organisation_id = $2
+        AND ${condition}
         AND deleted_at IS NULL
       FOR UPDATE
       `,
-      [clientId, organisationValue(organisationId)],
+      params,
     );
 
     if (existing.rowCount === 0) {
+      await client.query('ROLLBACK');
       return null;
     }
 
-    await db.query(
+    // 2. Verrouiller les projets
+    await client.query(
       `
       SELECT id
       FROM projets
       WHERE client_id = $1
-        AND organisation_id = $2
+        AND ${condition.replace('clients.organisation_id', 'organisation_id').replace('organisation_id', 'organisation_id')}
         AND deleted_at IS NULL
       FOR UPDATE
       `,
-      [clientId, organisationValue(organisationId)],
+      params,
     );
 
-    const activeTimer = await db.query(
+    // 3. Verifier s'il y a un timer actif
+    const activeTimer = await client.query(
       `
       SELECT 1
       FROM time_entries te
       JOIN projets p ON p.id = te.projet_id
       WHERE p.client_id = $1
-        AND te.organisation_id = $2
+        AND ${condition.replace(/clients\.organisation_id|organisation_id/g, 'te.organisation_id')}
         AND te.end_time IS NULL
       LIMIT 1
       `,
-      [clientId, organisationValue(organisationId)],
+      params,
     );
 
     if (activeTimer.rowCount > 0) {
+      await client.query('ROLLBACK');
       const err = new Error("Impossible de supprimer ce client pendant qu'un timer roule sur un de ses projets.");
       err.statusCode = 409;
       throw err;
     }
 
-    const result = await db.query(
+    // 4. Supprimer en cascade les projets
+    await client.query(
+      `
+      UPDATE projets
+      SET deleted_at = NOW()
+      WHERE client_id = $1
+        AND ${condition.replace(/clients\.organisation_id|organisation_id/g, 'organisation_id')}
+        AND deleted_at IS NULL
+      `,
+      params,
+    );
+
+    // 5. Supprimer le client
+    const result = await client.query(
       `
       UPDATE clients
       SET deleted_at = NOW()
       WHERE id = $1
-        AND organisation_id = $2
+        AND ${condition}
         AND deleted_at IS NULL
       RETURNING id
       `,
-      [clientId, organisationValue(organisationId)],
+      params,
     );
 
+    await client.query('COMMIT');
     return result.rows[0] || null;
   } catch (err) {
+    await client.query('ROLLBACK');
     throw err;
+  } finally {
+    client.release();
   }
 }
 

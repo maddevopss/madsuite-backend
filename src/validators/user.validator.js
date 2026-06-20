@@ -1,15 +1,11 @@
 const { z } = require("zod");
 
-const roleSchema = z.enum(["admin", "employe"]);
+const roleSchema = z.enum(["admin", "manager", "employe"]);
 const passwordSchema = z
   .string()
   .trim()
-  .min(12, "Le mot de passe doit contenir au moins 12 caracteres.")
-  .max(100)
-  .regex(/[a-z]/, "Le mot de passe doit contenir une minuscule.")
-  .regex(/[A-Z]/, "Le mot de passe doit contenir une majuscule.")
-  .regex(/[0-9]/, "Le mot de passe doit contenir un chiffre.")
-  .regex(/[^A-Za-z0-9]/, "Le mot de passe doit contenir un caractere special.");
+  .min(8, "Le mot de passe doit contenir au moins 8 caracteres.")
+  .max(100);
 
 const createUserSchema = z
   .object({

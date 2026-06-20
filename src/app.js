@@ -161,6 +161,7 @@ app.use("/api/ai-assistant", auth, aiAssistantRoutes);
 app.use("/api/organisation", organisationRoutes);
 app.use("/api/organisation/modules", modulesRoutes);
 app.use('/api/hub', hubRoutes);
+app.use("/api/master-admin", require("./routes/master-admin.routes"));
 
 // Routes API inconnues.
 app.use("/api", (req, res) => {

@@ -10,6 +10,7 @@ const pool = require("./db");
 const { startSchedulers } = require("./src/jobs/scheduler");
 const { runMigrations } = require("./src/migrate/runMigrations");
 const { initRetentionJob } = require("./src/jobs/dataRetention");
+const { startTrialReminderJob } = require("./src/jobs/trialReminderJob");
 
 validateEnv();
 
@@ -49,6 +50,7 @@ async function start() {
     console.log(`Serveur demarre sur le port ${PORT}`);
     schedulerTasks = startSchedulers();
     initRetentionJob(pool);
+    startTrialReminderJob();
   });
 }
 
