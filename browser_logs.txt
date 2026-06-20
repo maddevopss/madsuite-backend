@@ -1,0 +1,6 @@
+[HTTP_ERROR] 400 https://www.madsuite.ca/api/refresh
+[error] Failed to load resource: the server responded with a status of 400 ()
+[warn] Could not load modules: Cannot read properties of undefined (reading 'modules')
+[warn] Could not load modules: Cannot read properties of undefined (reading 'modules')
+[warn] Could not load modules: Cannot read properties of undefined (reading 'modules')
+[PAGE_ERROR] ReferenceError: useState is not defined
