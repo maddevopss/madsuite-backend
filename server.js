@@ -45,7 +45,7 @@ async function start() {
   // Load hub socket handlers
   require("./src/socket/hub.socket")(io);
 
-  serverHttp = server.listen(PORT, () => {
+  serverHttp = server.listen(PORT, "0.0.0.0", () => {
     console.log(`Serveur demarre sur le port ${PORT}`);
     schedulerTasks = startSchedulers();
     initRetentionJob(pool);
