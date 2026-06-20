@@ -68,7 +68,7 @@ async function updateOrganisationRetention(organisationId, data, userId) {
       interac_question = COALESCE($5, interac_question),
       updated_at = NOW()
     WHERE id = $6
-    RETURNING id, nom, retention_activity_logs_days, retention_summary_days, retention_audit_logs_days, interac_email, interac_question;
+    RETURNING id, nom, retention_activity_logs_days, retention_summary_days, retention_audit_logs_days, interac_email, interac_question, kiosk_token;
   `;
 
   const values = [retention_activity_logs_days, retention_summary_days, retention_audit_logs_days, interac_email, interac_question, organisationId];
