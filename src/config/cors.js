@@ -20,7 +20,10 @@ const corsConfig = cors({
     // Non-browser requests: autoriser.
     if (!origin) return callback(null, true);
 
-    if (!allowedOrigins.includes(origin)) {
+    const isVercelPreview = origin.endsWith(".vercel.app");
+    const isWww = origin === "https://www.madsuite.ca" || origin === "https://madsuite.ca";
+
+    if (!allowedOrigins.includes(origin) && !isVercelPreview && !isWww) {
       return callback(new Error(`CORS refusé pour origine: ${origin}`));
     }
 
