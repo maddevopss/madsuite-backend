@@ -95,12 +95,12 @@ describe("multi-org global isolation", () => {
     expect(entries.body.data.map((row) => row.id)).not.toContain(entryB.id);
 
     const invoices = await request(app).get("/api/invoices").set("Authorization", `Bearer ${tokenA}`);
-    expect(invoices.body.data.map((row) => row.id)).toContain(invoiceA.id);
-    expect(invoices.body.data.map((row) => row.id)).not.toContain(invoiceB.id);
+    expect(invoices.body.map((row) => row.id)).toContain(invoiceA.id);
+    expect(invoices.body.map((row) => row.id)).not.toContain(invoiceB.id);
 
     const activities = await request(app).get("/api/activity/recent").set("Authorization", `Bearer ${tokenA}`);
-    expect(activities.body.data.map((row) => row.id)).toContain(activityA.id);
-    expect(activities.body.data.map((row) => row.id)).not.toContain(activityB.id);
+    expect(activities.body.map((row) => row.id)).toContain(activityA.id);
+    expect(activities.body.map((row) => row.id)).not.toContain(activityB.id);
 
     const updateClientB = await request(app)
       .put(`/api/clients/${clientB.id}`)

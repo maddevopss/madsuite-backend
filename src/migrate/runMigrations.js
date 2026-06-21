@@ -74,6 +74,7 @@ async function getAppliedMigrations(client) {
 }
 
 function getMigrationsSnapshotPath() {
+  if (process.env.NODE_ENV === "test") return null;
   const snapshotPath = path.join(__dirname, "../../db/schema_current.sql");
   return fileExists(snapshotPath) ? snapshotPath : null;
 }
@@ -139,7 +140,7 @@ async function applyMigration(client, { fullPath, file }) {
     const duplicateMigrationObject =
       e?.code === "42710" ||
       e?.code === "42P07" ||
-      /already exists|existe déjà|existe deja|existe déjà/i.test(String(e?.message || ""));
+      /already exists|existe|exists/i.test(String(e?.message || ""));
 
     if (duplicateMigrationObject) {
       await client.query(`INSERT INTO schema_migrations (filename) VALUES ($1) ON CONFLICT DO NOTHING`, [file]);

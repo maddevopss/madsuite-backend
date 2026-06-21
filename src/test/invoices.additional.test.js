@@ -55,7 +55,7 @@ describe('Invoices Additional', () => {
       .set('Authorization', `Bearer ${tokenA}`);
     expect(res.statusCode).toBe(200);
     // Should only contain orgA invoice
-    expect(res.body.data.some(i => i.invoice_number.startsWith('INV-A-'))).toBe(true);
-    expect(res.body.data.some(i => i.invoice_number.startsWith('INV-B-'))).toBe(false);
+    expect(res.body.some(i => i.invoice_number.startsWith('INV-A-'))).toBe(true);
+    expect(res.body.some(i => i.invoice_number.startsWith('INV-B-'))).toBe(false);
   });
 });

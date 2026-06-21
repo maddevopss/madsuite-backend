@@ -13,7 +13,7 @@ const signupSchema = z.object({
   organisation_nom: z.string().min(2, "Nom d'organisation requis (min 2 caractères)").max(255),
   user_nom: z.string().min(2, "Nom d'utilisateur requis").max(255),
   email: z.string().trim().email("Email invalide").max(255),
-  password: z.string().min(8, "Le mot de passe doit contenir au moins 8 caractères").max(100),
+  password: z.string().min(12, "Le mot de passe doit contenir au moins 12 caractères").regex(/[A-Z]/, "Le mot de passe doit contenir une majuscule").regex(/[^A-Za-z0-9]/, "Le mot de passe doit contenir un caractère spécial").max(100),
 });
 
 module.exports = {

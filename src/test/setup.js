@@ -48,14 +48,21 @@ SupertestTest.prototype.then = function patchedThen(resolve, reject) {
  */
 afterAll(async () => {
   try {
-    await db.query(`
-      TRUNCATE TABLE 
-        activity_logs, 
-        activity_daily_summary, 
-        business_audit_logs, 
-        time_entries 
-      RESTART IDENTITY CASCADE
-    `);
+    const tables = ["activity_logs", "activity_daily_summary", "business_audit_logs", "time_entries"];
+
+    // TRUNCATE est silencieux si une table n'existe pas (certaines suites peuvent
+    // tourner sur un schéma partiel si la DB a été recrée/teardown en cours).
+    for (const table of tables) {
+      try {
+        await db.query(`TRUNCATE TABLE ${table} RESTART IDENTITY CASCADE`);
+      } catch (err) {
+        if (err?.code === "42P01") {
+          // relation does not exist
+          continue;
+        }
+        throw err;
+      }
+    }
   } catch (err) {
     console.error("Erreur lors du nettoyage de la DB de test:", err);
   }

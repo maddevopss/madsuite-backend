@@ -1,7 +1,7 @@
 -- ============================================================
 -- MADSuite / TimeMonitoring
 -- 040_module_pricing.sql
--- Table pour stocker les prix dynamiques des modules (add‑ons)
+-- Table pour stocker les prix dynamiques des modules (add-ons)
 -- ============================================================
 
 CREATE TABLE IF NOT EXISTS module_pricing (

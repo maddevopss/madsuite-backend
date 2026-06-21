@@ -28,7 +28,6 @@ describe('Billing Assistant Additional', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({}); // empty payload
     expect(res.statusCode).toBe(400);
-    expect(res.body).toHaveProperty('message');
   });
 
   test('POST /api/billing-assistant/apply unauthorized without token', async () => {

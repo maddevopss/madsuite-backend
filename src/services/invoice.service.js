@@ -2,6 +2,7 @@ const db = require("../../db");
 
 const { organisationScope, organisationValue } = require("../utils/organisationScope");
 const { renderInvoicePdf } = require("./invoicePdf.service");
+const { recordBusinessAudit } = require("./auditLog.service");
 
 function scopedOrganisationFilter(alias, params, organisationId) {
   return organisationScope(alias, params, organisationId).replace(/^AND\s+/, "AND ");
@@ -262,6 +263,7 @@ async function createInvoiceFromEntries({
   taxRate,
   organisationId,
   billedBy,
+  req,
 }) {
   const requestedEntryIds = [...new Set(timeEntryIds)];
   const txClient = await db.pool.connect();
@@ -296,7 +298,7 @@ async function createInvoiceFromEntries({
     for (const entry of entries) {
       const hours = calculateEntryHours(entry);
       const rate = calculateEntryRate(entry);
-      subtotal += hours * rate;
+      subtotal += roundMoney(hours * rate);
     }
 
     const taxTotal = subtotal * (Number(taxRate || 0) / 100);
@@ -407,6 +409,20 @@ async function createInvoiceFromEntries({
     }
 
     await txClient.query("COMMIT");
+
+    await recordBusinessAudit({
+      organisationId,
+      actorUserId: req?.user?.id ?? null,
+      action: "invoice.created",
+      entityType: "invoice",
+      entityId: invoice.id,
+      details: {
+        clientId: clientId,
+        timeEntryCount: requestedEntryIds.length,
+      },
+      req,
+    });
+
     return invoice;
   } catch (err) {
     try {
@@ -418,7 +434,7 @@ async function createInvoiceFromEntries({
   }
 }
 
-async function updateInvoice({ invoiceId, organisationId, data }) {
+async function updateInvoice({ invoiceId, organisationId, data, req }) {
   const params = [invoiceId, organisationValue(organisationId)];
   const conditions = ["id = $1", "organisation_id = $2", "deleted_at IS NULL"];
 
@@ -511,13 +527,31 @@ async function updateInvoice({ invoiceId, organisationId, data }) {
       await releaseInvoiceTimeEntries(invoiceId, organisationId);
     }
 
-    return result.rows[0] || null;
+    const updatedInvoice = result.rows[0] || null;
+    
+    if (updatedInvoice) {
+      await recordBusinessAudit({
+        organisationId,
+        actorUserId: req?.user?.id ?? null,
+        action: "invoice.updated",
+        entityType: "invoice",
+        entityId: updatedInvoice.id,
+        details: {
+          status: data.status ?? null,
+          issueDate: data.issue_date ?? null,
+          dueDate: data.due_date ?? null,
+        },
+        req,
+      });
+    }
+
+    return updatedInvoice;
   } catch (err) {
     throw err;
   }
 }
 
-async function deleteInvoice({ invoiceId, organisationId }) {
+async function deleteInvoice({ invoiceId, organisationId, req }) {
   const params = [invoiceId, organisationValue(organisationId)];
 
   try {
@@ -550,6 +584,18 @@ async function deleteInvoice({ invoiceId, organisationId }) {
       return null;
     }
 
+    await recordBusinessAudit({
+      organisationId,
+      actorUserId: req?.user?.id ?? null,
+      action: "invoice.deleted",
+      entityType: "invoice",
+      entityId: invoiceId,
+      details: {
+        releasedEntries: releasedEntries || 0,
+      },
+      req,
+    });
+
     return {
       ...result.rows[0],
       released_entries: releasedEntries,
@@ -575,6 +621,46 @@ async function generateInvoicePdf({ invoiceId, organisationId }) {
   };
 }
 
+async function getPortalLink({ invoiceId, organisationId, baseUrl }) {
+  const result = await db.query(
+    `SELECT id, public_token, status FROM invoices WHERE id = $1 AND organisation_id = $2 AND deleted_at IS NULL`,
+    [invoiceId, organisationValue(organisationId)],
+  );
+
+  if (!result.rows[0]) {
+    return null;
+  }
+
+  const { public_token, status } = result.rows[0];
+  const portalUrl = `${baseUrl}/portal/${public_token}`;
+  return { portalUrl, public_token, status };
+}
+
+async function markInvoiceAsSent({ invoiceId, organisationId, req, baseUrl }) {
+  const invoice = await updateInvoice({
+    invoiceId,
+    organisationId,
+    data: { status: "sent" },
+    req,
+  });
+
+  if (!invoice) return null;
+
+  const portalUrl = `${baseUrl}/portal/${invoice.public_token}`;
+
+  await recordBusinessAudit({
+    organisationId,
+    actorUserId: req?.user?.id ?? null,
+    action: "invoice.sent",
+    entityType: "invoice",
+    entityId: invoice.id,
+    details: { portalUrl },
+    req,
+  });
+
+  return { invoice, portalUrl };
+}
+
 module.exports = {
   getNextInvoiceNumber,
   listInvoices,
@@ -584,4 +670,6 @@ module.exports = {
   updateInvoice,
   deleteInvoice,
   generateInvoicePdf,
+  getPortalLink,
+  markInvoiceAsSent,
 };

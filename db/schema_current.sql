@@ -1202,9 +1202,9 @@ WHERE aar.created_by = u.id
 ALTER TABLE activity_patterns
   ALTER COLUMN organisation_id SET NOT NULL;
 
-ALTER TABLE activity_patterns
-  ADD CONSTRAINT chk_activity_patterns_org_not_null
-  CHECK (organisation_id IS NOT NULL);
+-- ALTER TABLE activity_patterns
+--   ADD CONSTRAINT chk_activity_patterns_org_not_null
+--   CHECK (organisation_id IS NOT NULL);
 
 ALTER TABLE activity_app_rules
   ALTER COLUMN organisation_id SET NOT NULL;

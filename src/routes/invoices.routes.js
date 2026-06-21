@@ -6,7 +6,6 @@ const { getOrganisationId } = require("../utils/organisationScope");
 const { handleServiceError } = require("../utils/routeError");
 const ApiResponse = require("../utils/apiResponse");
 const invoiceService = require("../services/invoice.service");
-const { recordBusinessAudit } = require("../services/auditLog.service");
 
 const router = express.Router();
 
@@ -52,7 +51,6 @@ function parseInvoiceId(req, res) {
     res.status(400).json(ApiResponse.error("VALIDATION_ERROR", { message: "ID invalide" }));
     return null;
   }
-
   return parsed.data.id;
 }
 
@@ -61,14 +59,12 @@ function assertInvoiceMutationRole(req, res) {
     res.status(403).json(ApiResponse.error("FORBIDDEN", { message: "Permissions insuffisantes" }));
     return false;
   }
-
   return true;
 }
 
 router.get("/", async (req, res, next) => {
   try {
     const parsed = listInvoicesQuerySchema.safeParse(req.query);
-
     if (!parsed.success) {
       return res.status(400).json(ApiResponse.error("VALIDATION_ERROR", {
         message: "Parametres invalides",
@@ -91,7 +87,6 @@ router.get("/", async (req, res, next) => {
 router.get("/unbilled-entries", async (req, res, next) => {
   try {
     const parsed = unbilledEntriesQuerySchema.safeParse(req.query);
-
     if (!parsed.success) {
       return res.status(400).json(ApiResponse.error("VALIDATION_ERROR", {
         message: "Parametres invalides",
@@ -115,7 +110,6 @@ router.post("/", async (req, res, next) => {
     if (!assertInvoiceMutationRole(req, res)) return;
 
     const parsed = createInvoiceSchema.safeParse(req.body);
-
     if (!parsed.success) {
       return res.status(400).json(ApiResponse.error("VALIDATION_ERROR", {
         message: "Donnees invalides",
@@ -132,18 +126,6 @@ router.post("/", async (req, res, next) => {
       taxRate: parsed.data.tax_rate,
       organisationId: getOrganisationId(req),
       billedBy: req.user?.id ?? null,
-    });
-
-    await recordBusinessAudit({
-      organisationId: getOrganisationId(req),
-      actorUserId: req.user?.id ?? null,
-      action: "invoice.created",
-      entityType: "invoice",
-      entityId: invoice.id,
-      details: {
-        clientId: parsed.data.client_id,
-        timeEntryCount: parsed.data.time_entry_ids.length,
-      },
       req,
     });
 
@@ -214,25 +196,12 @@ router.patch("/:id", async (req, res, next) => {
       invoiceId,
       organisationId: getOrganisationId(req),
       data: parsed.data,
+      req,
     });
 
     if (!invoice) {
       return res.status(404).json(ApiResponse.error("NOT_FOUND", { message: "Facture introuvable." }));
     }
-
-    await recordBusinessAudit({
-      organisationId: getOrganisationId(req),
-      actorUserId: req.user?.id ?? null,
-      action: "invoice.updated",
-      entityType: "invoice",
-      entityId: invoice.id,
-      details: {
-        status: parsed.data.status ?? null,
-        issueDate: parsed.data.issue_date ?? null,
-        dueDate: parsed.data.due_date ?? null,
-      },
-      req,
-    });
 
     return res.status(200).json(ApiResponse.success("INVOICE_UPDATED", invoice));
   } catch (err) {
@@ -250,23 +219,12 @@ router.delete("/:id", async (req, res, next) => {
     const deleted = await invoiceService.deleteInvoice({
       invoiceId,
       organisationId: getOrganisationId(req),
+      req,
     });
 
     if (!deleted) {
       return res.status(404).json(ApiResponse.error("NOT_FOUND", { message: "Facture introuvable." }));
     }
-
-    await recordBusinessAudit({
-      organisationId: getOrganisationId(req),
-      actorUserId: req.user?.id ?? null,
-      action: "invoice.deleted",
-      entityType: "invoice",
-      entityId: deleted.id,
-      details: {
-        releasedEntries: deleted.released_entries || 0,
-      },
-      req,
-    });
 
     return res.status(200).json(ApiResponse.success("INVOICE_DELETED", {
       deletedId: deleted.id,
@@ -282,20 +240,19 @@ router.get("/:id/portal-link", async (req, res, next) => {
     const invoiceId = parseInvoiceId(req, res);
     if (!invoiceId) return;
 
-    const result = await require("../../db").query(
-      `SELECT id, public_token, status FROM invoices WHERE id = $1 AND organisation_id = $2 AND deleted_at IS NULL`,
-      [invoiceId, require("../utils/organisationScope").organisationValue(getOrganisationId(req))],
-    );
+    const baseUrl = process.env.FRONTEND_URL || process.env.VITE_API_URL || `${req.protocol}://${req.get("host")}`;
 
-    if (!result.rows[0]) {
+    const linkInfo = await invoiceService.getPortalLink({
+      invoiceId,
+      organisationId: getOrganisationId(req),
+      baseUrl,
+    });
+
+    if (!linkInfo) {
       return res.status(404).json(ApiResponse.error("NOT_FOUND", { message: "Facture introuvable." }));
     }
 
-    const { public_token, status } = result.rows[0];
-    const baseUrl = process.env.FRONTEND_URL || process.env.VITE_API_URL || `${req.protocol}://${req.get("host")}`;
-    const portalUrl = `${baseUrl}/portal/${public_token}`;
-
-    return res.status(200).json(ApiResponse.success("PORTAL_LINK", { portalUrl, public_token, status }));
+    return res.status(200).json(ApiResponse.success("PORTAL_LINK", linkInfo));
   } catch (err) {
     return handleServiceError(err, res, next);
   }
@@ -308,31 +265,20 @@ router.post("/:id/send", async (req, res, next) => {
     const invoiceId = parseInvoiceId(req, res);
     if (!invoiceId) return;
 
-    // Marquer la facture comme "sent"
-    const invoice = await invoiceService.updateInvoice({
+    const baseUrl = process.env.FRONTEND_URL || `${req.protocol}://${req.get("host")}`;
+
+    const result = await invoiceService.markInvoiceAsSent({
       invoiceId,
       organisationId: getOrganisationId(req),
-      data: { status: "sent" },
+      req,
+      baseUrl,
     });
 
-    if (!invoice) {
+    if (!result) {
       return res.status(404).json(ApiResponse.error("NOT_FOUND", { message: "Facture introuvable." }));
     }
 
-    const baseUrl = process.env.FRONTEND_URL || `${req.protocol}://${req.get("host")}`;
-    const portalUrl = `${baseUrl}/portal/${invoice.public_token}`;
-
-    await recordBusinessAudit({
-      organisationId: getOrganisationId(req),
-      actorUserId: req.user?.id ?? null,
-      action: "invoice.sent",
-      entityType: "invoice",
-      entityId: invoice.id,
-      details: { portalUrl },
-      req,
-    });
-
-    return res.status(200).json(ApiResponse.success("INVOICE_SENT", { invoice, portalUrl }));
+    return res.status(200).json(ApiResponse.success("INVOICE_SENT", result));
   } catch (err) {
     return handleServiceError(err, res, next);
   }

@@ -123,15 +123,6 @@ async function applySchemaToTestDatabase() {
   );
 
   try {
-    const snapshotPath = path.join(__dirname, "../../db/schema_current.sql");
-    if (!fs.existsSync(snapshotPath)) {
-      throw new Error(`Snapshot BD introuvable: ${snapshotPath}`);
-    }
-
-    debugLog("schema:snapshot:start");
-    await testPool.query(fs.readFileSync(snapshotPath, "utf8"));
-    debugLog("schema:snapshot:done");
-
     const migrationsSources = [
       path.join(__dirname, "../../db/archive/migrations"),
       path.join(__dirname, "../../db/migrations"),
@@ -154,35 +145,43 @@ async function applySchemaToTestDatabase() {
       }
     }
 
-    // Exécuter les migrations réelles sur la base de test pour s'assurer que les tables récentes (comme organisation_modules) sont créées
-    const { runMigrations } = require("../migrate/runMigrations");
-    
-    // Configurer temporairement l'URL de base pour runMigrations (qui utilise DATABASE_URL)
-    const originalDatabaseUrl = process.env.DATABASE_URL;
-    process.env.DATABASE_URL = process.env.TEST_DATABASE_URL;
-    
-    try {
-      await runMigrations({ backup: false });
-    } finally {
-      process.env.DATABASE_URL = originalDatabaseUrl;
-    }
-
-    await seedE2EUsers(testPool);
-  } finally {
+    // Fermer testPool avant de lancer les migrations externes pour éviter les deadlocks
     await testPool.end();
+    
+    // Exécuter les migrations réelles sur la base de test dans un nouveau processus
+    // (cela permet à db.js de lire la bonne DATABASE_URL et évite les hangs)
+    const { execSync } = require("child_process");
+    execSync("node -e \"require('./src/migrate/runMigrations').runMigrations({ backup: false }).then(()=>process.exit(0)).catch(e=>{ console.error(e.message); process.exit(1); })\"", {
+      env: { ...process.env, DATABASE_URL: process.env.TEST_DATABASE_URL },
+      stdio: "inherit"
+    });
+    
+    // Rouvrir pour le seed
+    const seedPool = new Pool(buildPoolConfig({ databaseName: TEST_DB_NAME, explicitUrl: process.env.TEST_DATABASE_URL }));
+    await seedE2EUsers(seedPool);
+    await seedPool.end();
+  } catch (e) {
+    console.error(e);
+    throw e;
   }
 }
 
 async function ensureE2EOrganisation(client) {
   const result = await client.query(
-    `
-    INSERT INTO organisations (nom)
-    VALUES ($1)
-    ON CONFLICT DO NOTHING
-    RETURNING id
-    `,
-    ["MADSuite E2E"],
+    `INSERT INTO organisations (id, nom) VALUES ($1, 'MADSuite Org') ON CONFLICT DO NOTHING`,
+    [process.env.TEST_ORG_ID],
   );
+
+  // Activer tous les modules pour l'organisation de test
+  const modules = ['billing_assistant', 'activity_intelligence', 'dashboard', 'timesheet', 'clients', 'projects', 'invoices', 'reports', 'kiosk_punch', 'estimates'];
+  for (const mod of modules) {
+    await client.query(
+      `INSERT INTO organisation_modules (organisation_id, module_key, is_active) VALUES ($1, $2, true) ON CONFLICT (organisation_id, module_key) DO UPDATE SET is_active = true`,
+      [process.env.TEST_ORG_ID, mod]
+    );
+  }
+
+  const hash = await bcrypt.hash(process.env.TEST_USER_PASSWORD, 10);
 
   if (result.rows[0]?.id) {
     return result.rows[0].id;

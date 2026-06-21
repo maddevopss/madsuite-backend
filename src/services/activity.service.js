@@ -32,6 +32,7 @@ async function pruneOldActivityLogs(userId, organisationId) {
 async function insertActivityLog({
   utilisateurId,
   organisationId,
+  requestId,
   appName,
   windowTitle,
   durationSeconds,
@@ -53,6 +54,7 @@ async function insertActivityLog({
     "app_name",
     "window_title",
     "duration_seconds",
+    "request_id",
     "is_idle",
     "idle_seconds",
     "activity_signature",
@@ -64,6 +66,7 @@ async function insertActivityLog({
     sanitizeAppName(appName),
     sanitizeWindowTitle(windowTitle),
     durationSeconds,
+    requestId,
     isIdle,
     idleSeconds,
     activitySignature,
@@ -71,6 +74,7 @@ async function insertActivityLog({
   ];
 
   if (includeCapturedAt) {
+    // captured_at vient juste après duration_seconds
     columns.splice(4, 0, "captured_at");
     values.splice(4, 0, new Date());
   }
@@ -92,10 +96,12 @@ async function insertActivityLog({
   return result.rows[0];
 }
 
-async function createActiveLog({ userId, organisationId, data }) {
+async function createActiveLog({ userId, organisationId, data, requestId }) {
+  if (requestId === undefined) requestId = null;
   const activity = await insertActivityLog({
     utilisateurId: userId,
     organisationId,
+    requestId,
     appName: data.app_name,
     windowTitle: data.window_title,
     durationSeconds: data.duration_seconds,
@@ -111,7 +117,9 @@ async function createActiveLog({ userId, organisationId, data }) {
   return activity;
 }
 
-async function createBatchActiveLogs({ userId, organisationId, logs }) {
+async function createBatchActiveLogs({ userId, organisationId, logs, requestId }) {
+  if (requestId === undefined) requestId = null;
+
   if (!Array.isArray(logs) || logs.length === 0) return 0;
 
   const hasOrganisationId = await hasColumn("activity_logs", "organisation_id");
@@ -132,6 +140,7 @@ async function createBatchActiveLogs({ userId, organisationId, logs }) {
         sanitizeAppName(log.app_name),
         sanitizeWindowTitle(log.window_title),
         log.duration_seconds,
+        requestId,
         new Date(), // captured_at
         log.is_idle || false,
         log.idle_seconds || 0,
@@ -155,12 +164,14 @@ async function createBatchActiveLogs({ userId, organisationId, logs }) {
       "app_name",
       "window_title",
       "duration_seconds",
+      "request_id",
       "captured_at",
       "is_idle",
       "idle_seconds",
       "activity_signature",
       "type",
     ];
+
     if (hasOrganisationId) columns.push("organisation_id");
 
     const query = `INSERT INTO activity_logs (${columns.join(", ")}) VALUES ${placeholders.join(", ")} RETURNING id`;
@@ -175,28 +186,71 @@ async function createBatchActiveLogs({ userId, organisationId, logs }) {
   }
 }
 
-async function createBackgroundWindowLogs({ userId, organisationId, data }) {
+async function createBackgroundWindowLogs({ userId, organisationId, data, requestId }) {
+  if (requestId === undefined) requestId = null;
+
   const { windows, duration_seconds, is_idle = false, idle_seconds = 0 } = data;
   const safeWindows = windows.slice(0, MAX_BACKGROUND_WINDOWS);
 
-  for (const win of safeWindows) {
-    await insertActivityLog({
-      utilisateurId: userId,
-      organisationId,
-      appName: win.ProcessName || win.name || "Unknown",
-      windowTitle: win.MainWindowTitle || win.title || "",
-      durationSeconds: duration_seconds,
-      isIdle: is_idle,
-      idleSeconds: idle_seconds,
-      activitySignature: null,
-      type: "background",
-      includeCapturedAt: true,
-    });
+  if (!Array.isArray(safeWindows) || safeWindows.length === 0) return 0;
+
+  const hasOrganisationId = await hasColumn("activity_logs", "organisation_id");
+  const values = [];
+  const placeholders = [];
+  let paramIndex = 1;
+
+  safeWindows.forEach((win) => {
+    const appName = win.ProcessName || win.name || "Unknown";
+    const windowTitle = win.MainWindowTitle || win.title || "";
+
+    // Sécurité : on ignore les activités sans durée ou sans nom d'app
+    if (!duration_seconds || duration_seconds <= 0 || !appName) return;
+
+    const row = [
+      userId,
+      sanitizeAppName(appName),
+      sanitizeWindowTitle(windowTitle),
+      duration_seconds,
+      requestId,
+      new Date(), // captured_at
+      is_idle,
+      idle_seconds,
+      null, // activity_signature
+      "background", // type
+    ];
+
+    if (hasOrganisationId) row.push(organisationValue(organisationId));
+
+    const rowPlaceholders = row.map(() => `$${paramIndex++}`);
+    placeholders.push(`(${rowPlaceholders.join(", ")})`);
+    values.push(...row);
+  });
+
+  if (values.length === 0) {
+    return 0;
   }
+
+  const columns = [
+    "utilisateur_id",
+    "app_name",
+    "window_title",
+    "duration_seconds",
+    "request_id",
+    "captured_at",
+    "is_idle",
+    "idle_seconds",
+    "activity_signature",
+    "type",
+  ];
+
+  if (hasOrganisationId) columns.push("organisation_id");
+
+  const query = `INSERT INTO activity_logs (${columns.join(", ")}) VALUES ${placeholders.join(", ")} RETURNING id`;
+  const result = await db.query(query, values);
 
   await pruneOldActivityLogs(userId, organisationId);
 
-  return safeWindows.length;
+  return result.rowCount;
 }
 
 async function listRecentActiveLogs({ userId, organisationId }) {

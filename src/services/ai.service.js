@@ -2,14 +2,29 @@ const db = require("../../db");
 const logger = require("../config/logger");
 const projectDetectionService = require("./projectDetection.service");
 const OpenAI = require("openai");
+const aiToolsService = require("./aiTools.service");
 
-let openai = null;
-if (process.env.OPENAI_API_KEY) {
-  openai = new OpenAI({
-    apiKey: process.env.OPENAI_API_KEY,
-  });
+let openaiInstance = null;
+
+function getOpenAI() {
+  if (!process.env.OPENAI_API_KEY) {
+    return null;
+  }
+
+  if (!openaiInstance) {
+    openaiInstance = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+
+    logger.info("✅ OpenAI initialized");
+  }
+
+  return openaiInstance;
 }
 
+function isAIEnabled() {
+  return !!process.env.OPENAI_API_KEY;
+}
 /**
  * Génère des suggestions de feuilles de temps basées sur les logs d'activité d'une journée
  */
@@ -104,7 +119,9 @@ async function generateTimesheetSuggestions({ organisationId, userId, targetDate
         const appsList = Array.from(data.apps).slice(0, 10).join(", ");
         const titleSample = Array.from(data.titles).slice(0, 20).join(" | ");
 
-        if (openai) {
+        const openai = getOpenAI();
+
+if (openai) {
           try {
             const completion = await openai.chat.completions.create({
               model: "gpt-4o-mini", // Use mini for speed and cost
@@ -157,29 +174,69 @@ async function generateTimesheetSuggestions({ organisationId, userId, targetDate
  * Interroge l'assistant IA (Copilot) avec un historique de messages.
  */
 async function askCopilot(messages, organisationId, userId) {
+  const openai = getOpenAI();
+
   if (!openai) {
-    throw new Error("Clé d'API OpenAI (OPENAI_API_KEY) manquante.");
+    return "Le service IA n'est pas configuré actuellement.";
   }
 
   try {
-    // On peut injecter du contexte supplémentaire ici si on veut, 
-    // par exemple le schéma ou les infos de l'utilisateur.
     const systemPrompt = {
       role: "system",
       content: `Tu es MADSuite Copilot, l'assistant IA officiel de la plateforme SaaS MADSuite. 
-Ton rôle est d'aider les pigistes et les PME à gérer leur temps, facturer intelligemment, et rédiger des courriels professionnels (relance, facturation).
+Ton rôle est d'aider les pigistes et les PME à gérer leur facturation et leurs activités.
+Tu es un agent complet : tu peux créer des clients, des projets, des factures, et même relancer des clients par courriel en appelant directement les outils mis à ta disposition.
+N'hésite pas à agir si l'utilisateur te le demande clairement (ex: "Crée un client..."). Exécute l'action et confirme-lui que c'est fait.
 Sois concis, professionnel et toujours en français par défaut.
 Utilise le formatage Markdown pour tes réponses.`
     };
 
-    const completion = await openai.chat.completions.create({
+    const currentMessages = [systemPrompt, ...messages];
+    const tools = aiToolsService.getToolsSchema();
+
+    let completion = await openai.chat.completions.create({
       model: "gpt-4o-mini", // Cost efficient but very capable
-      messages: [systemPrompt, ...messages],
+      messages: currentMessages,
       temperature: 0.5,
       max_tokens: 1000,
+      tools: tools,
+      tool_choice: "auto",
     });
 
-    return completion.choices[0].message.content.trim();
+    let responseMessage = completion.choices[0].message;
+
+    // Boucle d'exécution d'outils (jusqu'à 5 itérations max pour éviter les boucles infinies)
+    let maxIterations = 5;
+
+    while (responseMessage.tool_calls && maxIterations > 0) {
+      maxIterations--;
+      currentMessages.push(responseMessage);
+
+      for (const toolCall of responseMessage.tool_calls) {
+        const toolResult = await aiToolsService.executeToolCall(toolCall, organisationId);
+        
+        currentMessages.push({
+          tool_call_id: toolCall.id,
+          role: "tool",
+          name: toolCall.function.name,
+          content: JSON.stringify(toolResult)
+        });
+      }
+
+      // Rappel d'OpenAI avec les résultats des outils
+      completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: currentMessages,
+        temperature: 0.5,
+        max_tokens: 1000,
+        tools: tools,
+        tool_choice: "auto",
+      });
+
+      responseMessage = completion.choices[0].message;
+    }
+
+    return responseMessage.content ? responseMessage.content.trim() : "Opération terminée.";
   } catch (error) {
     logger.error("Erreur lors de la requête au Copilot", error);
     throw error;
@@ -188,6 +245,7 @@ Utilise le formatage Markdown pour tes réponses.`
 
 async function generateProjectSummary({ projectId, organisationId }) {
   try {
+    const openai = getOpenAI();
     const projectRes = await db.query(
       `SELECT * FROM projets WHERE id = $1 AND (organisation_id = $2 OR organisation_id IS NULL)`,
       [projectId, organisationId]
@@ -249,7 +307,11 @@ async function generateProjectSummary({ projectId, organisationId }) {
 }
 
 async function categorizeActivitiesBatch({ activities, organisationId }) {
-  if (!openai || activities.length === 0) return [];
+  const openai = getOpenAI();
+
+  if (!openai || activities.length === 0) {
+    return [];
+  }
 
   try {
     const list = activities.map((a) => `ID ${a.id}: App: ${a.app_name}, Titre: ${a.window_title}`).join("\\n");
@@ -290,9 +352,51 @@ Réponds STRICTEMENT sous format JSON:
   }
 }
 
+async function generateBrainDumpTasks({ prompt }) {
+  const openai = getOpenAI();
+
+  if (!openai) {
+    throw new Error("L'IA n'est pas activée");
+  }
+
+  try {
+    const completion = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: `Tu es un assistant de productivité spécialisé pour le TDAH (exosquelette cognitif).
+L'utilisateur va te donner un "Brain Dump" (bruit mental, liste de choses à faire en vrac).
+Ton but est de transformer ce texte en une suite séquentielle de MICRO-ACTIONS extrêmement claires, simples et actionnables.
+Estime un temps raisonnable en minutes pour chaque micro-action. Ne dépasse pas 30 minutes par action (divise si nécessaire).
+Réponds STRICTEMENT sous format JSON:
+{ "tasks": [ { "title": "Nom de l'action très court", "duration_minutes": 15 } ] }`
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      temperature: 0.3,
+      response_format: { type: "json_object" }
+    });
+
+    const responseText = completion.choices[0].message.content;
+    const parsed = JSON.parse(responseText);
+    
+    return parsed.tasks || [];
+  } catch (error) {
+    logger.error("Erreur generateBrainDumpTasks", error);
+    throw error;
+  }
+}
+
 module.exports = {
+  getOpenAI,
+  isAIEnabled,
   generateTimesheetSuggestions,
   askCopilot,
   generateProjectSummary,
-  categorizeActivitiesBatch
+  categorizeActivitiesBatch,
+  generateBrainDumpTasks,
 };

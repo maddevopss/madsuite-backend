@@ -38,6 +38,7 @@ async function getSuggestions(dbClient, organisationId, utilisateurId, date) {
         apc.suggested_project_id as p_id,
         p.nom as p_nom,
         apc.confidence as score,
+        apc.is_manual,
         true as from_cache
       FROM aggregated_rows ar
       LEFT JOIN activity_project_cache apc ON (
@@ -75,7 +76,7 @@ async function getSuggestions(dbClient, organisationId, utilisateurId, date) {
       is_manual,
       -- On ne demande la mise en cache que si pas déjà présent, un projet est trouvé, 
       -- et que l'activité dépasse 300 secondes (5 minutes)
-      (p_id IS NULL AND NOT EXISTS(SELECT 1 FROM activity_project_cache WHERE organisation_id = $1 AND app_name = ar.app_name AND window_title_hash = md5(ar.window_title)) AND new_p_id IS NOT NULL AND total_seconds > 300) as needs_caching
+      (p_id IS NULL AND NOT EXISTS(SELECT 1 FROM activity_project_cache WHERE organisation_id = $1 AND app_name = scored_matches.app_name AND window_title_hash = md5(scored_matches.window_title)) AND new_p_id IS NOT NULL AND total_seconds > 300) as needs_caching
     FROM scored_matches
     WHERE rank = 1
       AND (p_id IS NOT NULL OR new_p_id IS NOT NULL OR score IS NULL) -- On cache si explicitement ignoré (p_id est NULL dans le cache)

@@ -197,6 +197,7 @@ describe("invoices.routes", () => {
       });
 
     expect(res.status).toBe(201);
+    console.log("DEBUG RES.BODY POST:", res.body);
     expect(res.body).toHaveProperty("id");
     expect(res.body).toHaveProperty("invoice_number");
     expect(Number(res.body.organisation_id)).toBe(fixture.organisation.id);
@@ -434,7 +435,7 @@ describe("invoices.routes", () => {
     const res = await request(app).delete(`/api/invoices/${invoice.id}`).set("Authorization", `Bearer ${fixture.token}`);
 
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ success: true, released_entries: 0 });
+    expect(res.body).toMatchObject({ deletedId: invoice.id, releasedEntries: 0 });
 
     const deleted = await db.query(`SELECT deleted_at FROM invoices WHERE id = $1`, [invoice.id]);
     if (deleted.rows[0]) {
@@ -466,7 +467,7 @@ describe("invoices.routes", () => {
       .set("Authorization", `Bearer ${fixture.token}`);
 
     expect(deleted.status).toBe(200);
-    expect(deleted.body).toMatchObject({ success: true, released_entries: 1 });
+    expect(deleted.body).toMatchObject({ deletedId: created.body.id, releasedEntries: 1 });
 
     const releasedEntry = await db.query("SELECT is_billed, invoice_id FROM time_entries WHERE id = $1", [entry.id]);
     expect(releasedEntry.rows[0].is_billed).toBe(false);

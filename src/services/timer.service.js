@@ -211,6 +211,50 @@ async function startTimer({ userId, organisationId, projetId, description = null
 }
 
 /**
+ * Starts an unsorted timer by finding or creating a default "À classer" project.
+ */
+async function startUnsortedTimer({ userId, organisationId, description = null }) {
+  requireOrganisation(organisationId);
+
+  // 1. Find or create default client "Interne"
+  let clientRes = await db.query(
+    `SELECT id FROM clients WHERE nom = 'Interne' AND organisation_id = $1 AND deleted_at IS NULL LIMIT 1`,
+    [organisationValue(organisationId)]
+  );
+  
+  let clientId;
+  if (clientRes.rows.length === 0) {
+    const newClient = await db.query(
+      `INSERT INTO clients (nom, organisation_id) VALUES ('Interne', $1) RETURNING id`,
+      [organisationValue(organisationId)]
+    );
+    clientId = newClient.rows[0].id;
+  } else {
+    clientId = clientRes.rows[0].id;
+  }
+
+  // 2. Find or create default project "À classer"
+  let projetRes = await db.query(
+    `SELECT id FROM projets WHERE nom = 'À classer' AND client_id = $1 AND organisation_id = $2 AND deleted_at IS NULL LIMIT 1`,
+    [clientId, organisationValue(organisationId)]
+  );
+
+  let projetId;
+  if (projetRes.rows.length === 0) {
+    const newProjet = await db.query(
+      `INSERT INTO projets (client_id, nom, couleur, organisation_id) VALUES ($1, 'À classer', '#808080', $2) RETURNING id`,
+      [clientId, organisationValue(organisationId)]
+    );
+    projetId = newProjet.rows[0].id;
+  } else {
+    projetId = projetRes.rows[0].id;
+  }
+
+  // 3. Start timer
+  return startTimer({ userId, organisationId, projetId, description });
+}
+
+/**
  * Stops the current open timer for a user.
  *
  * @param {object} params
@@ -300,6 +344,7 @@ module.exports = {
   getLongTimerThresholdHours,
   getActiveTimer,
   startTimer,
+  startUnsortedTimer,
   stopTimer,
   getTodayProjects,
   updateActiveTimerNote,

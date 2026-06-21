@@ -13,7 +13,11 @@ const auth = require("./middleware/auth");
 const errorHandler = require("./middleware/errorHandler");
 const apiResponseMiddleware = require("./middleware/apiResponse");
 const requestId = require("./middleware/requestId");
+const requestLogger = require("./middleware/requestLogger");
+const promBundle = require("express-prom-bundle");
+const Sentry = require("@sentry/node");
 
+const requestIdMiddleware = require("./middleware/requestId.middleware");
 const { activityLimiter, loginLimiter, defaultLimiter } = require("./config/rateLimiters");
 
 const loginRoutes = require("./routes/login");
@@ -51,7 +55,18 @@ try {
 
 const app = express();
 
-app.use(requestId);
+const metricsMiddleware = promBundle({
+  includeMethod: true,
+  includePath: true,
+  customLabels: { project_name: "MADSuite" },
+  promClient: {
+    collectDefaultMetrics: {},
+  },
+});
+
+app.use(metricsMiddleware);
+app.use(requestIdMiddleware);
+app.use(requestLogger);
 app.use(
   helmet({
     contentSecurityPolicy: buildContentSecurityPolicy(),
@@ -160,7 +175,7 @@ app.use("/api/calendar", auth, require("./routes/calendar.routes"));
 app.use("/api/ai-assistant", auth, aiAssistantRoutes);
 app.use("/api/organisation", organisationRoutes);
 app.use("/api/organisation/modules", modulesRoutes);
-app.use('/api/hub', hubRoutes);
+app.use("/api/hub", hubRoutes);
 app.use("/api/master-admin", require("./routes/master-admin.routes"));
 
 // Routes API inconnues.
@@ -175,6 +190,8 @@ app.use("/api", (req, res) => {
 app.use((req, res) => {
   res.sendFile(path.join(__dirname, "../../frontend/build/index.html"));
 });
+
+Sentry.setupExpressErrorHandler(app);
 
 app.use(errorHandler);
 

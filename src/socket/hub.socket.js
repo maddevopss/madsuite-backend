@@ -5,33 +5,78 @@
  * The server instance is attached to the Express app in app.js (see note).
  */
 
-module.exports = (io) => {
-  // Namespace for hub events (optional, could use default)
-  const hubNs = io.of('/hub');
+const jwt = require("jsonwebtoken");
+const cookie = require("cookie");
 
-  hubNs.on('connection', (socket) => {
-    const user = socket.handshake.query; // expect organisationId from client auth token
+function getAccessTokenFromSocket(socket) {
+  if (socket.handshake.auth && socket.handshake.auth.token) {
+    return socket.handshake.auth.token;
+  }
+  const cookieHeader = socket.handshake.headers.cookie;
+  if (cookieHeader) {
+    const cookies = cookie.parse(socket.handshake.headers.cookie || "");
+    if (cookies.access_token) {
+      return cookies.access_token;
+    }
+  }
+  return null;
+}
+
+module.exports = (io) => {
+  const hubNs = io.of("/hub");
+
+  // Authentication Middleware
+  hubNs.use((socket, next) => {
+    const token = getAccessTokenFromSocket(socket);
+
+    if (!token) {
+      return next(new Error("Authentication error: Token manquant"));
+    }
+
+    try {
+      const decoded = jwt.verify(token, process.env.JWT_SECRET, {
+        algorithms: ["HS256"],
+      });
+
+      if (decoded.token_type === "refresh") {
+        return next(new Error("Authentication error: Token invalide ou expiré"));
+      }
+
+      socket.user = decoded;
+      next();
+    } catch (err) {
+      return next(new Error("Authentication error: Token invalide ou expiré"));
+    }
+    console.log("Socket auth failed:", {
+      token: !!token,
+      cookie: socket.handshake.headers.cookie,
+    });
+  });
+
+  hubNs.on("connection", (socket) => {
+    const user = socket.user;
+
+    if (!user?.organisationId) {
+      console.log("Missing organisationId, disconnecting");
+      return socket.disconnect(true);
+    }
+
+    const orgRoom = `org_${user.organisationId}`;
+
     console.log(`Hub socket connected: user ${user.id}, org ${user.organisationId}`);
 
-    // Join room per organisation to isolate events
-    const orgRoom = `org_${user.organisationId}`;
     socket.join(orgRoom);
 
-    // Listen for client‑initiated events if needed
-    socket.on('disconnect', () => {
-      console.log('Hub socket disconnected');
+    socket.on("disconnect", () => {
+      console.log("Hub socket disconnected");
     });
 
-    // Timer synchronization
-    socket.on('hub:timer:update', (payload) => {
-      // payload: { isRunning, seconds }
-      // Broadcast to all other clients in the same organization
-      socket.to(orgRoom).emit('hub:timer:sync', payload);
+    socket.on("hub:timer:update", (payload) => {
+      socket.to(orgRoom).emit("hub:timer:sync", payload);
     });
 
-    socket.on('hub:timer:command', (payload) => {
-      // payload: { action: 'start' | 'stop' }
-      socket.to(orgRoom).emit('hub:timer:command', payload);
+    socket.on("hub:timer:command", (payload) => {
+      socket.to(orgRoom).emit("hub:timer:command", payload);
     });
   });
 

@@ -140,7 +140,7 @@ router.get(
 router.get("/suggestions", requireOrganisation, async (req, res, next) => {
   try {
     const { date } = dateSchema.parse(req.query);
-    const data = await billingAssistant.getSuggestions(req.organisationId, req.user.id, date);
+    const data = await billingAssistant.getSuggestions(req.db, req.organisationId, req.user.id, date);
     res.json(data);
   } catch (err) {
     if (err.name === "ZodError") {

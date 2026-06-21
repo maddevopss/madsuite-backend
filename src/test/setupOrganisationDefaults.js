@@ -167,6 +167,27 @@ function patchTestDataHelpers() {
 patchJwtSign();
 patchTestDataHelpers();
 
+async function waitForDbReady({ timeoutMs = 20000, intervalMs = 200 } = {}) {
+  const start = Date.now();
+
+  // Retry sur connexion + query triviale.
+  // On évite de “casser” 50+ suites juste parce que le cluster PG n’est pas prêt.
+  // (Les erreurs observées sont du type ECONNREFUSED ... ::1:55902.)
+  //
+  // Note: db.query utilise le pool pg déjà configuré.
+  while (Date.now() - start < timeoutMs) {
+    try {
+      await db.query("SELECT 1");
+      return;
+    } catch {
+      await new Promise((r) => setTimeout(r, intervalMs));
+    }
+  }
+
+  throw new Error(`DB de test pas ready après ${timeoutMs}ms (waitForDbReady)`);
+}
+
 beforeAll(async () => {
+  await waitForDbReady();
   await ensureOrganisationDefaults();
 });

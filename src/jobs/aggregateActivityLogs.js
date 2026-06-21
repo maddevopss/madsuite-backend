@@ -8,20 +8,25 @@ async function aggregateActivityLogs() {
   try {
     await client.query("BEGIN");
 
-    await client.query(
-      `
-      WITH scoped_logs AS (
+    const query = `
+      WITH updated_logs AS (
+        UPDATE activity_logs
+        SET is_aggregated = true
+        WHERE is_aggregated = false
+          AND captured_at < (((NOW() AT TIME ZONE $1)::date) AT TIME ZONE $1)
+        RETURNING utilisateur_id, organisation_id, COALESCE(app_name, '') AS app_name, COALESCE(window_title, '') AS window_title, duration_seconds, captured_at
+      ),
+      scoped_logs AS (
         SELECT
-          al.utilisateur_id,
-          al.organisation_id,
-          COALESCE(al.app_name, '') AS app_name,
-          COALESCE(al.window_title, '') AS window_title,
-          al.duration_seconds,
-          al.captured_at,
+          ul.utilisateur_id,
+          ul.organisation_id,
+          ul.app_name,
+          ul.window_title,
+          ul.duration_seconds,
+          ul.captured_at,
           COALESCE(o.timezone, $1) AS timezone
-        FROM activity_logs al
-        LEFT JOIN organisations o ON o.id = al.organisation_id
-        WHERE al.is_aggregated = false
+        FROM updated_logs ul
+        LEFT JOIN organisations o ON o.id = ul.organisation_id
       )
       INSERT INTO activity_daily_summary (
         utilisateur_id,
@@ -39,7 +44,6 @@ async function aggregateActivityLogs() {
         SUM(duration_seconds) AS total_seconds,
         (captured_at AT TIME ZONE timezone)::date AS activity_date
       FROM scoped_logs
-      WHERE captured_at < (((NOW() AT TIME ZONE timezone)::date) AT TIME ZONE timezone)
       GROUP BY
         utilisateur_id,
         organisation_id,
@@ -50,26 +54,18 @@ async function aggregateActivityLogs() {
       ON CONFLICT (utilisateur_id, organisation_id, app_name, window_title, activity_date)
       DO UPDATE SET
         total_seconds = activity_daily_summary.total_seconds + EXCLUDED.total_seconds;
-    `,
-      [DEFAULT_TIMEZONE],
-    );
+    `;
 
-    // Marquage des logs comme agrégés pour optimiser la future purge
-    await client.query(
-      `
-      UPDATE activity_logs 
-      SET is_aggregated = true 
-      WHERE is_aggregated = false 
-        AND captured_at < (((NOW() AT TIME ZONE $1)::date) AT TIME ZONE $1)
-    `,
-      [DEFAULT_TIMEZONE],
-    );
+    await client.query(query, [DEFAULT_TIMEZONE]);
 
     await client.query("COMMIT");
-
     logger.info("Aggregation activity_logs completee");
   } catch (error) {
-    await client.query("ROLLBACK");
+    try {
+      await client.query("ROLLBACK");
+    } catch (_) {
+      // ignore rollback failures
+    }
     logger.error("Erreur aggregation activity_logs", { error });
     throw error;
   } finally {

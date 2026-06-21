@@ -4,6 +4,7 @@ const requireRole = require("../middleware/requireRole");
 const { requireOrganisation } = require("../middleware/organization.middleware");
 const { handleServiceError } = require("../utils/routeError");
 const ApiResponse = require("../utils/apiResponse");
+const logger = require("../config/logger");
 
 const { idParamSchema } = require("../validators/common.validator");
 const {
@@ -256,6 +257,33 @@ router.post("/feedback", async (req, res, next) => {
     return res.status(201).json(ApiResponse.success("FEEDBACK_RECORDED", feedback));
   } catch (err) {
     next(err);
+  }
+});
+
+router.post("/brain-dump", async (req, res, next) => {
+  const requestId = req.id;
+  const { prompt } = req.body;
+
+  if (!prompt || typeof prompt !== "string") {
+    return res.status(400).json(ApiResponse.error("VALIDATION_ERROR", { message: "Prompt est requis" }));
+  }
+
+  logger.info(`[${requestId}] Brain Dump process start`, { userId: req.user.id });
+
+  try {
+    const tasks = await aiService.generateBrainDumpTasks({ prompt });
+    logger.info(`[${requestId}] Brain Dump process complete`, { tasksCount: tasks.length });
+
+    return res.status(200).json({ success: true, tasks });
+  } catch (err) {
+    logger.error(`[${requestId}] Brain Dump process failed`, {
+      error: err.message,
+    });
+    // Return graceful fallback if AI fails or disabled
+    return res.status(200).json({ 
+      success: true, 
+      tasks: [ { title: prompt.slice(0, 30) + "...", duration_minutes: 25 } ] 
+    });
   }
 });
 

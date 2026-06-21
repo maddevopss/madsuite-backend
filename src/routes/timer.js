@@ -51,6 +51,21 @@ router.post("/start", async (req, res, next) => {
   }
 });
 
+// START UNSORTED TIMER (TDAH / Start Now, Sort Later)
+router.post("/start-unsorted", async (req, res, next) => {
+  try {
+    const timer = await timerService.startUnsortedTimer({
+      userId: req.user.id,
+      organisationId: getOrganisationId(req),
+      description: req.body?.description || null,
+    });
+
+    return res.status(201).json(ApiResponse.success("TIMER_STARTED_UNSORTED", timer));
+  } catch (err) {
+    return handleServiceError(err, res, next, { code: "TIMER_START_UNSORTED_FAILED" });
+  }
+});
+
 // STOP TIMER
 router.patch("/stop", async (req, res, next) => {
   try {
