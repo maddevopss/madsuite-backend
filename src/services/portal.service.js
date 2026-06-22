@@ -1,6 +1,6 @@
 const db = require("../../db");
-const { getInvoiceById } = require("./invoice.service");
-const estimateService = require("./estimate.service");
+const { getInvoiceById } = require("./invoice/invoice.service");
+const estimateService = require("./estimate/estimate.service");
 const { recordBusinessAudit } = require("./auditLog.service");
 
 class PortalService {

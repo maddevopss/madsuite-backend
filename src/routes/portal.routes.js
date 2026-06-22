@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const portalService = require("../services/portal.service");
-const { generateInvoicePdf } = require("../services/invoice.service");
+const { generateInvoicePdf } = require("../services/invoice/invoice.service");
 const db = require("../../db");
 
 router.get("/:token", async (req, res) => {
@@ -63,6 +63,10 @@ router.post("/:token/checkout", async (req, res) => {
 
     if (data.document.status === "paid") {
       return res.status(400).json({ message: "Cette facture est déjà payée." });
+    }
+
+    if (data.document.status !== "finalized") {
+      return res.status(400).json({ message: "La facture doit être finalisée avant de pouvoir être payée." });
     }
 
     const orgRes = await db.query(

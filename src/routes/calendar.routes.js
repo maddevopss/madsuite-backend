@@ -6,7 +6,10 @@ const db = require("../../db");
 
 router.get("/events", async (req, res, next) => {
   try {
-    const { rows } = await db.query("SELECT ical_feed_url FROM utilisateurs WHERE id = $1", [req.user.id]);
+    const { rows } = await db.query(
+      "SELECT ical_feed_url FROM utilisateurs WHERE id = $1 AND organisation_id = $2",
+      [req.user.id, req.user.organisation_id || req.organisationId]
+    );
     const url = rows[0]?.ical_feed_url;
     
     if (!url) {
@@ -33,7 +36,10 @@ router.get("/events", async (req, res, next) => {
 router.put("/feed", async (req, res, next) => {
   try {
     const { ical_feed_url } = req.body;
-    await db.query("UPDATE utilisateurs SET ical_feed_url = $1 WHERE id = $2", [ical_feed_url, req.user.id]);
+    await db.query(
+      "UPDATE utilisateurs SET ical_feed_url = $1 WHERE id = $2 AND organisation_id = $3",
+      [ical_feed_url, req.user.id, req.user.organisation_id || req.organisationId]
+    );
     return res.status(200).json(ApiResponse.success("CALENDAR_URL_UPDATED", { ical_feed_url }));
   } catch (err) {
     next(err);

@@ -76,7 +76,7 @@ router.post("/batch", async (req, res, next) => {
         if (event.kind === "activity_post") {
           const payloadParsed = createActivitySchema.safeParse(event.payload);
           if (payloadParsed.success) {
-            activityPosts.push(payloadParsed.data);
+            activityPosts.push({ ...payloadParsed.data, idempotency_key: event.id });
           } else {
             errors.push({ kind: event.kind, error: payloadParsed.error.flatten() });
           }

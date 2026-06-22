@@ -3,7 +3,7 @@ const logger = require("../config/logger");
 const emailService = require("./email.service");
 const clientsService = require("./clients.service");
 const projetsService = require("./projets.service");
-const invoiceService = require("./invoice.service");
+const invoiceService = require("./invoice/invoice.service");
 
 /**
  * Définit la configuration des outils (Function Calling) pour OpenAI

@@ -6,6 +6,7 @@ const ApiResponse = require("../utils/apiResponse");
 const { getOrganisationId } = require("../utils/organisationScope");
 const { handleServiceError } = require("../utils/routeError");
 const timerService = require("../services/timer.service");
+const activityService = require("../services/activity.service");
 
 const router = express.Router();
 
@@ -23,6 +24,60 @@ router.get("/active", async (req, res, next) => {
     res.json(ApiResponse.success(code, timer));
   } catch (err) {
     return handleServiceError(err, res, next, { code: "TIMER_ACTIVE_FAILED" });
+  }
+});
+
+// SYNC STATE (Replaces frontend polling logic)
+router.get("/sync", async (req, res, next) => {
+  try {
+    const userId = req.user.id;
+    const organisationId = getOrganisationId(req);
+    
+    const timer = await timerService.getActiveTimer({ userId, organisationId });
+    if (!timer) {
+      return res.json(ApiResponse.success("SYNC_OK", { isRunning: false, activeEntry: null }));
+    }
+
+    const { 
+      idleWarningSeconds = 270, 
+      idleAutoPauseSeconds = 300, 
+      autoPauseEnabled = 'false' 
+    } = req.query;
+
+    const latestActivity = await activityService.getLatestActiveLog({ userId, organisationId });
+    
+    const isAutoPauseEnabled = autoPauseEnabled === 'true';
+    const warningSecs = Math.max(60, Number(idleWarningSeconds));
+    const autoPauseSecs = Math.max(warningSecs + 30, Number(idleAutoPauseSeconds));
+
+    if (latestActivity?.is_idle) {
+      if (isAutoPauseEnabled && latestActivity.idle_seconds >= autoPauseSecs) {
+        await timerService.stopTimer({ userId, organisationId });
+        return res.json(ApiResponse.success("TIMER_AUTO_PAUSED", { 
+          isRunning: false, 
+          activeEntry: null,
+          autoPaused: true,
+          message: "Timer mis en pause pour inactivité."
+        }));
+      }
+
+      if (latestActivity.idle_seconds >= warningSecs) {
+        return res.json(ApiResponse.success("SYNC_OK", {
+          isRunning: true,
+          activeEntry: timer,
+          idleWarning: true,
+          message: "Inactivité détectée. Vérifie si ton timer roule encore."
+        }));
+      }
+    }
+
+    return res.json(ApiResponse.success("SYNC_OK", {
+      isRunning: true,
+      activeEntry: timer,
+      idleWarning: false
+    }));
+  } catch (err) {
+    return handleServiceError(err, res, next, { code: "TIMER_SYNC_FAILED" });
   }
 });
 

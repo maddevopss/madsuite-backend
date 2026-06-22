@@ -132,6 +132,14 @@ async function createInvoiceCheckoutSession(invoice, organisation, successUrl, c
  */
 async function handleWebhook(event) {
   try {
+    const stripeReconciliationService = require("./stripeReconciliation.service");
+    const reconResult = await stripeReconciliationService.processWebhookEvent(event);
+    if (reconResult && reconResult.status !== 'ignored') {
+      // Si le webhook est géré par la nouvelle réconciliation automatisée,
+      // on n'a pas nécessairement besoin de faire le default switch.
+      // Mais on peut quand même le laisser faire son travail si on veut.
+    }
+
     switch (event.type) {
       case "checkout.session.completed": {
         const session = event.data.object;
@@ -152,42 +160,57 @@ async function handleWebhook(event) {
           const clientRef = session.client_reference_id;
           if (clientRef && clientRef.startsWith("INV_")) {
             const invoiceId = parseInt(clientRef.replace("INV_", ""), 10);
-            await db.query(
-              `UPDATE invoices SET status = 'paid', updated_at = CURRENT_TIMESTAMP WHERE id = $1`,
+
+            // Fetch the invoice to verify amount
+            const invRes = await db.query(
+              `SELECT i.*, c.email AS client_email, c.nom AS client_nom, o.id AS org_id 
+               FROM invoices i 
+               JOIN clients c ON c.id = i.client_id 
+               JOIN organisations o ON o.id = i.organisation_id 
+               WHERE i.id = $1`,
               [invoiceId]
             );
+            const inv = invRes.rows[0];
 
-            // Récupérer la facture pour l'audit
-            try {
-              const invRes = await db.query(
-                `SELECT i.*, c.email AS client_email, c.nom AS client_nom, o.id AS org_id 
-                 FROM invoices i 
-                 JOIN clients c ON c.id = i.client_id 
-                 JOIN organisations o ON o.id = i.organisation_id 
-                 WHERE i.id = $1`,
-                [invoiceId]
-              );
-              const inv = invRes.rows[0];
-              if (inv) {
-                // Log d'audit de paiement
-                const { recordBusinessAudit } = require("./auditLog.service");
-                await recordBusinessAudit({
-                  organisationId: inv.org_id,
-                  actorUserId: null,
-                  action: "invoice.paid_via_stripe",
-                  entityType: "invoice",
-                  entityId: invoiceId,
-                  details: {
-                    stripeSessionId: session.id,
-                    amount: session.amount_total,
-                    currency: session.currency,
-                  },
-                  req: null,
-                });
+            if (inv) {
+              const expectedAmount = Math.round(Number(inv.total) * 100);
+              if (session.amount_total !== expectedAmount) {
+                console.error(`Alerte de sécurité: Montant payé ${session.amount_total} != attendu ${expectedAmount} pour facture ${invoiceId}`);
+                throw new Error("Montant Stripe ne correspond pas à la facture.");
               }
-            } catch (auditErr) {
-              // Ne pas bloquer si l'audit échoue
-              console.error("Erreur audit paiement:", auditErr);
+
+              // Update status securely
+              await db.query(
+                `UPDATE invoices SET status = 'paid', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND status IN ('sent', 'draft') AND organisation_id = $2`,
+                [invoiceId, inv.org_id]
+              );
+
+              // Ledger entry for the payment
+              const { recordLedgerEntry } = require("./invoice/invoice-ledger.service");
+              await recordLedgerEntry({
+                organisationId: inv.org_id,
+                type: "payment_received",
+                amount: Number(session.amount_total) / 100, // En dollars
+                currency: session.currency || "cad",
+                referenceType: "stripe_session",
+                referenceId: session.id,
+              });
+
+              // Log d'audit de paiement
+              const { recordBusinessAudit } = require("./auditLog.service");
+              await recordBusinessAudit({
+                organisationId: inv.org_id,
+                actorUserId: null,
+                action: "invoice.paid_via_stripe",
+                entityType: "invoice",
+                entityId: invoiceId,
+                details: {
+                  stripeSessionId: session.id,
+                  amount: session.amount_total,
+                  currency: session.currency,
+                },
+                req: null,
+              });
             }
           }
         }

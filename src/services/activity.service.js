@@ -146,6 +146,7 @@ async function createBatchActiveLogs({ userId, organisationId, logs, requestId }
         log.idle_seconds || 0,
         log.activity_signature || null,
         "active",
+        log.idempotency_key || null,
       ];
 
       if (hasOrganisationId) row.push(organisationValue(organisationId));
@@ -170,11 +171,12 @@ async function createBatchActiveLogs({ userId, organisationId, logs, requestId }
       "idle_seconds",
       "activity_signature",
       "type",
+      "idempotency_key",
     ];
 
     if (hasOrganisationId) columns.push("organisation_id");
 
-    const query = `INSERT INTO activity_logs (${columns.join(", ")}) VALUES ${placeholders.join(", ")} RETURNING id`;
+    const query = `INSERT INTO activity_logs (${columns.join(", ")}) VALUES ${placeholders.join(", ")} ON CONFLICT (idempotency_key) DO NOTHING RETURNING id`;
     const result = await db.query(query, values);
     const insertedCount = result.rowCount;
 
@@ -323,11 +325,54 @@ async function getDailySummary({ userId, organisationId, dateDebut, dateFin }) {
     params,
   );
 
-  return result.rows.map((row) => ({
-    app_name: row.app_name || "Inconnu",
-    total_seconds: Number(row.total_seconds || 0),
+  const rows = result.rows.map((row) => ({
+    name: row.app_name || "Inconnu",
     category: classifyApp(row.app_name),
+    heures: Number(row.total_seconds || 0) / 3600,
   }));
+
+  const sortedRows = [...rows].sort((a, b) => b.heures - a.heures);
+  let displayRows = sortedRows;
+  
+  if (sortedRows.length > 15) {
+    const top15 = sortedRows.slice(0, 15);
+    const others = sortedRows.slice(15);
+    const othersHeures = others.reduce((acc, curr) => acc + curr.heures, 0);
+    displayRows = [...top15, { name: "Autres", category: "neutre", heures: othersHeures }];
+  }
+
+  const totalsByCategory = rows.reduce(
+    (acc, item) => {
+      acc[item.category] = (acc[item.category] || 0) + item.heures;
+      return acc;
+    },
+    { productif: 0, neutre: 0, distraction: 0 },
+  );
+
+  const totalHours = totalsByCategory.productif + totalsByCategory.neutre + totalsByCategory.distraction;
+  const productivityScore = totalHours > 0 ? (totalsByCategory.productif / totalHours) * 100 : 0;
+
+  const topProductive = rows
+    .filter((item) => item.category === "productif")
+    .sort((a, b) => b.heures - a.heures)
+    .slice(0, 5);
+
+  const topDistractions = rows
+    .filter((item) => item.category === "distraction")
+    .sort((a, b) => b.heures - a.heures)
+    .slice(0, 5);
+
+  return {
+    rows: displayRows,
+    categoryRows: [
+      { name: "Focus", heures: totalsByCategory.productif },
+      { name: "Neutre", heures: totalsByCategory.neutre },
+      { name: "Exploration", heures: totalsByCategory.distraction },
+    ],
+    productivityScore,
+    topProductive,
+    topDistractions,
+  };
 }
 
 async function updateActivityDuration({ activityId, userId, organisationId, data }) {

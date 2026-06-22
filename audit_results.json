@@ -1,0 +1,754 @@
+{
+  "safe": [
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\controllers\\invoiceController.js",
+      "line": 10
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\controllers\\timeEntryController.js",
+      "line": 31
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\jobs\\weeklyReport.js",
+      "line": 86
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\jobs\\weeklyReport.js",
+      "line": 101
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\jobs\\weeklyReport.js",
+      "line": 112
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\middleware\\requireModule.js",
+      "line": 39
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\middleware\\requireModule.js",
+      "line": 74
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\routes\\activityIntelligence.routes.js",
+      "line": 90
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\routes\\daySummary.routes.js",
+      "line": 42
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\routes\\daySummary.routes.js",
+      "line": 85
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\routes\\daySummary.routes.js",
+      "line": 193
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\routes\\modules.routes.js",
+      "line": 27
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\routes\\modules.routes.js",
+      "line": 93
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\routes\\modules.routes.js",
+      "line": 122
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\routes\\punch.routes.js",
+      "line": 20
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\routes\\punch.routes.js",
+      "line": 37
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\routes\\punch.routes.js",
+      "line": 42
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\routes\\punch.routes.js",
+      "line": 107
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\routes\\punch.routes.js",
+      "line": 169
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\activity.service.js",
+      "line": 368
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\activityIntelligence.service.js",
+      "line": 272
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\activityIntelligence.service.js",
+      "line": 400
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\ai.service.js",
+      "line": 34
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\ai.service.js",
+      "line": 249
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\ai.service.js",
+      "line": 260
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\ai.service.js",
+      "line": 268
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\ai.service.js",
+      "line": 342
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\aiTools.service.js",
+      "line": 162
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\aiTools.service.js",
+      "line": 178
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\aiTools.service.js",
+      "line": 192
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\aiTools.service.js",
+      "line": 203
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\aiTools.service.js",
+      "line": 217
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\aiTools.service.js",
+      "line": 274
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\auditLog.service.js",
+      "line": 16
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\auth.service.js",
+      "line": 16
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\clients.service.js",
+      "line": 33
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\dashboard.service.js",
+      "line": 14
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\dashboard.service.js",
+      "line": 44
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\estimate.service.js",
+      "line": 23
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\estimate.service.js",
+      "line": 155
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\estimate.service.js",
+      "line": 166
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\estimate.service.js",
+      "line": 179
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\expenses.service.js",
+      "line": 23
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\expenses.service.js",
+      "line": 109
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\hub.service.js",
+      "line": 26
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\hub.service.js",
+      "line": 36
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\hub.service.js",
+      "line": 45
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\hub.service.js",
+      "line": 54
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\hub.service.js",
+      "line": 64
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\hub.service.js",
+      "line": 70
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\hub.service.js",
+      "line": 77
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\hub.service.js",
+      "line": 82
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\hub.service.js",
+      "line": 92
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\hub.service.js",
+      "line": 98
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\invoice.service.js",
+      "line": 56
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\invoice.service.js",
+      "line": 73
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\invoice.service.js",
+      "line": 234
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\invoice.service.js",
+      "line": 694
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\invoice.service.js",
+      "line": 744
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\invoice.service.js",
+      "line": 790
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\invoice.service.js",
+      "line": 844
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\organisation.service.js",
+      "line": 80
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\portal.service.js",
+      "line": 9
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\portal.service.js",
+      "line": 35
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\portal.service.js",
+      "line": 62
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\projectDetection.service.js",
+      "line": 189
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\projectDetection.service.js",
+      "line": 240
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\projets.service.js",
+      "line": 137
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\projets.service.js",
+      "line": 151
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\projets.service.js",
+      "line": 229
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\reports.service.js",
+      "line": 120
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\stripe.service.js",
+      "line": 157
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\timer.service.js",
+      "line": 81
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\timer.service.js",
+      "line": 110
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\timer.service.js",
+      "line": 141
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\timer.service.js",
+      "line": 169
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\timer.service.js",
+      "line": 220
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\timer.service.js",
+      "line": 227
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\timer.service.js",
+      "line": 237
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\timer.service.js",
+      "line": 244
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\timer.service.js",
+      "line": 281
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\timer.service.js",
+      "line": 321
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\timesheet.service.js",
+      "line": 17
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\timesheet.service.js",
+      "line": 67
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\timesheet.service.js",
+      "line": 93
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\timesheet.service.js",
+      "line": 129
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\timesheet.service.js",
+      "line": 301
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\timesheet.service.js",
+      "line": 365
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\timesheet.service.js",
+      "line": 412
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\timesheet.service.js",
+      "line": 442
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\timesheet.service.js",
+      "line": 475
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\users.service.js",
+      "line": 26
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\users.service.js",
+      "line": 58
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\users.service.js",
+      "line": 102
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\users.service.js",
+      "line": 137
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\users.service.js",
+      "line": 169
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\users.service.js",
+      "line": 210
+    }
+  ],
+  "unsafe": [
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\controllers\\invoiceController.js",
+      "line": 21,
+      "query": "UPDATE time_entries \r        SET is_billed = true, invoice_id = $1 \r        WHERE id = ANY($2)"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\controllers\\invoiceController.js",
+      "line": 38,
+      "query": "SELECT i.*, c.name as client_name \r        FROM invoices i\r        JOIN clients c ON i.client_id = c.id\r        ORDER BY i.created_at DESC"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\middleware\\requireModule.js",
+      "line": 28,
+      "query": "SELECT plan_type FROM organisations WHERE id = $1"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\middleware\\requireModule.js",
+      "line": 66,
+      "query": "SELECT plan_type FROM organisations WHERE id = $1"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\routes\\billingAssistant.routes.js",
+      "line": 72,
+      "query": "SELECT te.*\r         FROM time_entries te\r         WHERE ${conditions.join(\" AND \")}\r         LIMIT 1"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\routes\\billingAssistant.routes.js",
+      "line": 117,
+      "query": "SELECT te.id, te.utilisateur_id, te.projet_id, te.start_time, te.end_time, te.description\r         FROM time_entries te\r         WHERE ${conditions.join(\" AND \")}\r         ORDER BY te.start_"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\routes\\calendar.routes.js",
+      "line": 9,
+      "query": "SELECT ical_feed_url FROM utilisateurs WHERE id = $1"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\routes\\calendar.routes.js",
+      "line": 36,
+      "query": "UPDATE utilisateurs SET ical_feed_url = $1 WHERE id = $2"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\routes\\modules.routes.js",
+      "line": 20,
+      "query": "SELECT plan_type FROM organisations WHERE id = $1"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\routes\\modules.routes.js",
+      "line": 37,
+      "query": "SELECT module_key, price_cents, currency FROM module_pricing"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\routes\\portal.routes.js",
+      "line": 72,
+      "query": "SELECT stripe_account_id FROM organisations WHERE id = $1"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\routes\\punch.routes.js",
+      "line": 12,
+      "query": "SELECT id, nom FROM organisations WHERE kiosk_token = $1"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\routes\\punch.routes.js",
+      "line": 72,
+      "query": "SELECT id, start_time, projet_id FROM time_entries WHERE utilisateur_id = $1 AND end_time IS NULL AND deleted_at IS NULL"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\routes\\punch.routes.js",
+      "line": 101,
+      "query": "UPDATE time_entries SET end_time = NOW() WHERE utilisateur_id = $1 AND end_time IS NULL AND deleted_at IS NULL"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\routes\\punch.routes.js",
+      "line": 135,
+      "query": "UPDATE time_entries SET end_time = NOW() WHERE utilisateur_id = $1 AND end_time IS NULL AND deleted_at IS NULL RETURNING id, end_time"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\activity.service.js",
+      "line": 23,
+      "query": "DELETE FROM activity_logs\r      WHERE utilisateur_id = $1\r        AND captured_at < NOW() - ($2::int * INTERVAL '1 day')\r        ${organisationCondition}"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\activity.service.js",
+      "line": 89,
+      "query": "INSERT INTO activity_logs (${columns.join(\", \")})\r      VALUES (${placeholders})\r      RETURNING *"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\activity.service.js",
+      "line": 262,
+      "query": "SELECT id, app_name, window_title, duration_seconds,\r             is_idle, idle_seconds, captured_at\r      FROM activity_logs\r      WHERE utilisateur_id = $1\r        AND type = 'active'\r        ${orga"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\activity.service.js",
+      "line": 281,
+      "query": "SELECT *\r      FROM activity_logs\r      WHERE utilisateur_id = $1\r        AND type = 'active'\r        ${organisationCondition}\r      ORDER BY captured_at DESC\r      LIMIT 1"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\activity.service.js",
+      "line": 311,
+      "query": "SELECT\r       ads.app_name,\r       SUM(ads.total_seconds) AS total_seconds\r     FROM activity_daily_summary ads\r     ${organisationJoin}\r     WHERE ads.utilisateur_id = $1\r       AND ads.activit"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\activity.service.js",
+      "line": 339,
+      "query": "UPDATE activity_logs\r      SET duration_seconds = COALESCE(duration_seconds, 0) + $1,\r          is_idle = $2,\r          idle_seconds = $3,\r          captured_at = CURRENT_TIMESTAMP\r      WHERE id = $4"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\activity.service.js",
+      "line": 360,
+      "query": "DELETE FROM activity_logs\r       WHERE utilisateur_id = $1\r         ${organisationCondition}"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\activityIntelligence.service.js",
+      "line": 40,
+      "query": "SELECT id, app_pattern, title_pattern, category, tag, confidence, is_productive, priority, active\r       FROM activity_app_rules\r \r       WHERE ${conditions.join(\" AND \")}\r       ORDER BY prio"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\activityIntelligence.service.js",
+      "line": 150,
+      "query": "SELECT\r       app_name,\r       COALESCE(activity_category, 'Non classé') AS activity_category,\r       COUNT(*) AS occurrences,\r       COALESCE(SUM(duration_seconds), 0) AS total_seconds,"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\activityIntelligence.service.js",
+      "line": 186,
+      "query": "SELECT *\r     FROM activity_logs\r     WHERE ${conditions.join(\" AND \")}\r     LIMIT 1"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\activityIntelligence.service.js",
+      "line": 208,
+      "query": "UPDATE activity_logs\r     SET activity_category = $1,\r         confidence_score = $2\r     WHERE ${conditions.join(\" AND \")}"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\activityIntelligence.service.js",
+      "line": 258,
+      "query": "SELECT *\r     FROM activity_app_rules\r     WHERE ${conditions.join(\" AND \")}\r     ORDER BY active DESC, priority DESC, confidence DESC, id DESC"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\activityIntelligence.service.js",
+      "line": 313,
+      "query": "SELECT *\r     FROM activity_app_rules\r     WHERE ${conditions.join(\" AND \")}\r     LIMIT 1"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\activityIntelligence.service.js",
+      "line": 358,
+      "query": "UPDATE activity_app_rules\r     SET app_pattern = $1,\r         title_pattern = $2,\r         category = $3,\r         tag = $4,\r         confidence = $5,\r         is_productive = $6,\r         prior"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\activityIntelligence.service.js",
+      "line": 385,
+      "query": "UPDATE activity_app_rules\r     SET active = false,\r         updated_at = CURRENT_TIMESTAMP\r     WHERE ${conditions.join(\" AND \")}\r     RETURNING id"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\ai.service.js",
+      "line": 102,
+      "query": "SELECT id, nom, taux_horaire FROM projets WHERE id = ANY($1)"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\billingDashboard.service.js",
+      "line": 113,
+      "query": "SELECT\r         COALESCE(SUM(${hoursExpression}), 0) AS unbilled_hours,\r         COALESCE(SUM(${amountExpression}), 0) AS total_to_invoice\r       FROM time_entries te\r       JOIN projets p ON"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\billingDashboard.service.js",
+      "line": 125,
+      "query": "SELECT COALESCE(SUM(${hoursExpression}), 0) AS billed_hours\r       FROM time_entries te\r       JOIN projets p ON p.id = te.projet_id\r       JOIN clients c ON c.id = p.client_id\r       ${makeWh"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\billingDashboard.service.js",
+      "line": 135,
+      "query": "SELECT\r         COALESCE(SUM(CASE WHEN i.status IN ('draft', 'sent', 'paid') THEN i.total ELSE 0 END), 0)\r           AS total_invoiced_this_month,\r         COALESCE(SUM(CASE WHEN i.status = 'p"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\billingDashboard.service.js",
+      "line": 148,
+      "query": "SELECT\r         c.id AS client_id,\r         c.nom AS client_nom,\r         COALESCE(SUM(${amountExpression}), 0) AS amount_to_bill,\r         COALESCE(SUM(${hoursExpression}), 0) AS hours_to_bil"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\billingDashboard.service.js",
+      "line": 165,
+      "query": "SELECT\r         p.id AS projet_id,\r         p.nom AS projet_nom,\r         c.nom AS client_nom,\r         COALESCE(SUM(${amountExpression}), 0) AS amount_to_bill,\r         COALESCE(SUM(${hoursEx"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\billingDashboard.service.js",
+      "line": 183,
+      "query": "SELECT\r         i.id,\r         i.invoice_number,\r         i.status,\r         i.issue_date,\r         i.due_date,\r         i.total,\r         c.nom AS client_nom\r       FROM invoices i\r       JOI"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\billingDashboard.service.js",
+      "line": 201,
+      "query": "SELECT\r         i.id,\r         i.invoice_number,\r         i.status,\r         i.issue_date,\r         i.due_date,\r         i.total,\r         c.nom AS client_nom\r       FROM invoices i\r       JOI"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\billingDashboard.service.js",
+      "line": 219,
+      "query": "SELECT\r         i.id,\r         i.invoice_number,\r         i.status,\r         i.issue_date,\r         i.due_date,\r         i.total,\r         c.nom AS client_nom\r       FROM invoices i\r       JOI"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\billingDashboard.service.js",
+      "line": 237,
+      "query": "SELECT\r         i.status,\r         COUNT(*) AS count,\r         COALESCE(SUM(i.total), 0) AS total\r       FROM invoices i\r       JOIN clients c ON c.id = i.client_id\r       ${makeWhere(recentIn"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\clients.service.js",
+      "line": 15,
+      "query": "SELECT * FROM clients ${where} ORDER BY created_at DESC"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\clients.service.js",
+      "line": 26,
+      "query": "SELECT * FROM clients WHERE ${conditions.join(\" AND \")}"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\clients.service.js",
+      "line": 90,
+      "query": "UPDATE clients\r     SET ${setClauses.join(\", \")}\r     WHERE ${conditions.join(\" AND \")}\r     RETURNING *"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\invoice.service.js",
+      "line": 106,
+      "query": "SELECT\r       i.id,\r       i.invoice_number,\r       i.status,\r       i.issue_date,\r       i.due_date,\r       i.subtotal,\r       i.tax_total,\r       i.total,\r       i.notes,\r       i.created_at,"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\invoice.service.js",
+      "line": 141,
+      "query": "SELECT\r       e.id,\r       e.montant as amount,\r       e.description,\r       e.date_depense as date,\r       p.nom AS projet_nom\r     FROM expenses e\r     JOIN projets p ON p.id = e.projet_id"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\invoice.service.js",
+      "line": 169,
+      "query": "SELECT\r       te.id,\r       te.projet_id,\r       p.nom AS projet_nom,\r       c.id AS client_id,\r       te.description,\r       te.start_time,\r       te.end_time,\r       p.billing_increment,"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\invoice.service.js",
+      "line": 217,
+      "query": "SELECT i.*, c.nom AS client_nom, c.email AS client_email, c.phone AS client_phone\r     FROM invoices i\r     JOIN clients c ON c.id = i.client_id\r     ${where}\r     ${orgFilter}"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\invoice.service.js",
+      "line": 641,
+      "query": "SELECT id, status, version\r       FROM invoices\r       WHERE ${conditions.join(\" AND \")}\r       FOR UPDATE"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\portal.service.js",
+      "line": 19,
+      "query": "SELECT stripe_account_id, nom FROM organisations WHERE id = $1"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\portal.service.js",
+      "line": 42,
+      "query": "SELECT nom FROM organisations WHERE id = $1"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\portal.service.js",
+      "line": 87,
+      "query": "UPDATE estimates SET status = $1, updated_at = CURRENT_TIMESTAMP${signatureClause} WHERE id = $2 RETURNING *"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\projectDetection.service.js",
+      "line": 78,
+      "query": "SELECT projet_id, keyword, COALESCE(weight, 1) AS weight\r       FROM activity_patterns\r       ${conditions.length ?"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\projets.service.js",
+      "line": 15,
+      "query": "SELECT\r       p.*,\r       c.nom AS client_nom\r     FROM projets p\r     JOIN clients c ON c.id = p.client_id\r     WHERE ${conditions.join(\" AND \")}\r     ORDER BY p.nom ASC"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\projets.service.js",
+      "line": 38,
+      "query": "SELECT p.*\r     FROM projets p\r     JOIN clients c ON c.id = p.client_id\r     WHERE ${conditions.join(\" AND \")}\r     ORDER BY p.id DESC"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\projets.service.js",
+      "line": 58,
+      "query": "SELECT id FROM clients WHERE ${conditions.join(\" AND \")}"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\projets.service.js",
+      "line": 70,
+      "query": "SELECT\r       p.*,\r       c.nom AS client_nom\r     FROM projets p\r     JOIN clients c ON c.id = p.client_id\r     WHERE ${conditions.join(\" AND \")}"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\projets.service.js",
+      "line": 206,
+      "query": "UPDATE projets\r       SET ${setClauses.join(\", \")}\r       WHERE ${conditions.join(\" AND \")}\r       RETURNING *"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\reports.service.js",
+      "line": 50,
+      "query": "SELECT\r        c.id AS client_id,\r        c.nom AS client,\r        p.id AS projet_id,\r        p.nom AS projet,\r        ROUND(AVG(COALESCE(te.hourly_rate_used, p.taux_horaire, c.hourly_rate_defaut, 0))"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\reports.service.js",
+      "line": 144,
+      "query": "SELECT *\r     FROM activity_logs\r     WHERE ${conditions.join(\" AND \")}\r     LIMIT 10"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\stripe.service.js",
+      "line": 12,
+      "query": "SELECT nom, stripe_customer_id FROM organisations WHERE id = $1"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\stripe.service.js",
+      "line": 33,
+      "query": "UPDATE organisations SET stripe_customer_id = $1 WHERE id = $2"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\stripe.service.js",
+      "line": 68,
+      "query": "SELECT stripe_account_id FROM organisations WHERE id = $1"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\stripe.service.js",
+      "line": 80,
+      "query": "UPDATE organisations SET stripe_account_id = $1 WHERE id = $2"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\stripe.service.js",
+      "line": 142,
+      "query": "UPDATE organisations               SET stripe_subscription_id = $1,                   plan_type = 'pro',                   subscription_status = 'active'              WHERE stripe_customer_id = $2"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\stripe.service.js",
+      "line": 175,
+      "query": "UPDATE invoices SET status = 'paid', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND status = 'finalized'"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\stripe.service.js",
+      "line": 215,
+      "query": "UPDATE organisations             SET plan_type = 'free',                 subscription_status = 'canceled'            WHERE stripe_customer_id = $1"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\stripe.service.js",
+      "line": 228,
+      "query": "UPDATE organisations             SET subscription_status = $1            WHERE stripe_customer_id = $2"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\stripeCheckout.service.js",
+      "line": 12,
+      "query": "SELECT price_cents, currency, description FROM module_pricing WHERE module_key = $1"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\timesheet.service.js",
+      "line": 236,
+      "query": "SELECT COUNT(*)::int AS total\r     ${fromClause}"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\timesheet.service.js",
+      "line": 249,
+      "query": "SELECT\r       te.id,\r       te.projet_id,\r       te.utilisateur_id,\r       te.description,\r       te.start_time,\r       te.end_time,\r       te.is_billed,\r       te.status,\r       te.invoice_id,"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\services\\users.service.js",
+      "line": 183,
+      "query": "UPDATE user_sessions\r        SET active = false,\r            logout_time = COALESCE(logout_time, NOW()),\r            duration_seconds = CASE\r              WHEN login_time IS NOT NULL THEN EXTRACT(EPOC"
+    },
+    {
+      "file": "t:\\Projets\\TimeMonitoring\\backend\\src\\utils\\organisationScope.js",
+      "line": 48,
+      "query": "SELECT timezone FROM organisations WHERE id = $1"
+    }
+  ]
+}

@@ -2,7 +2,7 @@ const express = require("express");
 
 const { getOrganisationId } = require("../../utils/organisationScope");
 const { handleServiceError } = require("../../utils/routeError");
-const timesheetService = require("../../services/timesheet.service");
+const timesheetService = require("../../services/timesheet/timesheet.service");
 const ApiResponse = require("../../utils/apiResponse");
 
 const router = express.Router();

@@ -1,5 +1,6 @@
 const db = require("../../db");
 const { organisationScope, organisationValue } = require("../utils/organisationScope");
+const analyticsService = require("./analytics.service");
 
 function scopedOrganisationCondition(params, organisationId) {
   return organisationScope("clients", params, organisationId).replace(/^AND\s+/, "");
@@ -48,7 +49,17 @@ async function createClient({ data, organisationId }) {
     ],
   );
 
-  return result.rows[0];
+  const client = result.rows[0];
+
+  await analyticsService.trackEvent("client_created", {
+    organisationId,
+    metadata: {
+      clientId: client.id,
+      hasEmail: !!client.email,
+    }
+  });
+
+  return client;
 }
 
 function addUpdateField({ data, field, column = field, setClauses, params }) {

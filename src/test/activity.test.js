@@ -136,7 +136,8 @@ describe("Activity", () => {
       .set("Authorization", `Bearer ${token}`);
 
     expect(res.statusCode).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
+    expect(typeof res.body).toBe("object");
+    expect(Array.isArray(res.body.rows)).toBe(true);
   });
 
   test("PATCH /api/activity/:id/duration refuse id invalide", async () => {

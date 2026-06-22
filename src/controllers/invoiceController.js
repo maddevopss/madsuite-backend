@@ -21,8 +21,8 @@ exports.createInvoice = async (req, res, next) => {
     await req.db.query(
       `UPDATE time_entries 
        SET is_billed = true, invoice_id = $1 
-       WHERE id = ANY($2)`,
-      [invoiceId, entries_ids],
+       WHERE id = ANY($2) AND organisation_id = $3`,
+      [invoiceId, entries_ids, req.organisationId],
     );
 
     await req.db.query("COMMIT");
@@ -39,7 +39,9 @@ exports.getInvoices = async (req, res, next) => {
       `SELECT i.*, c.name as client_name 
        FROM invoices i
        JOIN clients c ON i.client_id = c.id
+       WHERE i.organisation_id = $1
        ORDER BY i.created_at DESC`,
+      [req.organisationId],
     );
     return res.status(200).json(ApiResponse.success("INVOICE_LISTED", result.rows));
   } catch (err) {

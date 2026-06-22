@@ -77,4 +77,20 @@ router.post("/connect", auth, async (req, res) => {
   }
 });
 
+router.post("/reconcile", auth, async (req, res) => {
+  try {
+    if (req.user.role !== "admin") {
+      return res.status(403).json({ success: false, message: "Non autorisé" });
+    }
+
+    const reconciliationService = require("../services/stripe-reconciliation.service");
+    const result = await reconciliationService.runFullReconciliation(req.user.organisation_id);
+
+    res.json({ success: true, data: result });
+  } catch (err) {
+    console.error("Erreur stripe/reconcile:", err);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 module.exports = router;

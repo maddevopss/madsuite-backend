@@ -36,14 +36,22 @@ const billingAssistantRoutes = require("./routes/billingAssistant.routes");
 const invoicesRoutes = require("./routes/invoices.routes");
 const billingDashboardRoutes = require("./routes/billingDashboard.routes");
 const estimatesRoutes = require("./routes/estimates.routes");
+const quotesRoutes = require("./routes/quotes.routes");
 const organisationRoutes = require("./routes/organisation");
 const expensesRoutes = require("./routes/expenses.routes");
 const stripeRoutes = require("./routes/stripe.routes");
 const portalRoutes = require("./routes/portal.routes");
 const punchRoutes = require("./routes/punch.routes");
+const onboardingRoutes = require("./routes/onboarding.routes");
+const revenueRoutes = require("./routes/revenue.routes");
 const aiAssistantRoutes = require("./routes/aiAssistant.routes");
 const modulesRoutes = require("./routes/modules.routes");
 const hubRoutes = require("./routes/hub.routes");
+const cognitiveRoutes = require("./routes/cognitive.routes");
+const notificationsRoutes = require("./routes/notifications.routes");
+const analyticsRoutes = require("./routes/analytics.routes");
+const exportRoutes = require("./integrations/export/export.routes");
+const systemRoutes = require("./routes/system.routes");
 const { requireModule } = require("./middleware/requireModule");
 let compression = null;
 
@@ -169,14 +177,22 @@ app.use("/api/day-summary", auth, daySummaryRoutes);
 app.use("/api/billing-assistant", auth, requireModule("billing_assistant"), billingAssistantRoutes);
 app.use("/api/invoices", auth, requireModule("invoices"), invoicesRoutes);
 app.use("/api/billing", auth, requireModule("invoices"), billingDashboardRoutes);
+app.use("/api/revenue", auth, requireModule("invoices"), revenueRoutes);
 app.use("/api/estimates", auth, requireModule("estimates"), estimatesRoutes);
-app.use("/api/expenses", auth, expensesRoutes);
+app.use("/api/quotes", auth, requireModule("estimates"), quotesRoutes);
+app.use("/api/expenses", auth, requireModule("expenses"), expensesRoutes);
 app.use("/api/calendar", auth, require("./routes/calendar.routes"));
 app.use("/api/ai-assistant", auth, aiAssistantRoutes);
 app.use("/api/organisation", organisationRoutes);
+app.use("/api/onboarding", auth, onboardingRoutes);
 app.use("/api/organisation/modules", modulesRoutes);
 app.use("/api/hub", hubRoutes);
+app.use("/api/cognitive", auth, cognitiveRoutes);
+app.use("/api/notifications", auth, notificationsRoutes);
+app.use("/api/integrations/export", auth, exportRoutes);
+app.use("/api/analytics", auth, analyticsRoutes);
 app.use("/api/master-admin", require("./routes/master-admin.routes"));
+app.use("/api/system", auth, systemRoutes);
 
 // Routes API inconnues.
 app.use("/api", (req, res) => {

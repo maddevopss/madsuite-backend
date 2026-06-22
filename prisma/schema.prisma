@@ -110,6 +110,7 @@ model activity_logs {
   activity_category     String?             @db.VarChar(80)
   deleted_at            DateTime?           @db.Timestamptz(6)
   is_aggregated         Boolean?            @default(false)
+  idempotency_key       String?             @unique(map: "idx_activity_logs_idempotency_key") @db.VarChar(64)
   activity_feedback     activity_feedback[]
   organisations         organisations?      @relation(fields: [organisation_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
   projets               projets?            @relation(fields: [project_suggestion_id], references: [id], onUpdate: NoAction)
@@ -322,6 +323,7 @@ model invoice_items {
   invoice_id      Int
   time_entry_id   Int?
   description     String?
+  original_description String?
   quantity        Decimal        @default(0) @db.Decimal(10, 2)
   unit_rate       Decimal        @default(0) @db.Decimal(10, 2)
   amount          Decimal        @default(0) @db.Decimal(12, 2)
@@ -360,8 +362,13 @@ model invoices {
   reminders_sent   Int?            @default(0)
   last_reminder_at DateTime?       @db.Timestamptz(6)
   public_token     String?         @unique @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  version          Int             @default(1)
+  finalized_at     DateTime?       @db.Timestamptz(6)
+  snapshot         Json?
+  idempotency_key  String?         @unique @db.VarChar(100)
   expenses         expenses[]
   invoice_items    invoice_items[]
+  ai_audit_logs    ai_audit_logs[]
   utilisateurs     utilisateurs?   @relation(fields: [billed_by], references: [id], onUpdate: NoAction, map: "fk_invoices_billed_by")
   clients          clients         @relation(fields: [client_id], references: [id], onUpdate: NoAction)
   estimates        estimates?      @relation(fields: [estimate_id], references: [id], onUpdate: NoAction)
@@ -409,12 +416,16 @@ model organisations {
   expenses                      expenses[]
   invoice_items                 invoice_items[]
   invoices                      invoices[]
+  ledger_entries                ledger_entries[]
+  ai_audit_logs                 ai_audit_logs[]
   projets                       projets[]
   security_incidents_buffer     security_incidents_buffer[]
   security_incidents_buffer_old security_incidents_buffer_old[]
   time_entries                  time_entries[]
   user_sessions                 user_sessions[]
   utilisateurs                  utilisateurs[]
+  cognitiveStateEvents          cognitive_state_events[]
+  dailyCognitiveMetrics         daily_cognitive_metrics[]
 
   @@index([stripe_customer_id], map: "idx_org_stripe_customer_id")
   @@index([stripe_subscription_id], map: "idx_org_stripe_subscription_id")
@@ -424,34 +435,36 @@ model organisations {
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
 model projets {
-  id                                                           Int                      @id @default(autoincrement())
+  id                                                           Int                       @id @default(autoincrement())
   client_id                                                    Int
-  nom                                                          String                   @db.VarChar(255)
+  nom                                                          String                    @db.VarChar(255)
   description                                                  String?
-  date_fin                                                     DateTime?                @db.Date
-  budget                                                       Decimal?                 @db.Decimal(10, 2)
-  estimated_hours                                              Decimal?                 @db.Decimal(8, 2)
-  taux_horaire                                                 Decimal?                 @db.Decimal(10, 2)
-  status                                                       String?                  @default("actif") @db.VarChar(50)
-  couleur                                                      String?                  @db.VarChar(50)
-  created_at                                                   DateTime?                @default(now()) @db.Timestamptz(6)
-  updated_at                                                   DateTime?                @default(now()) @db.Timestamptz(6)
-  deleted_at                                                   DateTime?                @db.Timestamptz(6)
+  date_fin                                                     DateTime?                 @db.Date
+  budget                                                       Decimal?                  @db.Decimal(10, 2)
+  estimated_hours                                              Decimal?                  @db.Decimal(8, 2)
+  taux_horaire                                                 Decimal?                  @db.Decimal(10, 2)
+  status                                                       String?                   @default("actif") @db.VarChar(50)
+  couleur                                                      String?                   @db.VarChar(50)
+  created_at                                                   DateTime?                 @default(now()) @db.Timestamptz(6)
+  updated_at                                                   DateTime?                 @default(now()) @db.Timestamptz(6)
+  deleted_at                                                   DateTime?                 @db.Timestamptz(6)
   organisation_id                                              Int?
-  budget_hours                                                 Decimal?                 @default(0) @db.Decimal(10, 2)
-  budget_amount                                                Decimal?                 @default(0) @db.Decimal(12, 2)
-  billing_increment                                            Int?                     @default(1)
-  billing_rounding_type                                        String?                  @default("exact") @db.VarChar(10)
+  budget_hours                                                 Decimal?                  @default(0) @db.Decimal(10, 2)
+  budget_amount                                                Decimal?                  @default(0) @db.Decimal(12, 2)
+  billing_increment                                            Int?                      @default(1)
+  billing_rounding_type                                        String?                   @default("exact") @db.VarChar(10)
   activity_feedback                                            activity_feedback[]
   activity_logs                                                activity_logs[]
   activity_patterns                                            activity_patterns[]
   activity_project_cache                                       activity_project_cache[]
   expenses                                                     expenses[]
-  clients_projets_client_idToclients                           clients                  @relation("projets_client_idToclients", fields: [client_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_client")
-  clients_projets_client_id_organisation_idToclients           clients?                 @relation("projets_client_id_organisation_idToclients", fields: [client_id, organisation_id], references: [id, organisation_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_projets_client_org")
-  organisations                                                organisations?           @relation(fields: [organisation_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  time_entries_time_entries_projet_idToprojets                 time_entries[]           @relation("time_entries_projet_idToprojets")
-  time_entries_time_entries_projet_id_organisation_idToprojets time_entries[]           @relation("time_entries_projet_id_organisation_idToprojets")
+  clients_projets_client_idToclients                           clients                   @relation("projets_client_idToclients", fields: [client_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_client")
+  clients_projets_client_id_organisation_idToclients           clients?                  @relation("projets_client_id_organisation_idToclients", fields: [client_id, organisation_id], references: [id, organisation_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_projets_client_org")
+  organisations                                                organisations?            @relation(fields: [organisation_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  time_entries_time_entries_projet_idToprojets                 time_entries[]            @relation("time_entries_projet_idToprojets")
+  time_entries_time_entries_projet_id_organisation_idToprojets time_entries[]            @relation("time_entries_projet_id_organisation_idToprojets")
+  cognitiveStateEvents                                         cognitive_state_events[]
+  dailyCognitiveMetrics                                        daily_cognitive_metrics[]
 
   @@unique([id, organisation_id], map: "uq_projets_id_org")
   @@index([client_id], map: "idx_projets_client_id")
@@ -563,13 +576,13 @@ model time_entries {
   status                                                                 String?                  @default("draft") @db.VarChar(20)
   billing_ai_suggestions                                                 billing_ai_suggestions[]
   invoice_items                                                          invoice_items[]
-  projets                                                                  projets        @relation("time_entries_projet_idToprojets", fields: [projet_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_projet")
-  projets_time_entries_projet_id_organisation_idToprojets                   projets?       @relation("time_entries_projet_id_organisation_idToprojets", fields: [projet_id, organisation_id], references: [id, organisation_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_time_entries_projet_org")
-  invoices                                                                  invoices?      @relation(fields: [invoice_id, organisation_id], references: [id, organisation_id], onDelete: Restrict, onUpdate: NoAction, map: "fk_time_entries_invoice")
-  utilisateurs                                                              utilisateurs   @relation("time_entries_utilisateur_idToutilisateurs", fields: [utilisateur_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_utilisateur")
-  utilisateurs_time_entries_utilisateur_id_organisation_idToutilisateurs    utilisateurs?  @relation("time_entries_utilisateur_id_organisation_idToutilisateurs", fields: [utilisateur_id, organisation_id], references: [id, organisation_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_time_entries_user_org")
+  projets                                                                projets                  @relation("time_entries_projet_idToprojets", fields: [projet_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_projet")
+  projets_time_entries_projet_id_organisation_idToprojets                projets?                 @relation("time_entries_projet_id_organisation_idToprojets", fields: [projet_id, organisation_id], references: [id, organisation_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_time_entries_projet_org")
+  invoices                                                               invoices?                @relation(fields: [invoice_id, organisation_id], references: [id, organisation_id], onDelete: Restrict, onUpdate: NoAction, map: "fk_time_entries_invoice")
+  utilisateurs                                                           utilisateurs             @relation("time_entries_utilisateur_idToutilisateurs", fields: [utilisateur_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_utilisateur")
+  utilisateurs_time_entries_utilisateur_id_organisation_idToutilisateurs utilisateurs?            @relation("time_entries_utilisateur_id_organisation_idToutilisateurs", fields: [utilisateur_id, organisation_id], references: [id, organisation_id], onDelete: Cascade, onUpdate: NoAction, map: "fk_time_entries_user_org")
 
-  organisations                                                             organisations? @relation(fields: [organisation_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organisations organisations? @relation(fields: [organisation_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@unique([organisation_id, utilisateur_id], map: "idx_one_active_timer_per_user_org", where: raw("((end_time IS NULL) AND (deleted_at IS NULL))"))
   @@index([organisation_id, deleted_at], map: "idx_time_entries_deleted_cleanup", where: raw("(deleted_at IS NOT NULL)"))
@@ -636,6 +649,8 @@ model utilisateurs {
   time_entries_time_entries_utilisateur_idToutilisateurs                 time_entries[]                  @relation("time_entries_utilisateur_idToutilisateurs")
   user_sessions                                                          user_sessions[]
   organisations                                                          organisations?                  @relation(fields: [organisation_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_utilisateurs_organisation")
+  cognitiveStateEvents                                                   cognitive_state_events[]
+  dailyCognitiveMetrics                                                  daily_cognitive_metrics[]
 
   @@unique([id, organisation_id], map: "uq_utilisateurs_id_org")
   @@index([deleted_at], map: "idx_utilisateurs_deleted_at")
@@ -644,4 +659,76 @@ model utilisateurs {
   @@index([organisation_id, created_at(sort: Desc)], map: "idx_utilisateurs_org_created", where: raw("(deleted_at IS NULL)"))
   @@index([organisation_id, deleted_at], map: "idx_utilisateurs_org_deleted", where: raw("(deleted_at IS NULL)"))
   @@index([organisation_id, last_sync_at(sort: Desc)], map: "idx_utilisateurs_org_sync", where: raw("(deleted_at IS NULL)"))
+}
+
+model cognitive_state_events {
+  id               Int       @id @default(autoincrement())
+  utilisateur_id   Int
+  organisation_id  Int?
+  state            String    @db.VarChar(50) // 'flow', 'deep_focus', 'friction', 'fatigue'
+  started_at       DateTime  @db.Timestamptz(6)
+  ended_at         DateTime? @db.Timestamptz(6)
+  duration_minutes Int?      @default(0)
+  projet_id        Int?
+  confidence       Decimal?  @db.Decimal(5, 2)
+
+  utilisateurs  utilisateurs   @relation(fields: [utilisateur_id], references: [id], onDelete: Cascade)
+  organisations organisations? @relation(fields: [organisation_id], references: [id], onDelete: Cascade)
+  projets       projets?       @relation(fields: [projet_id], references: [id], onDelete: SetNull)
+
+  @@index([utilisateur_id, started_at])
+}
+
+model daily_cognitive_metrics {
+  id              Int      @id @default(autoincrement())
+  utilisateur_id  Int
+  organisation_id Int?
+  date            DateTime @db.Date
+
+  flow_minutes       Int @default(0)
+  deep_focus_minutes Int @default(0)
+  friction_minutes   Int @default(0)
+  fatigue_minutes    Int @default(0)
+
+  context_switches        Int @default(0)
+  longest_session_minutes Int @default(0)
+  total_focus_minutes     Int @default(0)
+
+  dominant_project_id Int?
+
+  utilisateurs  utilisateurs   @relation(fields: [utilisateur_id], references: [id], onDelete: Cascade)
+  organisations organisations? @relation(fields: [organisation_id], references: [id], onDelete: Cascade)
+  projets       projets?       @relation(fields: [dominant_project_id], references: [id], onDelete: SetNull)
+
+  @@unique([utilisateur_id, date])
+}
+
+model ledger_entries {
+  id              Int            @id @default(autoincrement())
+  organisation_id Int?
+  type            String         @db.VarChar(50)
+  amount          Decimal        @db.Decimal(12, 2)
+  currency        String         @default("CAD") @db.VarChar(3)
+  reference_type  String         @db.VarChar(50)
+  reference_id    String         @db.VarChar(255)
+  created_at      DateTime       @default(now()) @db.Timestamptz(6)
+
+  organisations   organisations? @relation(fields: [organisation_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([organisation_id, reference_type, reference_id], map: "idx_ledger_org_ref")
+}
+
+model ai_audit_logs {
+  id              Int            @id @default(autoincrement())
+  organisation_id Int?
+  invoice_id      Int
+  prompt          String
+  output          String
+  model           String         @db.VarChar(50)
+  timestamp       DateTime       @default(now()) @db.Timestamptz(6)
+
+  invoices        invoices       @relation(fields: [invoice_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  organisations   organisations? @relation(fields: [organisation_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([invoice_id], map: "idx_ai_audit_logs_invoice_id")
 }

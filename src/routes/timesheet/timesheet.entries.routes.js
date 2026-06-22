@@ -4,7 +4,7 @@ const { z } = require("zod");
 const { getOrganisationId } = require("../../utils/organisationScope");
 const { handleServiceError } = require("../../utils/routeError");
 const { idParamSchema } = require("../../validators/common.validator");
-const timesheetService = require("../../services/timesheet.service");
+const timesheetService = require("../../services/timesheet/timesheet.service");
 const ApiResponse = require("../../utils/apiResponse");
 
 const router = express.Router();

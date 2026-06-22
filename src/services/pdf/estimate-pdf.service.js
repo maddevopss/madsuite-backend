@@ -1,37 +1,15 @@
 const { jsPDF } = require("jspdf");
 const jspdfAutotable = require("jspdf-autotable");
+const { getInvoiceBranding } = require("./pdf-branding.service");
 
 const autoTable = jspdfAutotable.autoTable || jspdfAutotable.default || jspdfAutotable;
 
 function formatDate(value) {
-  return value ? new Date(value).toLocaleDateString("fr-FR") : "-";
+  return value ? new Date(value).toLocaleDateString("fr-CA") : "-";
 }
 
 function formatMoney(value, currency = "CAD") {
   return `${Number(value || 0).toFixed(2)} ${currency}`;
-}
-
-function parseBrandColor(value) {
-  const match = String(value || "").match(/^#?([0-9a-f]{6})$/i);
-
-  if (!match) return [41, 82, 155];
-
-  const hex = match[1];
-  return [0, 2, 4].map((offset) => parseInt(hex.slice(offset, offset + 2), 16));
-}
-
-function getInvoiceBranding() {
-  return {
-    name: process.env.INVOICE_BRAND_NAME || process.env.APP_NAME || "MADSuite",
-    email: process.env.INVOICE_BRAND_EMAIL || "",
-    phone: process.env.INVOICE_BRAND_PHONE || "",
-    website: process.env.INVOICE_BRAND_WEBSITE || "",
-    address: process.env.INVOICE_BRAND_ADDRESS || "",
-    taxNumbers: process.env.INVOICE_TAX_NUMBERS || "",
-    currency: process.env.INVOICE_CURRENCY || "CAD",
-    footer: process.env.INVOICE_BRAND_FOOTER || "Généré par MADSuite",
-    color: parseBrandColor(process.env.INVOICE_BRAND_COLOR),
-  };
 }
 
 function buildEstimateTableData(estimate, branding) {
@@ -106,7 +84,7 @@ function addEstimateItemsTable(doc, estimate, branding) {
     foot: [["TOTAL", "", "", formatMoney(estimate.total, branding.currency)]],
     styles: { fontSize: 8 },
     headStyles: { fillColor: branding.color },
-    footStyles: { fillColor: [230, 230, 230], fontStyle: "bold" },
+    footStyles: { fillColor: [230, 230, 230], fontStyle: "bold", textColor: [40,40,40] },
     columnStyles: {
       0: { cellWidth: 95 },
       1: { cellWidth: 25, halign: "right" },
@@ -203,7 +181,6 @@ function addEstimateTotals(doc, estimate, branding) {
     doc.setFontSize(9);
     doc.setFont(undefined, "normal");
     doc.text("Soumission acceptée par le client.", 14, currentLeftY);
-    // Si nous avons une image de signature, on pourrait l'ajouter ici
   } else if (estimate.status === "rejected") {
     doc.setFontSize(9);
     doc.setFont(undefined, "normal");
@@ -221,9 +198,9 @@ function addEstimateTotals(doc, estimate, branding) {
   }
 }
 
-function renderEstimatePdf(estimate) {
+async function generateEstimatePdfBuffer(estimate, organisationId) {
   const doc = new jsPDF();
-  const branding = getInvoiceBranding(); // On réutilise le même branding pour l'entreprise
+  const branding = await getInvoiceBranding(organisationId);
 
   addEstimateHeader(doc, estimate, branding);
   addEstimateItemsTable(doc, estimate, branding);
@@ -236,5 +213,5 @@ function renderEstimatePdf(estimate) {
 }
 
 module.exports = {
-  renderEstimatePdf,
+  generateEstimatePdfBuffer,
 };

@@ -5,7 +5,7 @@ const { requireOrganisation } = require("../middleware/organization.middleware")
 const { getOrganisationId } = require("../utils/organisationScope");
 const { handleServiceError } = require("../utils/routeError");
 const ApiResponse = require("../utils/apiResponse");
-const estimateService = require("../services/estimate.service");
+const estimateService = require("../services/estimate/estimate.service");
 const { recordBusinessAudit } = require("../services/auditLog.service");
 
 const router = express.Router();
@@ -251,6 +251,37 @@ router.post("/:id/convert", async (req, res, next) => {
     });
 
     return res.status(201).json(ApiResponse.success("ESTIMATE_CONVERTED", invoice));
+  } catch (err) {
+    return handleServiceError(err, res, next);
+  }
+});
+
+router.post("/:id/convert-project", async (req, res, next) => {
+  try {
+    if (!assertEstimateMutationRole(req, res)) return;
+
+    const estimateId = parseEstimateId(req, res);
+    if (!estimateId) return;
+
+    const project = await estimateService.convertToProject({
+      estimateId,
+      organisationId: getOrganisationId(req),
+      userId: req.user?.id ?? null,
+    });
+
+    await recordBusinessAudit({
+      organisationId: getOrganisationId(req),
+      actorUserId: req.user?.id ?? null,
+      action: "estimate.converted_to_project",
+      entityType: "estimate",
+      entityId: estimateId,
+      details: {
+        projectId: project.id,
+      },
+      req,
+    });
+
+    return res.status(201).json(ApiResponse.success("ESTIMATE_CONVERTED_TO_PROJECT", project));
   } catch (err) {
     return handleServiceError(err, res, next);
   }

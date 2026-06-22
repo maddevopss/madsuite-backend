@@ -1,7 +1,22 @@
 const request = require("supertest");
-const app = require("../app");
-const db = require("../../db");
 const jwt = require("jsonwebtoken");
+const app = require("../app");
+
+jest.mock("../../db", () => {
+  return {
+    query: jest.fn().mockResolvedValue({ rows: [], rowCount: 0 }),
+    connect: jest.fn().mockResolvedValue({
+      query: jest.fn().mockResolvedValue({ rows: [] }),
+      release: jest.fn(),
+    }),
+    pool: {
+      connect: jest.fn().mockResolvedValue({
+        query: jest.fn().mockResolvedValue({ rows: [] }),
+        release: jest.fn(),
+      }),
+    },
+  };
+});
 
 function makeToken(role = "admin") {
   return jwt.sign(
@@ -14,47 +29,35 @@ function makeToken(role = "admin") {
     { expiresIn: "1h" },
   );
 }
+
 describe("Activity summary routes", () => {
   test("GET /api/activity/summary refuse sans token", async () => {
     const res = await request(app).get("/api/activity/summary");
-
     expect(res.statusCode).toBe(401);
   });
 
   test("GET /api/activity/summary refuse sans dates", async () => {
     const token = makeToken("admin");
-
     const res = await request(app).get("/api/activity/summary").set("Authorization", `Bearer ${token}`);
-
-    expect(res.statusCode).toBe(400);
-  });
-
-  test("GET /api/activity/summary refuse sans dates", async () => {
-    const token = makeToken("admin");
-
-    const res = await request(app).get("/api/activity/summary").set("Authorization", `Bearer ${token}`);
-
     expect(res.statusCode).toBe(400);
   });
 
   test("GET /api/activity/summary refuse avec seulement date_debut", async () => {
     const token = makeToken("admin");
-
     const res = await request(app)
       .get("/api/activity/summary?date_debut=2026-05-01")
       .set("Authorization", `Bearer ${token}`);
-
     expect(res.statusCode).toBe(400);
   });
 
   test("GET /api/activity/summary accepte avec période complète", async () => {
     const token = makeToken("admin");
-
     const res = await request(app)
       .get("/api/activity/summary?date_debut=2026-05-01&date_fin=2026-05-21")
       .set("Authorization", `Bearer ${token}`);
 
     expect(res.statusCode).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
+    expect(typeof res.body).toBe("object");
+    expect(Array.isArray(res.body.rows)).toBe(true);
   });
 });

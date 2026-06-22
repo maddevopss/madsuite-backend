@@ -1,38 +1,12 @@
-const { jsPDF } = require("jspdf");
 const jspdfAutotable = require("jspdf-autotable");
-
 const autoTable = jspdfAutotable.autoTable || jspdfAutotable.default || jspdfAutotable;
 
 function formatDate(value) {
-  return value ? new Date(value).toLocaleDateString("fr-FR") : "-";
+  return value ? new Date(value).toLocaleDateString("fr-CA") : "-";
 }
 
 function formatMoney(value, currency = "CAD") {
   return `${Number(value || 0).toFixed(2)} ${currency}`;
-}
-
-function parseBrandColor(value) {
-  const match = String(value || "").match(/^#?([0-9a-f]{6})$/i);
-
-  if (!match) return [41, 82, 155];
-
-  const hex = match[1];
-  return [0, 2, 4].map((offset) => parseInt(hex.slice(offset, offset + 2), 16));
-}
-
-function getInvoiceBranding() {
-  return {
-    name: process.env.INVOICE_BRAND_NAME || process.env.APP_NAME || "MADSuite",
-    email: process.env.INVOICE_BRAND_EMAIL || "",
-    phone: process.env.INVOICE_BRAND_PHONE || "",
-    website: process.env.INVOICE_BRAND_WEBSITE || "",
-    address: process.env.INVOICE_BRAND_ADDRESS || "",
-    taxNumbers: process.env.INVOICE_TAX_NUMBERS || "",
-    currency: process.env.INVOICE_CURRENCY || "CAD",
-    paymentTerms: process.env.INVOICE_PAYMENT_TERMS || "",
-    footer: process.env.INVOICE_BRAND_FOOTER || "Genere par MADSuite",
-    color: parseBrandColor(process.env.INVOICE_BRAND_COLOR),
-  };
 }
 
 function buildInvoiceTableData(invoice, branding) {
@@ -103,12 +77,12 @@ function addInvoiceItemsTable(doc, invoice, branding) {
   autoTable(doc, {
     startY: 88,
     tableWidth: 180,
-    head: [["Description", "Projet", "Qte (h)", "Taux", "Montant"]],
+    head: [["Description", "Projet", "Qté", "Taux", "Montant"]],
     body: buildInvoiceTableData(invoice, branding),
     foot: [["TOTAL", "", "", "", formatMoney(invoice.total, branding.currency)]],
     styles: { fontSize: 8 },
     headStyles: { fillColor: branding.color },
-    footStyles: { fillColor: [230, 230, 230], fontStyle: "bold" },
+    footStyles: { fillColor: [230, 230, 230], fontStyle: "bold", textColor: [40,40,40] },
     columnStyles: {
       0: { cellWidth: 55 },
       1: { cellWidth: 40 },
@@ -220,25 +194,19 @@ function addInvoiceTotals(doc, invoice, branding, organisation) {
       doc.text(`Question: ${organisation.interac_question}`, 14, currentLeftY);
     }
   } else if (organisation && organisation.stripe_account_id) {
-    doc.text("Paiement par carte de crédit disponible via le portail client.", 14, currentLeftY);
+    doc.text("Paiement par carte de crédit disponible via le portail client ou lien sécurisé.", 14, currentLeftY);
   }
 }
 
-function renderInvoicePdf(invoice, organisation = null) {
-  const doc = new jsPDF();
-  const branding = getInvoiceBranding();
-
+function renderTemplate(doc, invoice, branding, organisation) {
   addInvoiceHeader(doc, invoice, branding);
   addInvoiceItemsTable(doc, invoice, branding);
   addInvoiceTotals(doc, invoice, branding, organisation);
 
   doc.setFontSize(8);
   doc.text(branding.footer, 14, 285);
-
-  return Buffer.from(doc.output("arraybuffer"));
 }
 
 module.exports = {
-  getInvoiceBranding,
-  renderInvoicePdf,
+  renderTemplate,
 };
