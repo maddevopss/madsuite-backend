@@ -1,11 +1,18 @@
 const nodemailer = require("nodemailer");
 const { pool } = require("../../db");
 const logger = require("../config/logger");
-const { getBullQueue } = require("../config/redis");
+// const { getBullQueue } = require("../config/redis");
 const analyticsService = require("./analytics.service");
 
 let Queue = null;
 let IORedis = null;
+
+let redis = null;
+try {
+  redis = require("../config/redis");
+} catch (e) {
+  console.warn("Redis disabled");
+}
 
 try {
   ({ Queue } = require("bullmq"));
