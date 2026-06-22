@@ -158,13 +158,14 @@ async function calculateSystemHealthScore() {
 
   const { getMissingContextCount } = require('../core/executionContext');
 
-  const result = {
-    status, // Informative only
-    execution_decision, // CANONICAL EXECUTION GATE
-    missing_context_incidents: getMissingContextCount(),
-    fails: logFails.map(f => ({ name: f.invariant_name, details: f.details })),
-    trends: trendsRes.rows
-  };
+const result = {
+  status,
+  execution_decision,
+  missing_context_incidents: getMissingContextCount(),
+  fails: logFails.map(f => ({ name: f.invariant_name, details: f.details })),
+  trends: trendsRes.rows,
+  score: scoreValue // 👈 IMPORTANT
+};
 
   // Inject score via getter to alert developers migrating the codebase
   Object.defineProperty(result, 'score', {

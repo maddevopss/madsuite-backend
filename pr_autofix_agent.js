@@ -3,115 +3,136 @@ const path = require('path');
 
 function walkDir(dir, callback) {
   if (!fs.existsSync(dir)) return;
+
   fs.readdirSync(dir).forEach(f => {
     const dirPath = path.join(dir, f);
+
     if (fs.statSync(dirPath).isDirectory()) {
-      if (f !== 'node_modules' && f !== '.git' && f !== 'dist' && f !== 'build') walkDir(dirPath, callback);
+      if (!['node_modules', '.git', 'dist', 'build'].includes(f)) {
+        walkDir(dirPath, callback);
+      }
     } else {
-      if (f.endsWith('.js') || f.endsWith('.jsx') || f.endsWith('.ts') || f.endsWith('.tsx')) callback(dirPath);
+      if (/\.(js|jsx|ts|tsx)$/.test(f)) callback(dirPath);
     }
   });
 }
 
+const ROOT_DIR = path.resolve(__dirname, '..');
 const results = [];
 
-const ROOT_DIR = path.resolve(__dirname, '..');
+function normalizeIndent(line) {
+  return line.replace(/\t/g, '  ').match(/^\s*/)[0].length;
+}
 
 walkDir(ROOT_DIR, (filePath) => {
   const content = fs.readFileSync(filePath, 'utf-8');
   const lines = content.split('\n');
-  const lineCount = lines.length;
-  
-  let complexityScore = 0;
-  let duplications = [];
+
+  const isFrontend =
+    filePath.includes('/frontend/') ||
+    filePath.includes('\\frontend\\');
+
+  let score = 0;
   let leakage = [];
   let overEngineering = [];
 
-  // 1. Détection de fuite de logique métier / UI logic leakage (surtout dans le frontend)
-  if (filePath.includes('frontend')) {
-    if (content.match(/calculate/i) || content.match(/compute/i)) {
-      complexityScore += 15;
-      leakage.push("Mots-clés de calcul (calculate/compute) détectés dans le frontend.");
+  // SAFE DETECTION LAYER (frontend logic leakage)
+  if (isFrontend) {
+    if (/\b(calculate|compute|derive)\b/i.test(content)) {
+      score += 10;
+      leakage.push("UI contains computation logic keywords.");
     }
+
     const reduceCount = (content.match(/\.reduce\(/g) || []).length;
-    if (reduceCount > 0) {
-      complexityScore += 10 * reduceCount;
-      leakage.push(`Utilisation de .reduce() (${reduceCount}x) : la logique cognitive devrait être dans le State Engine.`);
+    if (reduceCount > 3) {
+      score += 10;
+      leakage.push(`Heavy use of reduce (${reduceCount}x).`);
     }
+
     const mathCount = (content.match(/Math\./g) || []).length;
-    if (mathCount > 2) {
-      complexityScore += 10;
-      leakage.push("Trop d'opérations mathématiques. L'UI doit faire du rendering only.");
+    if (mathCount > 5) {
+      score += 10;
+      leakage.push("Excessive Math usage in UI layer.");
     }
   }
 
-  // 2. Détection de duplication et nesting
+  // STRUCTURAL COMPLEXITY
   let maxIndent = 0;
-  let indentCount = 0;
-  lines.forEach(line => {
-    const indent = line.match(/^\s*/)[0].length;
+  let deepLines = 0;
+
+  for (const line of lines) {
+    const indent = normalizeIndent(line);
     if (indent > maxIndent) maxIndent = indent;
-    if (indent >= 8) indentCount++; // Plus de 4 niveaux d'indentation (si 2 espaces/tab)
-  });
-
-  if (maxIndent >= 12 || indentCount > 20) {
-    complexityScore += 20;
-    overEngineering.push("Nesting excessif détecté (Pyramid of Doom).");
+    if (indent >= 16) deepLines++;
   }
 
-  // Conditions complexes
-  const complexConditions = (content.match(/&&.*&&.*&&/g) || []).length;
-  if (complexConditions > 0) {
-    complexityScore += 15;
-    overEngineering.push(`Conditions trop complexes (${complexConditions}x). Simplification requise.`);
+  if (maxIndent > 24 || deepLines > 15) {
+    score += 20;
+    overEngineering.push("Deep nesting detected.");
   }
 
-  // Longueur du fichier
-  if (lineCount > 300) {
-    complexityScore += 25;
-    overEngineering.push(`Fichier trop long (${lineCount} lignes). Risque de god-object.`);
+  // BOOLEAN COMPLEXITY (improved heuristic)
+  const boolOps = (content.match(/&&/g) || []).length;
+  if (boolOps > 6) {
+    score += 15;
+    overEngineering.push("High boolean chaining complexity.");
   }
 
-  if (complexityScore >= 40) {
+  // FILE SIZE
+  if (lines.length > 400) {
+    score += 25;
+    overEngineering.push(`Large file (${lines.length} lines).`);
+  }
+
+  // CLAMP SCORE (IMPORTANT)
+  score = Math.min(100, score);
+
+  if (score >= 40) {
     results.push({
       file: path.relative(ROOT_DIR, filePath),
-      score: complexityScore,
+      score,
       leakage,
-      overEngineering,
-      duplications
+      overEngineering
     });
   }
 });
 
-// Génération du rapport
-const reportLines = [];
-reportLines.push("# MADSuite — PR Auto-Fix Agent Report\n");
+// REPORT
+const report = [];
 
 if (results.length === 0) {
-  reportLines.push("### FINAL DECISION\n**AUTO MERGED**\n\nAucun fichier ne dépasse le seuil de complexité (Score < 40).");
+  report.push("# PR Auto-Fix Report\n");
+  report.push("### FINAL DECISION\nAUTO MERGED");
 } else {
-  // Trier par score décroissant
   results.sort((a, b) => b.score - a.score);
 
-  reportLines.push("### COMPLEXITY ANALYSIS\n");
-  results.forEach(r => {
-    reportLines.push(`**Fichier:** \`${r.file}\``);
-    reportLines.push(`**Score de complexité:** ${r.score}`);
-    if (r.leakage.length > 0) reportLines.push(`- **UI Logic Leakage:** ${r.leakage.join(' ')}`);
-    if (r.overEngineering.length > 0) reportLines.push(`- **Over-Engineering:** ${r.overEngineering.join(' ')}`);
-    reportLines.push('');
-  });
+  report.push("# PR Auto-Fix Report\n");
+  report.push("### COMPLEXITY ANALYSIS\n");
 
-  reportLines.push("### DUPLICATION DETECTED\n_Des patterns répétitifs ont été trouvés dans les fichiers ci-dessus._\n");
-  reportLines.push("### AUTO FIX PATCH\n_Veuillez demander à l'agent d'exécuter l'auto-fix sur le fichier cible pour générer le patch._\n");
-  
-  const maxScore = results[0].score;
-  let decision = "NEEDS REVIEW";
-  if (maxScore > 80) decision = "BLOCKED";
+  for (const r of results) {
+    report.push(`**File:** \`${r.file}\``);
+    report.push(`**Score:** ${r.score}`);
 
-  reportLines.push("### FINAL DECISION\n**" + decision + "**");
-  reportLines.push("\n_Complexity is a bug._");
+    if (r.leakage.length) {
+      report.push(`- Leakage: ${r.leakage.join(' ')}`);
+    }
+
+    if (r.overEngineering.length) {
+      report.push(`- Complexity: ${r.overEngineering.join(' ')}`);
+    }
+
+    report.push('');
+  }
+
+  const max = results[0].score;
+  const decision = max > 80 ? "BLOCKED" : "NEEDS REVIEW";
+
+  report.push("### FINAL DECISION\n**" + decision + "**");
 }
 
-fs.writeFileSync(path.join(ROOT_DIR, 'pr_autofix_report.md'), reportLines.join('\n'));
-console.log("Analyse PR Auto-Fix terminée. Rapport généré.");
+fs.writeFileSync(
+  path.join(ROOT_DIR, 'pr_autofix_report.md'),
+  report.join('\n')
+);
+
+console.log("Analyse terminée.");
