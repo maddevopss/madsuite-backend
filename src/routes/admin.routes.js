@@ -1,9 +1,10 @@
 const express = require("express");
 const router = express.Router();
-const { requireAdmin } = require("../middleware/auth");
+const auth = require("../middleware/auth");
+const requireAdmin = require("../middleware/requireAdmin");
 const CacheService = require("../services/cache.service");
 
-router.post("/cache/invalidate", requireAdmin, (req, res) => {
+router.post("/cache/invalidate", auth, requireAdmin, (req, res) => {
   const { pattern } = req.body;
 
   if (!pattern) {
