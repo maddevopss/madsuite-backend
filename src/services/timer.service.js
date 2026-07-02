@@ -310,6 +310,12 @@ async function getTodayProjects({ userId, organisationId }) {
 }
 
 async function updateActiveTimerNote({ userId, organisationId, note }) {
+  // ═══════════════════════════════════════════════════════════════
+  // SINGLE SOURCE OF TRUTH — timer notes
+  // ONLY PATCH /api/timer/active/note may call this function.
+  // Activity routes, event processors, etc. MUST NOT mutate timer state.
+  // If you are here from /activity/* → this is an architectural violation.
+  // ═══════════════════════════════════════════════════════════════
   requireOrganisation(organisationId);
 
   if (typeof note !== "string") {

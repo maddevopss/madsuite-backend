@@ -1,4 +1,5 @@
 const bcrypt = require("bcrypt");
+const crypto = require("crypto");
 const db = require("../../db");
 const { hasColumn } = require("../utils/dbSchema");
 const {
@@ -11,6 +12,10 @@ const {
   hashToken,
   verifyJwt,
 } = require("./authTokens");
+const analyticsService = require("./analytics.service");
+const logger = require("../config/logger");
+// P1-8 fix: Utiliser BCRYPT_SALT_ROUNDS depuis config/security.js (12 en prod, 10 en dev)
+const { BCRYPT_SALT_ROUNDS } = require("../config/security");
 
 async function findUserByEmail(email) {
   const result = await db.query(
@@ -369,13 +374,13 @@ async function signupUser({ organisation_nom, user_nom, email, password, req }) 
       VALUES ($1, NOW() + INTERVAL '14 days')
       RETURNING id, nom
       `,
-      [organisation_nom]
+      [organisation_nom],
     );
 
     const organisation = orgResult.rows[0];
 
-    // 2. Hash password
-    const passwordHash = await bcrypt.hash(password, 10);
+    // 2. Hash password — P1-8 fix: utiliser BCRYPT_SALT_ROUNDS (12 en prod)
+    const passwordHash = await bcrypt.hash(password, BCRYPT_SALT_ROUNDS);
 
     // 3. Create user
     const userResult = await client.query(
@@ -384,7 +389,7 @@ async function signupUser({ organisation_nom, user_nom, email, password, req }) 
       VALUES ($1, $2, $3, 'admin', $4, 'admin')
       RETURNING id, nom, email, role, organisation_id
       `,
-      [user_nom, email, passwordHash, organisation.id]
+      [user_nom, email, passwordHash, organisation.id],
     );
 
     const user = userResult.rows[0];
@@ -393,6 +398,17 @@ async function signupUser({ organisation_nom, user_nom, email, password, req }) 
     const session = await createAuthSession(client, user, req);
 
     await client.query("COMMIT");
+
+    // Funnel instrumentation
+    try {
+      await analyticsService.trackEvent("signup_completed", {
+        organisationId: organisation.id,
+        userId: user.id,
+        metadata: { source: "self_serve" },
+      });
+    } catch (e) {
+      logger.warn("Failed to track signup_completed", e.message);
+    }
 
     return {
       accessToken: session.accessToken,
@@ -424,3 +440,43 @@ module.exports = {
   refreshSession,
   logoutSession,
 };
+
+
+// async function forgotPassword(email) {
+//   const user =
+//     await usersRepository.findByEmail(email);
+
+//   // Anti-enumeration
+//   if (!user) {
+//     return;
+//   }
+
+//   const token = crypto
+//     .randomBytes(32)
+//     .toString("hex");
+
+//   const tokenHash = hashToken(token);
+
+//   const expiresAt = new Date(
+//     Date.now() + 15 * 60 * 1000
+//   );
+
+//   await createResetToken(
+//     user.id,
+//     tokenHash,
+//     expiresAt
+//   );
+
+//   await emailService.sendResetPasswordEmail(
+//     user.email,
+//     token
+//   );
+
+//   await auditLogRepository.create({
+//     orgId: user.organisation_id,
+//     actorId: user.id,
+//     action: "PASSWORD_RESET_REQUESTED",
+//     targetType: "USER",
+//     targetId: user.id
+//   });
+// }

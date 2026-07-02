@@ -3,6 +3,7 @@ const router = express.Router();
 const portalService = require("../services/portal.service");
 const { generateInvoicePdf } = require("../services/invoice/invoice.service");
 const db = require("../../db");
+const logger = require("../config/logger");
 
 router.get("/:token", async (req, res) => {
   try {
@@ -12,7 +13,8 @@ router.get("/:token", async (req, res) => {
     }
     res.json(data);
   } catch (error) {
-    console.error("Erreur GET portal:", error);
+    // P2-3 fix: Utiliser logger structuré au lieu de console.error
+    logger.error("Erreur GET portal", { error: error.message, token: req.params.token });
     res.status(500).json({ message: "Erreur serveur" });
   }
 });
@@ -24,7 +26,8 @@ router.post("/:token/action", async (req, res) => {
     const result = await portalService.handleEstimateAction(req.params.token, action, signature_data, clientIp);
     res.json({ success: true, document: result });
   } catch (error) {
-    console.error("Erreur POST portal action:", error);
+    // P2-3 fix: Utiliser logger structuré au lieu de console.error
+    logger.error("Erreur POST portal action", { error: error.message, token: req.params.token });
     res.status(error.statusCode || 400).json({ message: error.message });
   }
 });
@@ -48,7 +51,8 @@ router.get("/:token/pdf", async (req, res) => {
       return res.status(404).json({ message: "PDF indisponible pour ce type de document." });
     }
   } catch (error) {
-    console.error("Erreur GET portal PDF:", error);
+    // P2-3 fix: Utiliser logger structuré au lieu de console.error
+    logger.error("Erreur GET portal PDF", { error: error.message, token: req.params.token });
     res.status(500).json({ message: "Erreur lors de la génération du PDF" });
   }
 });
@@ -92,7 +96,8 @@ router.post("/:token/checkout", async (req, res) => {
 
     res.json({ success: true, url: sessionUrl });
   } catch (error) {
-    console.error("Erreur POST portal checkout:", error);
+    // P2-3 fix: Utiliser logger structuré au lieu de console.error
+    logger.error("Erreur POST portal checkout", { error: error.message, token: req.params.token });
     res.status(500).json({ message: error.message });
   }
 });

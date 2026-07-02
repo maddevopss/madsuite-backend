@@ -29,9 +29,17 @@ describe("MetricsAggregationJob", () => {
       }]
     });
 
+    // Mock pour calculateTimeToFirstInvoice
+    db.query.mockResolvedValueOnce({
+      rows: [{
+        avg_minutes: "120.5",
+        sample_size: "50"
+      }]
+    });
+
     const metrics = await metricsAggregationJob.calculateMetrics(30);
 
-    expect(db.query).toHaveBeenCalledTimes(1);
+    expect(db.query).toHaveBeenCalledTimes(2);
     expect(metrics).toEqual({
       monthly_active_accounts: 100,
       activation_rate: 80.5,
@@ -39,7 +47,9 @@ describe("MetricsAggregationJob", () => {
       first_payment_rate: 25.0,
       recurring_adoption_rate: 10.0,
       quote_conversion_rate: 40.0,
-      invoice_paid_after_dunning_rate: 15.0
+      invoice_paid_after_dunning_rate: 15.0,
+      ttfi_minutes: 120.5,
+      ttfi_sample_size: 50
     });
   });
 
@@ -56,9 +66,19 @@ describe("MetricsAggregationJob", () => {
       }]
     });
 
+    // Mock pour calculateTimeToFirstInvoice
+    db.query.mockResolvedValueOnce({
+      rows: [{
+        avg_minutes: "120.5",
+        sample_size: "50"
+      }]
+    });
+
     const metrics = await metricsAggregationJob.run();
 
     expect(db.query).toHaveBeenCalledWith(expect.any(String), [30]);
     expect(metrics.monthly_active_accounts).toBe(100);
+    expect(metrics.ttfi_minutes).toBe(120.5);
+    expect(metrics.ttfi_sample_size).toBe(50);
   });
 });

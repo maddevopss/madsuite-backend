@@ -4,6 +4,7 @@ const emailService = require("./email.service");
 const clientsService = require("./clients.service");
 const projetsService = require("./projets.service");
 const invoiceService = require("./invoice/invoice.service");
+const { recordBusinessAudit } = require("./auditLog.service");
 
 /**
  * Définit la configuration des outils (Function Calling) pour OpenAI
@@ -135,19 +136,39 @@ async function executeToolCall(toolCall, organisationId) {
     }
   }
 
+  // Outils en écriture : audit trail obligatoire avant exécution.
+  const WRITE_TOOLS = ["create_client", "create_project", "create_invoice", "send_invoice_reminders"];
+  const isWriteTool = WRITE_TOOLS.includes(functionName);
+
   try {
+    let result;
     switch (functionName) {
-      case "get_unpaid_invoices": return await getUnpaidInvoices(organisationId);
-      case "get_top_clients": return await getTopClients(organisationId);
-      case "get_monthly_revenue": return await getMonthlyRevenue(organisationId);
-      case "get_projects_summary": return await getProjectsSummary(organisationId);
-      case "search_clients": return await searchClients(organisationId, args.name);
-      case "create_client": return await createClientTool(organisationId, args);
-      case "create_project": return await createProjectTool(organisationId, args);
-      case "create_invoice": return await createInvoiceTool(organisationId, args);
-      case "send_invoice_reminders": return await sendInvoiceRemindersTool(organisationId, args.invoice_ids);
+      case "get_unpaid_invoices": result = await getUnpaidInvoices(organisationId); break;
+      case "get_top_clients": result = await getTopClients(organisationId); break;
+      case "get_monthly_revenue": result = await getMonthlyRevenue(organisationId); break;
+      case "get_projects_summary": result = await getProjectsSummary(organisationId); break;
+      case "search_clients": result = await searchClients(organisationId, args.name); break;
+      case "create_client": result = await createClientTool(organisationId, args); break;
+      case "create_project": result = await createProjectTool(organisationId, args); break;
+      case "create_invoice": result = await createInvoiceTool(organisationId, args); break;
+      case "send_invoice_reminders": result = await sendInvoiceRemindersTool(organisationId, args.invoice_ids); break;
       default: return { error: `L'outil ${functionName} n'est pas reconnu.` };
     }
+
+    // Audit trail pour toutes les actions en écriture de l'IA (non-bloquant).
+    if (isWriteTool) {
+      recordBusinessAudit({
+        organisationId,
+        actorUserId: null, // Action IA — pas d'utilisateur direct
+        action: `ai_copilot.${functionName}`,
+        entityType: "ai_tool",
+        entityId: null,
+        details: { args, result: result?.success ? "success" : "unknown" },
+        req: null,
+      }).catch((e) => logger.warn("Audit trail IA échoué (non-bloquant)", { error: e.message, functionName }));
+    }
+
+    return result;
   } catch (error) {
     logger.error(`Erreur lors de l'exécution de l'outil IA ${functionName}`, error);
     return { error: `Erreur: ${error.message}` };

@@ -46,8 +46,8 @@ router.post("/:id/convert", async (req, res, next) => {
       entityType: "estimate", // Quote = Estimate in db
       entityId: quoteId,
       details: {
-        invoiceId: invoice.id,
-        invoiceNumber: invoice.invoice_number,
+      invoiceId: invoice.id,
+      invoiceNumber: invoice.invoice_number,
       },
       req,
     });

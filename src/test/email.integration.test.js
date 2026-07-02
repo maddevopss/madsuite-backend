@@ -1,8 +1,14 @@
 const nodemailer = require("nodemailer");
+const db = require("../../db");
 const { sendResetPasswordEmail } = require("../services/email.service"); // Ajuste le chemin
 
 // On mocke nodemailer
 jest.mock("nodemailer");
+
+// On mocke db
+jest.mock("../../db", () => ({
+  query: jest.fn().mockResolvedValue({ rows: [] })
+}));
 
 describe("Email Integration Service", () => {
   let sendMailMock;
@@ -21,8 +27,9 @@ describe("Email Integration Service", () => {
   test("doit appeler sendMail avec les bons paramètres de destination", async () => {
     const destination = "client@example.com";
     const token = "fake-jwt-token";
+    const idempotency_key = "test-idempotency-key-123";
 
-    await sendResetPasswordEmail(destination, token);
+    await sendResetPasswordEmail(destination, token, idempotency_key);
 
     expect(sendMailMock).toHaveBeenCalledWith(
       expect.objectContaining({

@@ -1,8 +1,14 @@
 const Stripe = require("stripe");
 const db = require("../../db");
+const { applyStripePlanUpdate } = require("./organisation.service");
+const analyticsService = require("./analytics.service");
 
-// Initialisation de Stripe (utiliser une clé secrète via env)
-const stripeSecretKey = process.env.STRIPE_SECRET_KEY || "sk_test_placeholder";
+// Initialisation de Stripe — STRIPE_SECRET_KEY est obligatoire en production.
+// Fail-fast si absent pour éviter d'utiliser une clé invalide silencieusement.
+const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+if (!stripeSecretKey) {
+  throw new Error("STRIPE_SECRET_KEY est requis. Vérifiez votre fichier .env.");
+}
 const stripe = Stripe(stripeSecretKey);
 
 /**
@@ -147,14 +153,34 @@ async function handleWebhook(event) {
           const customerId = session.customer;
           const subscriptionId = session.subscription;
           
-          await db.query(
-            `UPDATE organisations 
-             SET stripe_subscription_id = $1, 
-                 plan_type = 'pro', 
-                 subscription_status = 'active'
-             WHERE stripe_customer_id = $2`,
-            [subscriptionId, customerId]
+          // Only trusted Stripe path may change plan_type (P0 #3 enforcement)
+          const orgRes = await db.query(
+            "SELECT id FROM organisations WHERE stripe_customer_id = $1",
+            [customerId]
           );
+          if (orgRes.rows[0]) {
+            const orgId = orgRes.rows[0].id;
+
+            // Check current to make tracking more idempotent (avoid duplicate on webhook retry)
+            const current = await db.query("SELECT plan_type FROM organisations WHERE id = $1", [orgId]);
+            const wasAlreadyPro = current.rows[0]?.plan_type === 'pro';
+
+            await applyStripePlanUpdate({
+              organisationId: orgId,
+              planType: "pro",
+              subscriptionId,
+              status: "active",
+            });
+
+            if (!wasAlreadyPro) {
+              try {
+                await analyticsService.trackEvent("subscription_active", {
+                  organisationId: orgId,
+                  metadata: { subscriptionId, source: "checkout.session.completed" }
+                });
+              } catch (e) { /* non blocking */ }
+            }
+          }
         } else if (session.mode === "payment") {
           // Paiement d'une facture
           const clientRef = session.client_reference_id;
@@ -220,13 +246,17 @@ async function handleWebhook(event) {
         const subscription = event.data.object;
         const customerId = subscription.customer;
 
-        await db.query(
-          `UPDATE organisations 
-           SET plan_type = 'free', 
-               subscription_status = 'canceled'
-           WHERE stripe_customer_id = $1`,
+        const orgRes = await db.query(
+          "SELECT id FROM organisations WHERE stripe_customer_id = $1",
           [customerId]
         );
+        if (orgRes.rows[0]) {
+          await applyStripePlanUpdate({
+            organisationId: orgRes.rows[0].id,
+            planType: "free",
+            status: "canceled",
+          });
+        }
         break;
       }
       case "customer.subscription.updated": {

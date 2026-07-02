@@ -1,6 +1,7 @@
 CREATE TABLE IF NOT EXISTS metrics_snapshot (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  organisation_id UUID NOT NULL REFERENCES organisations(id) ON DELETE CASCADE,
+  organisation_id INTEGER NOT NULL REFERENCES organisations(id) ON DELETE CASCADE,
+
   date DATE NOT NULL DEFAULT CURRENT_DATE,
   mrr NUMERIC(10, 2) DEFAULT 0,
   revenue_month NUMERIC(10, 2) DEFAULT 0,

@@ -228,27 +228,14 @@ async function runDataPurge(pool) {
     const message = `Purge terminée : ${logsCount} logs, ${summaryCount} résumés, ${auditCount} audits, ${resSessions.rowCount} sessions, ${tokensCount} tokens, ${securityIncidentsCount} incidents sécu, ${resCache.rowCount} signatures cache et ${softDeleteCount} éléments supprimés définitivement.`;
     logger.info(message);
 
-    // Injection massive en une seule requête pour économiser les tokens/ressources
-    await client.query(
-      `
-      INSERT INTO business_audit_logs 
-        (organisation_id, action, entity_type, entity_id, details, created_at)
-      SELECT 
-        id, 
-        'system.purge_executed', 
-        'system', 
-        0, 
-        $1::jsonb, 
-        NOW()
-      FROM organisations
-    `,
-      [
-        JSON.stringify({
-          message,
-          stats: { logsCount, summaryCount, auditCount, tokensCount, securityIncidentsCount, softDeleteCount },
-        }),
-      ],
-    );
+    // FIX P2 (audit multi-tenant 2026-06-24) :
+    // L'ancienne implémentation insérait les statistiques de purge GLOBALES dans les
+    // business_audit_logs de TOUTES les organisations, permettant à un admin de voir
+    // le volume de données des autres organisations.
+    // Correction : on log uniquement dans Winston (logs système), pas dans les audit logs applicatifs.
+    logger.info("Purge globale — statistiques système", {
+      stats: { logsCount, summaryCount, auditCount, tokensCount, securityIncidentsCount, softDeleteCount },
+    });
   } catch (err) {
     logger.error(`Erreur lors de la purge des données (dataRetention job): ${err?.message || err}`, {
       error: err?.message,

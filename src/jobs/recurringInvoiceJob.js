@@ -14,13 +14,20 @@ async function processRecurringInvoices() {
     await client.query("BEGIN");
 
     // 1. Trouver les factures récurrentes à émettre aujourd'hui
+    // FIX P2 (audit multi-tenant 2026-06-24) :
+    // Ajout de AND r.organisation_id IS NOT NULL et vérification cross-org
+    // r.organisation_id = i.organisation_id pour éviter le clonage cross-tenant
+    // si template_invoice_id pointe vers une facture d'une autre organisation.
     const query = `
       SELECT r.*, i.notes, i.subtotal, i.tax_total, i.total, c.email as client_email
       FROM recurring_invoices r
       JOIN invoices i ON r.template_invoice_id = i.id
+        AND r.organisation_id = i.organisation_id
       JOIN clients c ON r.client_id = c.id
+        AND r.organisation_id = c.organisation_id
       WHERE r.status = 'active'
         AND r.next_issue_date <= CURRENT_DATE
+        AND r.organisation_id IS NOT NULL
       FOR UPDATE OF r SKIP LOCKED
     `;
     const recurrences = await client.query(query);

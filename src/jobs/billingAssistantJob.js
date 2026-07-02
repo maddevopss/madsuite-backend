@@ -13,6 +13,9 @@ async function processReminders() {
     await client.query("BEGIN");
 
     // 1. Relances des factures en retard (Soft Dunning)
+    // FIX P2 (audit multi-tenant 2026-06-24) :
+    // Ajout du filtre AND i.organisation_id IS NOT NULL pour garantir
+    // qu'aucune facture orpheline (sans organisation) ne soit traitée.
     const overdueInvoicesQuery = `
       SELECT i.*, c.email as client_email,
       EXTRACT(DAY FROM (CURRENT_DATE - i.due_date)) as days_overdue
@@ -22,6 +25,7 @@ async function processReminders() {
         AND i.due_date < CURRENT_DATE
         AND i.reminders_sent < 3
         AND i.deleted_at IS NULL
+        AND i.organisation_id IS NOT NULL
       FOR UPDATE SKIP LOCKED
     `;
     const overdueInvoices = await client.query(overdueInvoicesQuery);

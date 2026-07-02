@@ -22,6 +22,21 @@ module.exports = {
     return rows;
   },
 
+  async getTasks(orgId) {
+    const { rows } = await db.query('SELECT * FROM tasks WHERE organisation_id = $1 ORDER BY start_time DESC', [orgId]);
+    return rows;
+  },
+
+  async getQuotes(orgId) {
+    const { rows } = await db.query('SELECT * FROM quotes WHERE organisation_id = $1 ORDER BY created_at DESC', [orgId]);
+    return rows;
+  },
+
+  async getPayments(orgId) {
+    const { rows } = await db.query('SELECT * FROM payments WHERE organisation_id = $1 ORDER BY paid_at DESC', [orgId]);
+    return rows;
+  },
+
   async createProject(orgId, { name, description }) {
     const { rows } = await db.query(
       `INSERT INTO projects (organisation_id, name, description, created_at)

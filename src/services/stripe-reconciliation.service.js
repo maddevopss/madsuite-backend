@@ -2,6 +2,7 @@ const { stripe } = require("./stripe.service");
 const db = require("../../db");
 const { recordLedgerEntry } = require("./invoice/invoice-ledger.service");
 const { recordBusinessAudit } = require("./auditLog.service");
+const { applyStripePlanUpdate } = require("./organisation.service");
 
 class StripeReconciliationService {
   /**
@@ -42,14 +43,12 @@ class StripeReconciliationService {
 
     if (activeSub) {
       const planType = activeSub.status === 'active' || activeSub.status === 'trialing' ? 'pro' : 'free';
-      await db.query(
-        `UPDATE organisations 
-         SET stripe_subscription_id = $1, 
-             plan_type = $2, 
-             subscription_status = $3
-         WHERE id = $4`,
-        [activeSub.id, planType, activeSub.status, organisationId]
-      );
+      await applyStripePlanUpdate({
+        organisationId,
+        planType,
+        subscriptionId: activeSub.id,
+        status: activeSub.status,
+      });
       return { status: 'updated', planType, stripeStatus: activeSub.status };
     }
 

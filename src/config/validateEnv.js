@@ -1,7 +1,10 @@
 // Validation stricte des variables d'environnement requises.
 // Objectif: echouer tot avec des messages clairs, sans exposer de secrets.
 
+// P0-4 / Recommandation 7.7: FRONTEND_URL requis en production pour éviter le fallback CORS wildcard.
+// En dev/test, la variable est optionnelle.
 const requiredEnvVars = ["NODE_ENV", "JWT_SECRET"];
+const requiredProdEnvVars = ["FRONTEND_URL"];
 
 function fail(message) {
   console.error(`ENV: ${message}`);
@@ -83,6 +86,17 @@ function validateEnv() {
   validatePositiveInt("DB_CONNECTION_TIMEOUT_MS", process.env.DB_CONNECTION_TIMEOUT_MS);
   validatePositiveInt("LONG_TIMER_THRESHOLD_HOURS", process.env.LONG_TIMER_THRESHOLD_HOURS);
   validatePositiveInt("ACTIVITY_LOG_RETENTION_DAYS", process.env.ACTIVITY_LOG_RETENTION_DAYS);
+
+  // P0-4 / Recommandation 7.7: Valider FRONTEND_URL en production
+  if (nodeEnv === "production") {
+    const missingProd = requiredProdEnvVars.filter((envVar) => {
+      const value = process.env[envVar];
+      return value === undefined || value === "";
+    });
+    if (missingProd.length > 0) {
+      fail(`variables requises en production manquantes: ${missingProd.join(", ")}`);
+    }
+  }
 
   console.log("ENV validees");
 }

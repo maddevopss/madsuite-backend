@@ -3,6 +3,10 @@
 /**
  * Socket.io configuration for real‑time synchronization of the Smart Work‑Flow Hub.
  * The server instance is attached to the Express app in app.js (see note).
+ *
+ * SECURITY FIX (P0-3, P1-7):
+ * - user.organisationId → user.organisation_id (JWT uses snake_case)
+ * - Suppression du log du cookie complet (fuite de refresh_token)
  */
 
 const jwt = require("jsonwebtoken");
@@ -45,30 +49,25 @@ module.exports = (io) => {
       socket.user = decoded;
       next();
     } catch (err) {
+      // P1-7 fix: Ne pas logger le cookie complet (contient le refresh_token httpOnly)
       return next(new Error("Authentication error: Token invalide ou expiré"));
     }
-    console.log("Socket auth failed:", {
-      token: !!token,
-      cookie: socket.handshake.headers.cookie,
-    });
   });
 
   hubNs.on("connection", (socket) => {
     const user = socket.user;
 
-    if (!user?.organisationId) {
-      console.log("Missing organisationId, disconnecting");
+    // P0-3 fix: utiliser organisation_id (snake_case, cohérent avec le JWT)
+    if (!user?.organisation_id) {
       return socket.disconnect(true);
     }
 
-    const orgRoom = `org_${user.organisationId}`;
-
-    console.log(`Hub socket connected: user ${user.id}, org ${user.organisationId}`);
+    const orgRoom = `org_${user.organisation_id}`;
 
     socket.join(orgRoom);
 
     socket.on("disconnect", () => {
-      console.log("Hub socket disconnected");
+      // Pas de log de données sensibles ici
     });
 
     socket.on("hub:timer:update", (payload) => {

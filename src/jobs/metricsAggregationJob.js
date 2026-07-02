@@ -8,87 +8,87 @@ class MetricsAggregationJob {
   async calculateMetrics(days = 30) {
     const query = `
       WITH recent_events AS (
-        SELECT organisation_id, event_name, metadata
+        SELECT organisation_id, event_name
         FROM analytics_events
         WHERE created_at >= NOW() - INTERVAL '1 day' * $1
       ),
-      orgs_stats AS (
-        SELECT 
-          organisation_id,
-          COUNT(*) FILTER (WHERE event_name = 'client_created') > 0 AS has_created_client,
-          COUNT(*) FILTER (WHERE event_name = 'invoice_sent') > 0 AS has_sent_invoice,
-          COUNT(*) FILTER (WHERE event_name = 'invoice_paid') > 0 AS has_paid_invoice,
-          COUNT(*) FILTER (WHERE event_name = 'recurring_enabled') > 0 AS has_recurring
+      counts AS (
+        SELECT
+          COUNT(*) FILTER (WHERE event_name = 'signup_completed') AS signups,
+          COUNT(*) FILTER (WHERE event_name = 'onboarding_completed') AS onboarding_completed,
+          COUNT(*) FILTER (WHERE event_name IN ('first_invoice_created', 'invoice_created')) AS first_invoice,
+          COUNT(*) FILTER (WHERE event_name = 'checkout_started') AS checkout_started,
+          COUNT(*) FILTER (WHERE event_name = 'subscription_active') AS subscription_active
         FROM recent_events
-        GROUP BY organisation_id
-      ),
-      totals AS (
-        SELECT 
-          COUNT(*) AS total_active_orgs,
-          COUNT(*) FILTER (WHERE has_created_client) AS activated_orgs,
-          COUNT(*) FILTER (WHERE has_sent_invoice) AS invoiced_orgs,
-          COUNT(*) FILTER (WHERE has_paid_invoice) AS paid_orgs,
-          COUNT(*) FILTER (WHERE has_recurring) AS recurring_orgs
-        FROM orgs_stats
-      ),
-      quote_stats AS (
-        SELECT 
-          COUNT(*) FILTER (WHERE event_name = 'quote_accepted') AS total_accepted,
-          COUNT(*) FILTER (WHERE event_name = 'quote_converted') AS total_converted
-        FROM recent_events
-      ),
-      dunning_stats AS (
-        SELECT 
-          (metadata->>'invoiceId') AS invoice_id,
-          MAX(CASE WHEN event_name = 'dunning_triggered' THEN 1 ELSE 0 END) AS was_dunned,
-          MAX(CASE WHEN event_name = 'invoice_paid' THEN 1 ELSE 0 END) AS was_paid
-        FROM recent_events
-        WHERE event_name IN ('dunning_triggered', 'invoice_paid')
-        GROUP BY metadata->>'invoiceId'
-      ),
-      dunning_agg AS (
-        SELECT 
-          COUNT(*) FILTER (WHERE was_dunned = 1) AS total_dunned,
-          COUNT(*) FILTER (WHERE was_dunned = 1 AND was_paid = 1) AS paid_after_dunning
-        FROM dunning_stats
       )
-      SELECT 
-        t.total_active_orgs,
-        
-        -- Activation Rate: Orgs who created a client / Total active orgs
-        CASE WHEN t.total_active_orgs > 0 THEN ROUND((t.activated_orgs::numeric / t.total_active_orgs) * 100, 2) ELSE 0 END AS activation_rate,
-        
-        -- First Invoice Sent Rate: Orgs who sent an invoice / Orgs who created a client
-        CASE WHEN t.activated_orgs > 0 THEN ROUND((t.invoiced_orgs::numeric / t.activated_orgs) * 100, 2) ELSE 0 END AS first_invoice_sent_rate,
-        
-        -- First Payment Rate: Orgs who received a payment / Orgs who sent an invoice
-        CASE WHEN t.invoiced_orgs > 0 THEN ROUND((t.paid_orgs::numeric / t.invoiced_orgs) * 100, 2) ELSE 0 END AS first_payment_rate,
-        
-        -- Recurring Adoption Rate: Orgs using recurring / Orgs who received a payment
-        CASE WHEN t.paid_orgs > 0 THEN ROUND((t.recurring_orgs::numeric / t.paid_orgs) * 100, 2) ELSE 0 END AS recurring_adoption_rate,
-        
-        -- Quote Conversion Rate: Quotes converted / Quotes accepted
-        CASE WHEN q.total_accepted > 0 THEN ROUND((q.total_converted::numeric / q.total_accepted) * 100, 2) ELSE 0 END AS quote_conversion_rate,
-        
-        -- Invoice Paid After Dunning Rate
-        CASE WHEN d.total_dunned > 0 THEN ROUND((d.paid_after_dunning::numeric / d.total_dunned) * 100, 2) ELSE 0 END AS invoice_paid_after_dunning_rate
-        
-      FROM totals t
-      CROSS JOIN quote_stats q
-      CROSS JOIN dunning_agg d;
+      SELECT * FROM counts;
     `;
 
     const result = await db.query(query, [days]);
-    const row = result.rows[0];
+    const row = result.rows[0] || {
+      signups: 0,
+      onboarding_completed: 0,
+      first_invoice: 0,
+      checkout_started: 0,
+      subscription_active: 0
+    };
+
+    const signups = parseInt(row.signups, 10);
+    const onboarding = parseInt(row.onboarding_completed, 10);
+    const firstInv = parseInt(row.first_invoice, 10);
+    const checkout = parseInt(row.checkout_started, 10);
+    const subs = parseInt(row.subscription_active, 10);
+
+    const onboardingPct = signups > 0 ? Math.round((onboarding / signups) * 100) : 0;
+    const firstInvPct = signups > 0 ? Math.round((firstInv / signups) * 100) : 0;
+    const checkoutPct = firstInv > 0 ? Math.round((checkout / firstInv) * 100) : 0;
+    const paidPct = signups > 0 ? Math.round((subs / signups) * 100) : 0;
+
+    const ttfi = await this.calculateTimeToFirstInvoice(days);
 
     return {
-      monthly_active_accounts: parseInt(row.total_active_orgs, 10),
-      activation_rate: parseFloat(row.activation_rate),
-      first_invoice_sent_rate: parseFloat(row.first_invoice_sent_rate),
-      first_payment_rate: parseFloat(row.first_payment_rate),
-      recurring_adoption_rate: parseFloat(row.recurring_adoption_rate),
-      quote_conversion_rate: parseFloat(row.quote_conversion_rate),
-      invoice_paid_after_dunning_rate: parseFloat(row.invoice_paid_after_dunning_rate)
+      signups,
+      onboarding_completed: onboarding,
+      onboarding_pct: onboardingPct,
+      first_invoice: firstInv,
+      first_invoice_pct: firstInvPct,
+      checkout_started: checkout,
+      checkout_pct: checkoutPct,
+      subscription_active: subs,
+      paid_pct: paidPct,
+      ttfi_minutes: Math.round((ttfi.avg_minutes || 0) * 10) / 10,
+      ttfi_sample_size: ttfi.sample_size || 0
+    };
+  }
+
+  /**
+   * Compute average Time To First Invoice in minutes
+   */
+  async calculateTimeToFirstInvoice(days = 30) {
+    const query = `
+      SELECT 
+        COALESCE(AVG(EXTRACT(EPOCH FROM (fi.first_invoice - sc.signup)) / 60), 0) AS avg_minutes,
+        COUNT(*) AS sample_size
+      FROM (
+        SELECT organisation_id, MIN(created_at) AS signup
+        FROM analytics_events
+        WHERE event_name = 'signup_completed'
+          AND created_at >= NOW() - INTERVAL '1 day' * $1
+        GROUP BY organisation_id
+      ) sc
+      JOIN (
+        SELECT organisation_id, MIN(created_at) AS first_invoice
+        FROM analytics_events
+        WHERE event_name IN ('first_invoice_created', 'invoice_created')
+          AND created_at >= NOW() - INTERVAL '1 day' * $1
+        GROUP BY organisation_id
+      ) fi USING (organisation_id)
+    `;
+
+    const res = await db.query(query, [days]);
+    return {
+      avg_minutes: parseFloat(res.rows[0]?.avg_minutes || 0),
+      sample_size: parseInt(res.rows[0]?.sample_size || 0, 10)
     };
   }
 

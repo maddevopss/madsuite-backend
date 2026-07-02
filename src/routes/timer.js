@@ -151,6 +151,8 @@ router.get("/today-projects", async (req, res, next) => {
 });
 
 // UPDATE NOTE ON ACTIVE TIMER
+// THIS IS THE SINGLE SOURCE OF TRUTH for time_entries.note
+// Activity layer (and any other module) MUST NOT write to timer notes.
 router.patch("/active/note", async (req, res, next) => {
   try {
     const updated = await timerService.updateActiveTimerNote({

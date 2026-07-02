@@ -201,7 +201,7 @@ Utilise le formatage Markdown pour tes réponses.`
       max_tokens: 1000,
       tools: tools,
       tool_choice: "auto",
-    });
+    }, { timeout: 30000 }); // 30s timeout pour éviter les requêtes bloquées indéfiniment
 
     let responseMessage = completion.choices[0].message;
 
@@ -339,8 +339,10 @@ Réponds STRICTEMENT sous format JSON:
     
     const results = parsed.results || [];
     for (const res of results) {
+       // P2-8 fix: Suppression de OR organisation_id IS NULL — ne modifier que les enregistrements
+       // appartenant strictement à l'organisation courante.
        await db.query(
-         `UPDATE activity_logs SET activity_category = $1, confidence_score = 85 WHERE id = $2 AND (organisation_id = $3 OR organisation_id IS NULL)`,
+         `UPDATE activity_logs SET activity_category = $1, confidence_score = 85 WHERE id = $2 AND organisation_id = $3`,
          [res.category, res.id, organisationId]
        );
     }

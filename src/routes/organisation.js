@@ -47,7 +47,8 @@ router.get("/retention", auth, requireRole("admin"), requireOrganisation, async 
  */
 router.get("/audit-logs", auth, requireRole("admin"), requireOrganisation, async (req, res) => {
   try {
-    const limit = parseInt(req.query.limit) || 20;
+    // P2-1 fix: Borner limit à 100 max pour éviter l'extraction massive en une requête
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
     const page = parseInt(req.query.page) || 1;
     const offset = (page - 1) * limit;
     const { email, action } = req.query;

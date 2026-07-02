@@ -59,6 +59,22 @@ async function createClient({ data, organisationId }) {
     }
   });
 
+  // Funnel: detect first client
+  try {
+    const countRes = await db.query(
+      "SELECT COUNT(*) FROM clients WHERE organisation_id = $1",
+      [organisationId]
+    );
+    if (parseInt(countRes.rows[0].count, 10) === 1) {
+      await analyticsService.trackEvent("first_client_created", {
+        organisationId,
+        metadata: { clientId: client.id }
+      });
+    }
+  } catch (e) {
+    // non blocking
+  }
+
   return client;
 }
 

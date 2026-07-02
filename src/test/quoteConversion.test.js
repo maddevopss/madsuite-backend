@@ -3,15 +3,21 @@ const express = require("express");
 const db = require("../../db");
 const quoteConversionService = require("../services/quoteConversion.service");
 
+const { requireOrganisation } = require("../middleware/organization.middleware");
+const { getOrganisationId } = require("../utils/organisationScope");
+const { handleServiceError } = require("../utils/routeError");
+const ApiResponse = require("../utils/apiResponse");
+
 jest.mock("../../db", () => {
   const queryMock = jest.fn();
+  const mockClient = {
+    query: queryMock,
+    release: jest.fn()
+  };
   return {
     query: queryMock,
     pool: { 
-      connect: jest.fn().mockResolvedValue({
-        query: queryMock,
-        release: jest.fn()
-      })
+      connect: jest.fn().mockResolvedValue(mockClient)
     }
   };
 });
@@ -53,7 +59,10 @@ describe("Quote Conversion", () => {
       db.query.mockResolvedValueOnce({ rowCount: 1, rows: [] });
 
       const res = await request(app).post("/api/quotes/5/convert");
-
+      
+      if (res.statusCode !== 201) {
+        console.log(res.body);
+      }     
       expect(res.statusCode).toBe(201);
       expect(res.body.success).toBe(true);
       expect(res.body.data.id).toBe(100);

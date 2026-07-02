@@ -2,7 +2,7 @@ const db = require("../../../db");
 const { organisationValue } = require("../../utils/organisationScope");
 const { recordBusinessAudit } = require("../auditLog.service");
 const analyticsService = require("../analytics.service");
-const { getStrictMode } = require("../../core/executionContext");
+const { getStrictMode, getContext } = require("../../core/executionContext");
 
 // Modules Délégués
 const { getInvoiceById, listInvoices, listUnbilledEntries, listUnbilledExpenses, getPortalLink } = require("./invoice-query.service");
@@ -30,7 +30,12 @@ async function createInvoiceFromEntries({
   const requestedEntryIds = [...new Set(timeEntryIds || [])];
   const requestedExpenseIds = [...new Set(expenseIds || [])];
   const txClient = await db.pool.connect();
+  const ctx = getContext();
+  const finalOrgId = organisationId || ctx.organisation_id;
   
+  if (!finalOrgId && process.env.NODE_ENV === 'test') {
+    throw new Error('createInvoiceFromEntries: No organisation_id provided and ALS context missing');
+  }
   try {
     await txClient.query("BEGIN");
 
@@ -203,6 +208,23 @@ async function createInvoiceFromEntries({
         isFromEstimate: false
       }
     });
+
+    // Funnel instrumentation - first invoice
+    try {
+      const countRes = await txClient.query(
+        "SELECT COUNT(*) FROM invoices WHERE organisation_id = $1",
+        [organisationId]
+      );
+      if (parseInt(countRes.rows[0].count, 10) === 1) {
+        await analyticsService.trackEvent("first_invoice_created", {
+          organisationId,
+          userId: billedBy,
+          metadata: { invoiceId: invoice.id }
+        });
+      }
+    } catch (e) {
+      // non-blocking
+    }
 
     return invoice;
   } catch (err) {

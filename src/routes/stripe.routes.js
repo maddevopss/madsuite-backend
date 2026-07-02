@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const stripeService = require("../services/stripe.service");
 const auth = require("../middleware/auth");
+const analyticsService = require("../services/analytics.service");
 
 // Nécessaire pour Stripe Webhooks (doit parser le raw body)
 // Ce middleware spécifique est généralement configuré au niveau de app.js, 
@@ -12,8 +13,10 @@ router.post(
   express.raw({ type: "application/json" }),
   async (req, res) => {
     const sig = req.headers["stripe-signature"];
-    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET || "whsec_placeholder";
-
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+if (!webhookSecret) {
+  throw new Error("STRIPE_WEBHOOK_SECRET must be set");
+}
     let event;
 
     try {
@@ -42,6 +45,15 @@ router.post("/create-checkout-session", auth, async (req, res, next) => {
     if (req.user.role !== "admin") {
       return res.status(403).json({ success: false, message: "Non autorisé" });
     }
+
+    // Backend-only tracking for checkout_started (idempotent at analytics level if needed)
+    try {
+      await analyticsService.trackEvent("checkout_started", {
+        organisationId: req.user.organisation_id,
+        userId: req.user.id,
+        metadata: { type: "subscription" }
+      });
+    } catch (e) { /* non-blocking */ }
 
     const sessionUrl = await stripeService.createSubscriptionCheckoutSession(
       req.user.organisation_id,

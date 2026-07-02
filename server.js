@@ -84,9 +84,38 @@ async function shutdown(signal) {
  * Sets up CORS and loads socket handlers
  */
 function initializeSocket(server) {
+  // P0-4 fix: Fail-secure si FRONTEND_URL absent en production.
+  // En dev/test, on autorise localhost par confort.
+  const isProd = process.env.NODE_ENV === "production";
+  const frontendUrl = process.env.FRONTEND_URL;
+
+  if (isProd && !frontendUrl) {
+    throw new Error("FATAL: FRONTEND_URL est requis en production pour la configuration CORS Socket.IO. Déploiement bloqué.");
+  }
+
+  // Réutilise la même logique whitelist que config/cors.js
+  const allowedOrigins = [
+    ...(isProd
+      ? []
+      : ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3001", "http://127.0.0.1:3001"]),
+    frontendUrl,
+    process.env.ELECTRON_URL,
+    "https://madsuite.vercel.app",
+    process.env.VERCEL_FRONTEND_URL,
+  ].filter(Boolean);
+
   io = new Server(server, {
     cors: {
-      origin: process.env.FRONTEND_URL || "*",
+      origin: (origin, callback) => {
+        // Non-browser requests: autoriser.
+        if (!origin) return callback(null, true);
+        const isVercelPreview = origin.endsWith(".vercel.app");
+        const isWww = origin === "https://www.madsuite.ca" || origin === "https://madsuite.ca";
+        if (!allowedOrigins.includes(origin) && !isVercelPreview && !isWww) {
+          return callback(new Error(`Socket.IO CORS refusé pour origine: ${origin}`));
+        }
+        return callback(null, true);
+      },
       methods: ["GET", "POST"],
       credentials: true,
     },
@@ -111,11 +140,23 @@ async function start() {
   try {
     console.log("🚀 Démarrage du serveur...");
 
-    // 1. Run database migrations
+    // 1. Run database migrations (idempotent runner)
+    // IMPORTANT: This was previously commented out (risk of new envs, dev/prod drift, hard diagnostics).
+    // The runner (runMigrations.js) is designed to be safe:
+    // - Uses schema_migration_lock to prevent concurrent runs
+    // - Handles baseline snapshot for empty DBs
+    // - Skips already-applied migrations
+    // - Calls assertRuntimeSchema and selective preflight
+    // We now run it on every start for reliability.
+    // Escape hatch: SKIP_MIGRATIONS=1
     console.log("📦 Exécution des migrations...");
-    // await runMigrations({
-    //   backup: process.env.ENABLE_DB_BACKUP === "1",
-    // });
+    if (process.env.SKIP_MIGRATIONS !== "1") {
+      await runMigrations({
+        backup: process.env.ENABLE_DB_BACKUP === "1",
+      });
+    } else {
+      console.log("⏭️  SKIP_MIGRATIONS=1 → migrations sautées");
+    }
     console.log("✅ Migrations terminées");
 
     // 2. Create HTTP server
@@ -185,6 +226,8 @@ process.on("unhandledRejection", (reason, promise) => {
   console.error("❌ Promise rejetée non gérée:", reason);
   shutdown("UNHANDLED_REJECTION").catch(console.error);
 });
+
+process.env.NODE_ENV = process.env.NODE_ENV || "development";
 
 // Start the application
 start();

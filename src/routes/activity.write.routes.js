@@ -138,7 +138,7 @@ router.post("/batch", async (req, res, next) => {
     // Check active timer for TDAH Nudges
     const activeTimer = await timerService.getActiveTimer({ userId, organisationId });
 
-    return res.status(200).json({ success: true, processed, errors, hasActiveTimer: !!activeTimer });
+    return res.status(200).json({ success: true, processed, failed: errors, hasActiveTimer: !!activeTimer, timestamp: new Date().toISOString() });
   } catch (err) {
     logger.error(`[${requestId}] Batch activity failed`, {
       error: err.message,
@@ -307,5 +307,9 @@ router.patch("/:id/duration", async (req, res, next) => {
     next(err);
   }
 });
+
+// NOTE: Timer notes are exclusively handled by PATCH /api/timer/active/note
+// Activity layer must remain read-only / observability only for timer state.
+// Do NOT add any mutation paths to time_entries.* here.
 
 module.exports = router;

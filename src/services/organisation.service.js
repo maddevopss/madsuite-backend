@@ -2,11 +2,14 @@ const db = require("../../db");
 
 /**
  * Récupère les paramètres de rétention d'une organisation
+ * 
+ * P0 SECURITY: kiosk_token est retiré du SELECT. 
+ * Ce token doit rester secret et ne jamais être exposé via API.
  */
 async function getOrganisationSettings(organisationId) {
   const query = `
     SELECT id, nom, retention_activity_logs_days, retention_summary_days, retention_audit_logs_days,
-           interac_email, interac_question, kiosk_token
+           interac_email, interac_question
     FROM organisations 
     WHERE id = $1;
   `;
@@ -54,6 +57,8 @@ async function getOrganisationAuditLogsForExport(organisationId, email = null, a
 
 /**
  * Met à jour les politiques de rétention d'une organisation
+ * 
+ * P0 SECURITY: kiosk_token est retiré du RETURNING clause
  */
 async function updateOrganisationRetention(organisationId, data, userId) {
   const { retention_activity_logs_days, retention_summary_days, retention_audit_logs_days, interac_email, interac_question } = data;
@@ -68,7 +73,7 @@ async function updateOrganisationRetention(organisationId, data, userId) {
       interac_question = COALESCE($5, interac_question),
       updated_at = NOW()
     WHERE id = $6
-    RETURNING id, nom, retention_activity_logs_days, retention_summary_days, retention_audit_logs_days, interac_email, interac_question, kiosk_token;
+    RETURNING id, nom, retention_activity_logs_days, retention_summary_days, retention_audit_logs_days, interac_email, interac_question;
   `;
 
   const values = [retention_activity_logs_days, retention_summary_days, retention_audit_logs_days, interac_email, interac_question, organisationId];
@@ -86,9 +91,127 @@ async function updateOrganisationRetention(organisationId, data, userId) {
   return res.rows[0];
 }
 
+/**
+ * Apply plan change coming from Stripe (webhook or reconciliation).
+ * THIS IS THE ONLY AUTOMATED PATH allowed to mutate plan_type on organisations.
+ *
+ * Manual / support changes must go through a documented + audited admin procedure
+ * (and should be logged).
+ */
+async function applyStripePlanUpdate({ organisationId, planType, subscriptionId = null, status = null }) {
+  if (!organisationId || !planType) {
+    throw new Error("organisationId and planType are required for applyStripePlanUpdate");
+  }
+
+  const allowedPlans = ["free", "pro", "enterprise"];
+  if (!allowedPlans.includes(planType)) {
+    throw new Error(`Invalid planType: ${planType}`);
+  }
+
+  const updateParams = [planType];
+  let setSql = "plan_type = $1";
+  let paramIndex = 2;
+
+  if (subscriptionId) {
+    setSql += `, stripe_subscription_id = $${paramIndex++}`;
+    updateParams.push(subscriptionId);
+  }
+  if (status) {
+    setSql += `, subscription_status = $${paramIndex++}`;
+    updateParams.push(status);
+  }
+
+  updateParams.push(organisationId);
+
+  await db.query(
+    `UPDATE organisations SET ${setSql} WHERE id = $${paramIndex}`,
+    updateParams
+  );
+
+  // Mandatory audit trail
+  await db.query(
+    `INSERT INTO business_audit_logs (organisation_id, actor_user_id, action, entity_type, entity_id, details)
+     VALUES ($1, NULL, 'plan_type_updated_via_stripe', 'organisation', $1, $2::jsonb)`,
+    [organisationId, JSON.stringify({ plan_type: planType, source: "stripe" })]
+  );
+}
+
+/**
+ * Platform-level: list all organisations (for administrateur)
+ * 
+ * P0 SECURITY: kiosk_token est retiré du SELECT (ne doit jamais être exposé)
+ */
+async function listAllOrganisations() {
+  const res = await db.query(`
+    SELECT id, nom, created_at, plan_type, trial_ends_at
+    FROM organisations
+    ORDER BY created_at DESC
+  `);
+  return res.rows;
+}
+
+/**
+ * Platform-level: create a basic organisation (administrateur)
+ */
+async function createOrganisation({ nom }) {
+  if (!nom || nom.trim().length < 2) {
+    const err = new Error("Nom d'organisation requis (min 2 caractères)");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const res = await db.query(
+    `INSERT INTO organisations (nom, trial_ends_at) 
+     VALUES ($1, NOW() + INTERVAL '14 days') 
+     RETURNING id, nom, created_at, plan_type`,
+    [nom.trim()]
+  );
+
+  return res.rows[0];
+}
+
+/**
+ * Platform-level: update organisation (e.g. rename)
+ */
+async function updateOrganisation(organisationId, { nom }) {
+  if (!organisationId) {
+    const err = new Error("ID organisation requis");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const fields = [];
+  const values = [];
+  let idx = 1;
+
+  if (nom && nom.trim()) {
+    fields.push(`nom = $${idx++}`);
+    values.push(nom.trim());
+  }
+
+  if (fields.length === 0) {
+    return null;
+  }
+
+  fields.push(`updated_at = NOW()`);
+  values.push(organisationId);
+
+  const res = await db.query(
+    `UPDATE organisations SET ${fields.join(", ")} WHERE id = $${idx} 
+     RETURNING id, nom, created_at, plan_type`,
+    values
+  );
+
+  return res.rows[0] || null;
+}
+
 module.exports = {
   updateOrganisationRetention,
   getOrganisationSettings,
   getOrganisationAuditLogs,
   getOrganisationAuditLogsForExport,
+  applyStripePlanUpdate,
+  listAllOrganisations,
+  createOrganisation,
+  updateOrganisation,
 };

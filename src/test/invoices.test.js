@@ -1,5 +1,6 @@
 const jwt = require("jsonwebtoken");
 const request = require("supertest");
+const { runWithContext } = require("../core/executionContext");
 
 const mockAutoTable = jest.fn((doc, options) => {
   mockAutoTable.lastOptions = options;
@@ -113,6 +114,33 @@ async function createFixture() {
 }
 
 describe("invoices.routes", () => {
+
+test("POST /api/invoices crée une facture", async () => {
+  const fixture = await createFixture();
+
+  const entry = await createBillableEntry({
+    ...fixture,
+    description: "Facture ALS",
+    isBilled: false,
+  });
+
+  const res = await runWithContext(
+    { organisation_id: fixture.organisation.id },
+    async () => {
+      return request(app)
+        .post("/api/invoices")
+        .set("Authorization", `Bearer ${fixture.token}`)
+        .send({
+          client_id: fixture.client.id,
+          time_entry_ids: [entry.id],
+          tax_rate: 15,
+        });
+    }
+  );
+
+  expect(res.status).toBe(201);
+});
+
   test("GET /api/invoices liste les factures de l'organisation", async () => {
     const fixture = await createFixture();
     const invoice = await createInvoice(fixture.client.id, {

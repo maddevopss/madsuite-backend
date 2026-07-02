@@ -4,9 +4,18 @@ const { recordLedgerEntry } = require("../services/invoice/invoice-ledger.servic
 const { recordBusinessAudit } = require("../services/auditLog.service");
 
 // Mock dependencies
-jest.mock("../../db", () => ({
-  query: jest.fn()
-}));
+jest.mock("../../db", () => {
+  const mockClient = {
+    query: jest.fn(),
+    release: jest.fn()
+  };
+  return {
+    query: jest.fn(),
+    pool: {
+      connect: jest.fn().mockResolvedValue(mockClient)
+    }
+  };
+});
 jest.mock("../services/invoice/invoice-ledger.service", () => ({
   recordLedgerEntry: jest.fn()
 }));

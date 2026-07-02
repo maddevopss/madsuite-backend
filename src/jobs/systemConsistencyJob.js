@@ -2,18 +2,18 @@ const { pool } = require("../../db");
 const logger = require("../config/logger");
 
 const highSeverityInvariants = [
-  'invoice_immutability_lock',
-  'invoice_idempotency',
-  'append_only_ledger',
-  'invoice_paid_implies_ledger_entry',
-  'stripe_payment_propagation',
-  'auto_sent_recurring_invoices',
-  'recurring_generation_atomicity',
-  'dunning_only_for_overdue_invoices',
-  'mrr_snapshot_consistency',
-  'outbox_at_least_once_delivery',
-  'outbox_concurrent_processing_protection',
-  'outbox_stuck_event_recovery'
+  "invoice_immutability_lock",
+  "invoice_idempotency",
+  "append_only_ledger",
+  "invoice_paid_implies_ledger_entry",
+  "stripe_payment_propagation",
+  "auto_sent_recurring_invoices",
+  "recurring_generation_atomicity",
+  "dunning_only_for_overdue_invoices",
+  "mrr_snapshot_consistency",
+  "outbox_at_least_once_delivery",
+  "outbox_concurrent_processing_protection",
+  "outbox_stuck_event_recovery",
 ];
 
 async function logConsistencyResult(invariantName, status, details = null) {
@@ -21,16 +21,21 @@ async function logConsistencyResult(invariantName, status, details = null) {
     await pool.query(
       `INSERT INTO system_consistency_logs (invariant_name, status, details) 
        VALUES ($1, $2, $3)`,
-      [invariantName, status, details ? JSON.stringify(details) : null]
+      [invariantName, status, details ? JSON.stringify(details) : null],
     );
 
-    if (status === 'FAIL' && highSeverityInvariants.includes(invariantName)) {
-      await pool.query(`
-        INSERT INTO notifications (organisation_id, utilisateur_id, type, message)
-        SELECT organisation_id, id, 'system_alert', $1 
-        FROM utilisateurs 
-        WHERE role = 'admin'
-      `, [`HIGH SEVERITY INVARIANT FAILED: ${invariantName}. Check system health immediately.`]);
+    // FIX P1 (audit multi-tenant 2026-06-24) :
+    // Les notifications HIGH SEVERITY étaient envoyées à TOUS les admins de TOUTES
+    // les organisations (WHERE role = 'admin' sans filtre org), exposant des informations
+    // de cohérence système globale aux admins d'organisations clientes.
+    // Correction : log Winston uniquement. Les super-admins plateforme consultent
+    // la santé système via GET /api/system/health (restreint à requireSuperAdmin).
+    if (status === "FAIL" && highSeverityInvariants.includes(invariantName)) {
+      logger.error(`[SystemConsistency] HIGH SEVERITY INVARIANT FAILED: ${invariantName}`, {
+        invariantName,
+        status,
+        details,
+      });
     }
   } catch (err) {
     logger.error(`Error logging consistency result for ${invariantName}`, err);
@@ -51,12 +56,12 @@ async function runSystemConsistencyCheck() {
       LIMIT 10
     `);
     if (res1.rows.length > 0) {
-      await logConsistencyResult('invoice_immutability_lock', 'FAIL', { violations: res1.rows });
+      await logConsistencyResult("invoice_immutability_lock", "FAIL", { violations: res1.rows });
     } else {
-      await logConsistencyResult('invoice_immutability_lock', 'PASS');
+      await logConsistencyResult("invoice_immutability_lock", "PASS");
     }
   } catch (err) {
-    await logConsistencyResult('invoice_immutability_lock', 'ERROR', { error: err.message });
+    await logConsistencyResult("invoice_immutability_lock", "ERROR", { error: err.message });
   }
 
   // 2. invoice_idempotency
@@ -70,12 +75,12 @@ async function runSystemConsistencyCheck() {
       LIMIT 10
     `);
     if (res2.rows.length > 0) {
-      await logConsistencyResult('invoice_idempotency', 'FAIL', { violations: res2.rows });
+      await logConsistencyResult("invoice_idempotency", "FAIL", { violations: res2.rows });
     } else {
-      await logConsistencyResult('invoice_idempotency', 'PASS');
+      await logConsistencyResult("invoice_idempotency", "PASS");
     }
   } catch (err) {
-    await logConsistencyResult('invoice_idempotency', 'ERROR', { error: err.message });
+    await logConsistencyResult("invoice_idempotency", "ERROR", { error: err.message });
   }
 
   // 3. estimate_to_invoice_propagation
@@ -88,16 +93,18 @@ async function runSystemConsistencyCheck() {
       LIMIT 10
     `);
     if (res3.rows.length > 0) {
-      await logConsistencyResult('estimate_to_invoice_propagation', 'FAIL', { violations: res3.rows });
+      await logConsistencyResult("estimate_to_invoice_propagation", "FAIL", { violations: res3.rows });
     } else {
-      await logConsistencyResult('estimate_to_invoice_propagation', 'PASS');
+      await logConsistencyResult("estimate_to_invoice_propagation", "PASS");
     }
   } catch (err) {
-    await logConsistencyResult('estimate_to_invoice_propagation', 'ERROR', { error: err.message });
+    await logConsistencyResult("estimate_to_invoice_propagation", "ERROR", { error: err.message });
   }
 
   // 4. append_only_ledger
-  await logConsistencyResult('append_only_ledger', 'WARNING', { message: 'Cannot be statically verified without database triggers or audit logs.' });
+  await logConsistencyResult("append_only_ledger", "WARNING", {
+    message: "Cannot be statically verified without database triggers or audit logs.",
+  });
 
   // 5. invoice_paid_implies_ledger_entry
   try {
@@ -109,12 +116,12 @@ async function runSystemConsistencyCheck() {
       LIMIT 10
     `);
     if (res5.rows.length > 0) {
-      await logConsistencyResult('invoice_paid_implies_ledger_entry', 'FAIL', { violations: res5.rows });
+      await logConsistencyResult("invoice_paid_implies_ledger_entry", "FAIL", { violations: res5.rows });
     } else {
-      await logConsistencyResult('invoice_paid_implies_ledger_entry', 'PASS');
+      await logConsistencyResult("invoice_paid_implies_ledger_entry", "PASS");
     }
   } catch (err) {
-    await logConsistencyResult('invoice_paid_implies_ledger_entry', 'ERROR', { error: err.message });
+    await logConsistencyResult("invoice_paid_implies_ledger_entry", "ERROR", { error: err.message });
   }
 
   // 6. stripe_webhook_idempotency
@@ -128,12 +135,12 @@ async function runSystemConsistencyCheck() {
       LIMIT 10
     `);
     if (res6.rows.length > 0) {
-      await logConsistencyResult('stripe_webhook_idempotency', 'FAIL', { violations: res6.rows });
+      await logConsistencyResult("stripe_webhook_idempotency", "FAIL", { violations: res6.rows });
     } else {
-      await logConsistencyResult('stripe_webhook_idempotency', 'PASS');
+      await logConsistencyResult("stripe_webhook_idempotency", "PASS");
     }
   } catch (err) {
-    await logConsistencyResult('stripe_webhook_idempotency', 'ERROR', { error: err.message });
+    await logConsistencyResult("stripe_webhook_idempotency", "ERROR", { error: err.message });
   }
 
   // 7. stripe_payment_propagation
@@ -146,12 +153,12 @@ async function runSystemConsistencyCheck() {
       LIMIT 10
     `);
     if (res7.rows.length > 0) {
-      await logConsistencyResult('stripe_payment_propagation', 'FAIL', { violations: res7.rows });
+      await logConsistencyResult("stripe_payment_propagation", "FAIL", { violations: res7.rows });
     } else {
-      await logConsistencyResult('stripe_payment_propagation', 'PASS');
+      await logConsistencyResult("stripe_payment_propagation", "PASS");
     }
   } catch (err) {
-    await logConsistencyResult('stripe_payment_propagation', 'ERROR', { error: err.message });
+    await logConsistencyResult("stripe_payment_propagation", "ERROR", { error: err.message });
   }
 
   // 8. auto_sent_recurring_invoices
@@ -163,16 +170,18 @@ async function runSystemConsistencyCheck() {
       LIMIT 10
     `);
     if (res8.rows.length > 0) {
-      await logConsistencyResult('auto_sent_recurring_invoices', 'FAIL', { violations: res8.rows });
+      await logConsistencyResult("auto_sent_recurring_invoices", "FAIL", { violations: res8.rows });
     } else {
-      await logConsistencyResult('auto_sent_recurring_invoices', 'PASS');
+      await logConsistencyResult("auto_sent_recurring_invoices", "PASS");
     }
   } catch (err) {
-    await logConsistencyResult('auto_sent_recurring_invoices', 'ERROR', { error: err.message });
+    await logConsistencyResult("auto_sent_recurring_invoices", "ERROR", { error: err.message });
   }
 
   // 9. recurring_generation_atomicity
-  await logConsistencyResult('recurring_generation_atomicity', 'WARNING', { message: 'Structurally enforced via PostgreSQL transactions. Cannot be verified purely from states.' });
+  await logConsistencyResult("recurring_generation_atomicity", "WARNING", {
+    message: "Structurally enforced via PostgreSQL transactions. Cannot be verified purely from states.",
+  });
 
   // 10. dunning_escalation_staircase
   try {
@@ -186,12 +195,12 @@ async function runSystemConsistencyCheck() {
       LIMIT 10
     `);
     if (res10.rows.length > 0) {
-      await logConsistencyResult('dunning_escalation_staircase', 'FAIL', { violations: res10.rows });
+      await logConsistencyResult("dunning_escalation_staircase", "FAIL", { violations: res10.rows });
     } else {
-      await logConsistencyResult('dunning_escalation_staircase', 'PASS');
+      await logConsistencyResult("dunning_escalation_staircase", "PASS");
     }
   } catch (err) {
-    await logConsistencyResult('dunning_escalation_staircase', 'ERROR', { error: err.message });
+    await logConsistencyResult("dunning_escalation_staircase", "ERROR", { error: err.message });
   }
 
   // 11. dunning_only_for_overdue_invoices
@@ -204,40 +213,46 @@ async function runSystemConsistencyCheck() {
       LIMIT 10
     `);
     if (res11.rows.length > 0) {
-      await logConsistencyResult('dunning_only_for_overdue_invoices', 'FAIL', { violations: res11.rows });
+      await logConsistencyResult("dunning_only_for_overdue_invoices", "FAIL", { violations: res11.rows });
     } else {
-      await logConsistencyResult('dunning_only_for_overdue_invoices', 'PASS');
+      await logConsistencyResult("dunning_only_for_overdue_invoices", "PASS");
     }
   } catch (err) {
-    await logConsistencyResult('dunning_only_for_overdue_invoices', 'ERROR', { error: err.message });
+    await logConsistencyResult("dunning_only_for_overdue_invoices", "ERROR", { error: err.message });
   }
 
   // 12. mrr_snapshot_consistency
   try {
     const res12 = await pool.query(`
       SELECT organisation_id, date, count(*) as count 
-      FROM metrics_snapshots 
+      FROM metrics_snapshot 
       GROUP BY organisation_id, date 
       HAVING count(*) > 1
       LIMIT 10
     `);
     if (res12.rows.length > 0) {
-      await logConsistencyResult('mrr_snapshot_consistency', 'FAIL', { violations: res12.rows });
+      await logConsistencyResult("mrr_snapshot_consistency", "FAIL", { violations: res12.rows });
     } else {
-      await logConsistencyResult('mrr_snapshot_consistency', 'PASS');
+      await logConsistencyResult("mrr_snapshot_consistency", "PASS");
     }
   } catch (err) {
-    await logConsistencyResult('mrr_snapshot_consistency', 'ERROR', { error: err.message });
+    await logConsistencyResult("mrr_snapshot_consistency", "ERROR", { error: err.message });
   }
 
   // 13. historical_static_truth
-  await logConsistencyResult('historical_static_truth', 'WARNING', { message: 'Cannot be dynamically verified without historical data comparisons.' });
+  await logConsistencyResult("historical_static_truth", "WARNING", {
+    message: "Cannot be dynamically verified without historical data comparisons.",
+  });
 
   // 14. outbox_at_least_once_delivery
-  await logConsistencyResult('outbox_at_least_once_delivery', 'PASS', { message: 'Covered by outbox_stuck_event_recovery check.' });
+  await logConsistencyResult("outbox_at_least_once_delivery", "PASS", {
+    message: "Covered by outbox_stuck_event_recovery check.",
+  });
 
   // 15. outbox_concurrent_processing_protection
-  await logConsistencyResult('outbox_concurrent_processing_protection', 'WARNING', { message: 'Enforced via FOR UPDATE SKIP LOCKED. Static verification not possible.' });
+  await logConsistencyResult("outbox_concurrent_processing_protection", "WARNING", {
+    message: "Enforced via FOR UPDATE SKIP LOCKED. Static verification not possible.",
+  });
 
   // 16. outbox_stuck_event_recovery
   try {
@@ -249,17 +264,17 @@ async function runSystemConsistencyCheck() {
       LIMIT 10
     `);
     if (res16.rows.length > 0) {
-      await logConsistencyResult('outbox_stuck_event_recovery', 'FAIL', { violations: res16.rows });
+      await logConsistencyResult("outbox_stuck_event_recovery", "FAIL", { violations: res16.rows });
     } else {
-      await logConsistencyResult('outbox_stuck_event_recovery', 'PASS');
+      await logConsistencyResult("outbox_stuck_event_recovery", "PASS");
     }
   } catch (err) {
-    await logConsistencyResult('outbox_stuck_event_recovery', 'ERROR', { error: err.message });
+    await logConsistencyResult("outbox_stuck_event_recovery", "ERROR", { error: err.message });
   }
 
   logger.info("System Consistency Check completed.");
-  
-  return { status: 'SUCCESS' };
+
+  return { status: "SUCCESS" };
 }
 
 module.exports = { runSystemConsistencyCheck };

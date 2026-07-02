@@ -3,9 +3,9 @@ const router = express.Router();
 const db = require("../../db");
 const auth = require("../middleware/auth");
 const requireRole = require("../middleware/requireRole");
-const { MODULES } = require("../config/modules");
-const { isModuleIncludedInPlan } = require("../config/modules");
+const { MODULES, isModuleIncludedInPlan } = require("../config/modules");
 const ApiResponse = require("../utils/apiResponse");
+const analyticsService = require("../services/analytics.service");
 
 /**
  * GET /api/organisation/modules
@@ -144,6 +144,15 @@ router.post('/:key/checkout', auth, requireRole('admin'), async (req, res) => {
     if (!MODULES[key] || MODULES[key].plan !== 'addon') {
       return res.status(400).json(ApiResponse.error('INVALID_MODULE', { message: `Module "${key}" ne peut pas être acheté.` }));
     }
+
+    // Backend-only tracking for checkout_started (funnel critical)
+    try {
+      await analyticsService.trackEvent("checkout_started", {
+        organisationId,
+        userId: req.user.id,
+        metadata: { type: "module", module_key: key }
+      });
+    } catch (e) { /* non-blocking */ }
 
     // Charger le service Stripe checkout
     const { createCheckoutSession } = require('../services/stripeCheckout.service');

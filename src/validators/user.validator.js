@@ -1,6 +1,6 @@
 const { z } = require("zod");
 
-const roleSchema = z.enum(["admin", "manager", "employe"]);
+const roleSchema = z.enum(["admin", "manager", "employe", "administrateur"]);
 const passwordSchema = z
   .string()
   .trim()

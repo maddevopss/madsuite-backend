@@ -29,9 +29,10 @@ const logCognitiveState = async (req, res) => {
 const getDailyCognitiveTimeline = async (req, res) => {
     try {
         const userId = req.user.id;
+        const orgId = req.user.organisation_id;
         const targetDate = req.query.date || new Date().toISOString().split('T')[0];
 
-        const timeline = await historyService.getDailyTimeline(userId, targetDate);
+        const timeline = await historyService.getDailyTimeline(userId, targetDate, orgId);
         res.status(200).json(timeline);
     } catch (err) {
         console.error('Erreur timeline cognitive:', err);
@@ -42,6 +43,7 @@ const getDailyCognitiveTimeline = async (req, res) => {
 const getDailyCognitiveInsight = async (req, res) => {
     try {
         const userId = req.user.id;
+        const orgId = req.user.organisation_id;
         const targetDate = req.query.date || new Date().toISOString().split('T')[0];
 
         // This remains a simple read model mapping
@@ -49,8 +51,8 @@ const getDailyCognitiveInsight = async (req, res) => {
             SELECT m.*, p.nom as dominant_project_name
             FROM daily_cognitive_metrics m
             LEFT JOIN projets p ON m.dominant_project_id = p.id
-            WHERE m.utilisateur_id = $1 AND m.date = $2
-        `, [userId, targetDate]);
+            WHERE m.utilisateur_id = $1 AND m.date = $2 AND m.organisation_id = $3
+        `, [userId, targetDate, orgId]);
 
         if (insightRes.rows.length === 0) {
             return res.status(200).json(null);
@@ -66,10 +68,11 @@ const getDailyCognitiveInsight = async (req, res) => {
 const getCognitivePatterns = async (req, res) => {
     try {
         const userId = req.user.id;
+        const orgId = req.user.organisation_id;
         const rangeParam = req.query.range || '7d';
         const days = parseInt(rangeParam.replace('d', ''), 10) || 7;
 
-        const patterns = await patternsService.analyzePatterns(userId, days);
+        const patterns = await patternsService.analyzePatterns(userId, orgId, days);
         res.status(200).json(patterns || {});
     } catch (err) {
         console.error('Erreur patterns cognitifs:', err);
@@ -80,10 +83,11 @@ const getCognitivePatterns = async (req, res) => {
 const getCognitiveMemoryProfile = async (req, res) => {
     try {
         const userId = req.user.id;
+        const orgId = req.user.organisation_id;
         const rangeParam = req.query.range || '30d';
         const days = parseInt(rangeParam.replace('d', ''), 10) || 30;
 
-        const profile = await memoryService.getMemoryProfile(userId, days);
+        const profile = await memoryService.getMemoryProfile(userId, orgId, days);
         res.status(200).json(profile || {});
     } catch (err) {
         console.error('Erreur memory profile:', err);
@@ -94,14 +98,15 @@ const getCognitiveMemoryProfile = async (req, res) => {
 const getDebugSystemState = async (req, res) => {
     try {
         const userId = req.user.id;
+        const orgId = req.user.organisation_id;
         
         // Fetch last event
         const lastEventRes = await pool.query(`
             SELECT id, state, started_at, duration_minutes, projet_id, confidence
             FROM cognitive_state_events
-            WHERE utilisateur_id = $1
+            WHERE utilisateur_id = $1 AND organisation_id = $2
             ORDER BY started_at DESC LIMIT 1
-        `, [userId]);
+        `, [userId, orgId]);
         
         const lastEvent = lastEventRes.rows[0] || null;
 

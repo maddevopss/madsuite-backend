@@ -24,15 +24,24 @@ function requirePassword(rawPassword, message) {
 
 async function listUsers({ organisationId }) {
   const result = await db.query(
-    `SELECT id, nom, email, role, is_kiosk_user, created_at
-     FROM utilisateurs
-     WHERE deleted_at IS NULL
-       AND organisation_id = $1
-     ORDER BY id DESC`,
+    `SELECT u.id, u.nom, u.email, u.role, u.is_kiosk_user, u.created_at,
+            o.kiosk_token
+     FROM utilisateurs u
+     LEFT JOIN organisations o ON o.id = u.organisation_id
+     WHERE u.deleted_at IS NULL
+       AND u.organisation_id = $1
+     ORDER BY u.id DESC`,
     [organisationId],
   );
 
-  return result.rows;
+  return result.rows.map((row) => {
+    const { kiosk_token, ...rest } = row;
+    const base = kiosk_token ? `/kiosk/${kiosk_token}` : null;
+    return {
+      ...rest,
+      kiosk_url: rest.is_kiosk_user && base ? `${base}?u=${rest.id}` : null,
+    };
+  });
 }
 
 async function createUser({ data, organisationId }) {
@@ -71,7 +80,18 @@ async function createUser({ data, organisationId }) {
       [nom, finalEmail, hashedPassword, role, is_kiosk_user, pinHash, organisationId],
     );
 
-    return result.rows[0];
+    const created = result.rows[0];
+    if (created && created.is_kiosk_user) {
+      const tokenRes = await db.query(
+        `SELECT FROM organisations WHERE id = $1`,
+        [organisationId]
+      );
+      const kioskToken = tokenRes.rows[0]?.kiosk_token;
+      if (kioskToken) {
+        created.kiosk_url = `/kiosk/${kioskToken}?u=${created.id}`;
+      }
+    }
+    return created;
   } catch (err) {
     if (err.code === "23505") {
       throw duplicateEmailError();
@@ -119,11 +139,16 @@ async function updateUser({ userId, data, organisationId }) {
       queryParams,
     );
 
-    if (result.rows.length === 0) {
+    const updated = result.rows[0];
+    if (updated && updated.is_kiosk_user) {
+      const tokenRes = await db.query(`SELECT kiosk_token FROM organisations WHERE id = $1`, [organisationId]);
+      const kt = tokenRes.rows[0]?.kiosk_token;
+      if (kt) updated.kiosk_url = `/kiosk/${kt}?u=${updated.id}`;
+    }
+    if (!updated) {
       throw notFoundError();
     }
-
-    return result.rows[0];
+    return updated;
   } catch (err) {
     if (err.code === "23505") {
       throw duplicateEmailError();

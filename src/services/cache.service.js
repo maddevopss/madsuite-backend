@@ -1,4 +1,5 @@
 const NodeCache = require("node-cache");
+const logger = require("../config/logger");
 
 const cache = new NodeCache({
   stdTTL: 5 * 60, // 5 minutes default
@@ -16,10 +17,10 @@ class CacheService {
   static get(key) {
     const value = cache.get(key);
     if (value) {
-      console.log(`[CACHE HIT] ${key}`);
+      logger.debug(`[CACHE HIT] ${key}`);
       return value;
     }
-    console.log(`[CACHE MISS] ${key}`);
+    logger.debug(`[CACHE MISS] ${key}`);
     return null;
   }
 

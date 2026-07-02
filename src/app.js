@@ -184,6 +184,7 @@ app.use("/api/expenses", auth, requireModule("expenses"), expensesRoutes);
 app.use("/api/calendar", auth, require("./routes/calendar.routes"));
 app.use("/api/ai-assistant", auth, aiAssistantRoutes);
 app.use("/api/organisation", organisationRoutes);
+app.use("/api/organisations", require("./routes/organisations.routes"));
 app.use("/api/onboarding", auth, onboardingRoutes);
 app.use("/api/organisation/modules", modulesRoutes);
 app.use("/api/hub", hubRoutes);

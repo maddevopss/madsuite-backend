@@ -1,5 +1,7 @@
 const bcrypt = require("bcrypt");
 const db = require("../../db");
+// P1-8 fix: Utiliser BCRYPT_SALT_ROUNDS depuis config/security.js (12 en prod, 10 en dev)
+const { BCRYPT_SALT_ROUNDS } = require("../config/security");
 
 async function createClientOrganisation({ organisation_nom, user_nom, email, password }) {
   const client = await db.pool.connect();
@@ -29,8 +31,8 @@ async function createClientOrganisation({ organisation_nom, user_nom, email, pas
 
     const organisation = orgResult.rows[0];
 
-    // 2. Hasher le mot de passe
-    const passwordHash = await bcrypt.hash(password, 10);
+    // 2. Hasher le mot de passe — P1-8 fix: utiliser BCRYPT_SALT_ROUNDS (12 en prod)
+    const passwordHash = await bcrypt.hash(password, BCRYPT_SALT_ROUNDS);
 
     // 3. Créer l'utilisateur
     const newUserResult = await client.query(

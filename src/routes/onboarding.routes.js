@@ -4,36 +4,28 @@ const db = require("../../db");
 const { getOrganisationId } = require("../utils/organisationScope");
 const { handleServiceError } = require("../utils/routeError");
 const ApiResponse = require("../utils/apiResponse");
+const analyticsService = require("../services/analytics.service");
+const requireRole = require("../middleware/requireRole");
+const logger = require("../config/logger");
+
+// P1-1 fix: Le DDL dynamique (ALTER TABLE) a été supprimé de cette route.
+// Les colonnes adresse, tax_numbers et onboarding_completed doivent être créées
+// via la migration SQL dédiée : 063_onboarding_org_fields.sql
+//
+// P2-4 fix: requireRole("admin") ajouté sur les routes sensibles /setup et /sample-data
 
 // Mark onboarding as complete and update organisation info
-router.post("/setup", async (req, res, next) => {
+router.post("/setup", requireRole("admin"), async (req, res, next) => {
   try {
     const organisationId = getOrganisationId(req);
     const { nom, address, taxNumbers } = req.body;
 
-    // We assume the schema doesn't have "onboarding_completed" yet, 
-    // so we'll check if the columns exist, or just update the existing JSON/fields
-    // Since we need to alter the table, I will just update the nom and some settings
-    
-    // In our system, process.env is sometimes used for defaults, but we can store them in DB if columns exist
-    // For now, update the name, address, tax_numbers if those columns exist. Let's use a safe query
     const client = await db.pool.connect();
     try {
       await client.query("BEGIN");
 
-      // Check if columns exist
-      const addressColCheck = await client.query(`
-        SELECT column_name 
-        FROM information_schema.columns 
-        WHERE table_name='organisations' and column_name='adresse';
-      `);
-
-      if (addressColCheck.rowCount === 0) {
-        await client.query(`ALTER TABLE organisations ADD COLUMN IF NOT EXISTS adresse TEXT;`);
-        await client.query(`ALTER TABLE organisations ADD COLUMN IF NOT EXISTS tax_numbers TEXT;`);
-        await client.query(`ALTER TABLE organisations ADD COLUMN IF NOT EXISTS onboarding_completed BOOLEAN DEFAULT false;`);
-      }
-
+      // P1-1 fix: Plus de DDL dynamique. Les colonnes sont créées par la migration 063.
+      // Si les colonnes n'existent pas encore, la requête échouera proprement.
       await client.query(
         `UPDATE organisations 
          SET nom = COALESCE($1, nom), 
@@ -45,6 +37,19 @@ router.post("/setup", async (req, res, next) => {
       );
 
       await client.query("COMMIT");
+
+      // Funnel instrumentation
+      try {
+        const userId = req.user?.id;
+        await analyticsService.trackEvent("onboarding_completed", {
+          organisationId,
+          userId,
+          metadata: { has_company_info: !!nom }
+        });
+      } catch (e) {
+        logger.warn("Failed to track onboarding_completed");
+      }
+
       return res.status(200).json(ApiResponse.success("ONBOARDING_COMPLETED"));
     } catch (err) {
       await client.query("ROLLBACK");
@@ -58,7 +63,8 @@ router.post("/setup", async (req, res, next) => {
 });
 
 // Generate sample data
-router.post("/sample-data", async (req, res, next) => {
+// P2-4 fix: requireRole("admin") — seul un admin peut créer des données de démo
+router.post("/sample-data", requireRole("admin"), async (req, res, next) => {
   try {
     const organisationId = getOrganisationId(req);
     const userId = req.user.id;
@@ -82,6 +88,14 @@ router.post("/sample-data", async (req, res, next) => {
         [organisationId, clientId]
       );
       const projetId = projRes.rows[0].id;
+
+      // 2.5 Create a demo time entry (for mental model: time → invoice)
+      const timeEntryRes = await client.query(
+        `INSERT INTO time_entries (organisation_id, utilisateur_id, projet_id, client_id, start_time, end_time, description, hourly_rate)
+         VALUES ($1, $2, $3, $4, NOW() - INTERVAL '15 minutes', NOW(), 'Développement démo', 120.00) RETURNING id`,
+        [organisationId, userId, projetId, clientId]
+      );
+      const timeEntryId = timeEntryRes.rows[0].id;
 
       // 3. Create a demo estimate
       // Check if estimates table exists
