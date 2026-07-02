@@ -10,6 +10,17 @@ const logCognitiveState = async (req, res) => {
         const userId = req.user.id;
         const orgId = req.user.organisation_id;
         
+        // Validate required fields
+        const { sessionDuration, contextSwitches, timerRunning, idleTime, uiInteractions, projectId } = req.body;
+        
+        if (sessionDuration === undefined || contextSwitches === undefined || timerRunning === undefined) {
+            return res.status(400).json({ 
+                error: 'Champs requis manquants',
+                required: ['sessionDuration', 'contextSwitches', 'timerRunning'],
+                received: Object.keys(req.body)
+            });
+        }
+        
         const result = await eventProcessor.processEvent(userId, orgId, req.body);
 
         if (result.isUnchanged) {
