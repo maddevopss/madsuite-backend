@@ -1,0 +1,42 @@
+name: Backend CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Lint and syntax checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Syntax check server entrypoint
+        run: node -c server.js
+
+      - name: Document DB integration tests
+        run: |
+          echo "Backend DB integration tests are intentionally not run in this Linux CI phase."
+          echo "Current Jest global setup starts a Windows-local PostgreSQL test cluster."
+          echo "See SYSTEME_MAD/09-CHECKLISTS/audit-007-ci-tests-build-multirepo-madsuite.md."
