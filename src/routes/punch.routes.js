@@ -4,6 +4,7 @@ const bcrypt = require("bcrypt");
 const db = require("../../db");
 const ApiResponse = require("../utils/apiResponse");
 const { z } = require("zod");
+const { requireModuleForOrg } = require("../middleware/requireModule");
 
 // Validator for kiosk token
 const kioskTokenSchema = z.string().min(10);
@@ -26,12 +27,44 @@ async function verifyKioskUser(organisationId, utilisateurId, pin) {
   return await bcrypt.compare(pin, user.pin_hash);
 }
 
+async function hasOrgModule(organisationId, moduleKey) {
+  return await requireModuleForOrg(moduleKey, organisationId)();
+}
+
+async function ensureAnyKioskModule(org) {
+  const hasPunch = await hasOrgModule(org.id, "kiosk_punch");
+  const hasKm = await hasOrgModule(org.id, "kiosk_km");
+  return hasPunch || hasKm;
+}
+
+async function ensureKioskModule(res, org, moduleKey) {
+  const hasAccess = await hasOrgModule(org.id, moduleKey);
+  if (hasAccess) return true;
+
+  res.status(403).json(ApiResponse.error("MODULE_NOT_ENABLED", {
+    message: `Le module "${moduleKey}" n'est pas activé pour votre organisation.`,
+    module_key: moduleKey
+  }));
+  return false;
+}
+
 // 1. Get Kiosk Info
 router.get("/kiosk/:kiosk_token", async (req, res) => {
   try {
-    const org = await getOrgByKioskToken(req.params.kiosk_token);
+    const parsedToken = kioskTokenSchema.safeParse(req.params.kiosk_token);
+    if (!parsedToken.success) {
+      return res.status(400).json(ApiResponse.error("BAD_REQUEST", { message: "Token kiosque invalide" }));
+    }
+
+    const org = await getOrgByKioskToken(parsedToken.data);
     if (!org) {
       return res.status(404).json(ApiResponse.error("NOT_FOUND", { message: "Kiosque introuvable" }));
+    }
+
+    if (!(await ensureAnyKioskModule(org))) {
+      return res.status(403).json(ApiResponse.error("MODULE_NOT_ENABLED", {
+        message: "Aucun module kiosque n'est activé pour votre organisation.",
+      }));
     }
 
     const usersRes = await db.query(
@@ -65,6 +98,7 @@ router.post("/status", async (req, res) => {
 
     const org = await getOrgByKioskToken(kiosk_token);
     if (!org) return res.status(404).json(ApiResponse.error("NOT_FOUND", { message: "Kiosque introuvable" }));
+    if (!(await ensureKioskModule(res, org, "kiosk_punch"))) return;
 
     const isValid = await verifyKioskUser(org.id, utilisateur_id, pin);
     if (!isValid) return res.status(401).json(ApiResponse.error("UNAUTHORIZED", { message: "NIP invalide" }));
@@ -93,6 +127,7 @@ router.post("/in", async (req, res) => {
 
     const org = await getOrgByKioskToken(kiosk_token);
     if (!org) return res.status(404).json(ApiResponse.error("NOT_FOUND", { message: "Kiosque introuvable" }));
+    if (!(await ensureKioskModule(res, org, "kiosk_punch"))) return;
 
     const isValid = await verifyKioskUser(org.id, utilisateur_id, pin);
     if (!isValid) return res.status(401).json(ApiResponse.error("UNAUTHORIZED", { message: "NIP invalide" }));
@@ -128,6 +163,7 @@ router.post("/out", async (req, res) => {
 
     const org = await getOrgByKioskToken(kiosk_token);
     if (!org) return res.status(404).json(ApiResponse.error("NOT_FOUND", { message: "Kiosque introuvable" }));
+    if (!(await ensureKioskModule(res, org, "kiosk_punch"))) return;
 
     const isValid = await verifyKioskUser(org.id, utilisateur_id, pin);
     if (!isValid) return res.status(401).json(ApiResponse.error("UNAUTHORIZED", { message: "NIP invalide" }));
@@ -160,6 +196,7 @@ router.post("/km", async (req, res) => {
 
     const org = await getOrgByKioskToken(kiosk_token);
     if (!org) return res.status(404).json(ApiResponse.error("NOT_FOUND", { message: "Kiosque introuvable" }));
+    if (!(await ensureKioskModule(res, org, "kiosk_km"))) return;
 
     const isValid = await verifyKioskUser(org.id, utilisateur_id, pin);
     if (!isValid) return res.status(401).json(ApiResponse.error("UNAUTHORIZED", { message: "NIP invalide" }));
