@@ -121,7 +121,7 @@ async function generateTimesheetSuggestions({ organisationId, userId, targetDate
 
         const openai = getOpenAI();
 
-if (openai) {
+        if (openai) {
           try {
             const completion = await openai.chat.completions.create({
               model: "gpt-4o-mini", // Use mini for speed and cost
@@ -314,7 +314,7 @@ async function categorizeActivitiesBatch({ activities, organisationId }) {
   }
 
   try {
-    const list = activities.map((a) => `ID ${a.id}: App: ${a.app_name}, Titre: ${a.window_title}`).join("\\n");
+    const list = activities.map((a) => `ID ${a.id}: App: ${a.app_name}, Titre: ${a.window_title}`).join("\n");
     const completion = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
@@ -367,9 +367,10 @@ async function generateBrainDumpTasks({ prompt }) {
       messages: [
         {
           role: "system",
-          content: `Tu es un assistant de productivité spécialisé pour le TDAH (exosquelette cognitif).
-L'utilisateur va te donner un "Brain Dump" (bruit mental, liste de choses à faire en vrac).
-Ton but est de transformer ce texte en une suite séquentielle de MICRO-ACTIONS extrêmement claires, simples et actionnables.
+          content: `Tu es un assistant de productivité non médical.
+L'utilisateur va te donner une liste d'idées, de tâches ou de notes en vrac.
+Ton rôle est de transformer ce texte en une suite séquentielle de MICRO-ACTIONS extrêmement claires, simples et actionnables.
+N'établis aucun diagnostic, n'interprète pas l'état mental de l'utilisateur et ne formule aucune recommandation médicale.
 Estime un temps raisonnable en minutes pour chaque micro-action. Ne dépasse pas 30 minutes par action (divise si nécessaire).
 Réponds STRICTEMENT sous format JSON:
 { "tasks": [ { "title": "Nom de l'action très court", "duration_minutes": 15 } ] }`
