@@ -20,6 +20,7 @@ const MODULES = {
   calcul_km:    { label: "Calcul KM / GPS",            plan: "addon", price: 5 },
   kiosk_km:     { label: "Kiosque Kilométrage",         plan: "addon", price: 5 },
   estimates:    { label: "Soumissions",                  plan: "addon", price: 5 },
+  expenses:     { label: "Dépenses",                     plan: "addon", price: 5 },
   activity_intelligence: { label: "Activity Intelligence", plan: "addon", price: 10 },
   billing_assistant:     { label: "Billing Assistant",     plan: "addon", price: 10 },
 };
