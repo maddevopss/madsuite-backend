@@ -151,9 +151,14 @@ async function applySchemaToTestDatabase() {
     // Exécuter les migrations réelles sur la base de test dans un nouveau processus
     // (cela permet à db.js de lire la bonne DATABASE_URL et évite les hangs)
     const { execSync } = require("child_process");
-    execSync("node -e \"require('./src/migrate/runMigrations').runMigrations({ backup: false }).then(()=>process.exit(0)).catch(e=>{ console.error(e.message); process.exit(1); })\"", {
+    const backendDir = path.resolve(__dirname, "../..");
+    const migrationScript = path.join(backendDir, "src/migrate/runMigrations.js");
+    // Utiliser des chemins relatifs avec forward slashes pour éviter les problèmes de backslash sur Windows
+    const relativeScript = path.relative(backendDir, migrationScript).replace(/\\/g, "/");
+    execSync(`node -e "require('./${relativeScript}').runMigrations({ backup: false }).then(()=>process.exit(0)).catch(e=>{ console.error(e.message); process.exit(1); })"`, {
       env: { ...process.env, DATABASE_URL: process.env.TEST_DATABASE_URL },
-      stdio: "inherit"
+      stdio: "inherit",
+      cwd: backendDir
     });
     
     // Rouvrir pour le seed
@@ -225,6 +230,9 @@ async function seedE2EUsers(client) {
   if (!adminEmail || !password) {
     throw new Error("TEST_USER_EMAIL et TEST_USER_PASSWORD sont requis pour initialiser les utilisateurs E2E.");
   }
+  
+  debugLog(`seedE2EUsers: adminEmail=${adminEmail}, password=${password}`);
+  
   const passwordHash = await bcrypt.hash(password, 10);
 
   const users = [

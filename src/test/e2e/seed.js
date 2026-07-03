@@ -1,4 +1,5 @@
 const bcrypt = require("bcrypt");
+const setupInvoicesTestDB = require("../setupInvoicesTestDB");
 
 function assertEnv() {
   if (!process.env.TEST_PASSWORD) {
@@ -9,7 +10,8 @@ function assertEnv() {
 async function seedE2EDatabase() {
   assertEnv();
 
-  const hashed = await bcrypt.hash(process.env.TEST_PASSWORD, 10);
+  // Appeler le vrai seed qui crée les utilisateurs E2E
+  await setupInvoicesTestDB();
 
   console.log("🌱 SEED OK");
 }

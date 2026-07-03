@@ -1,5 +1,6 @@
 const express = require("express");
 const rateLimit = require("express-rate-limit");
+const { ipKeyGenerator } = require("express-rate-limit");
 const { requireOrganisation } = require("../middleware/organization.middleware");
 const { handleServiceError } = require("../utils/routeError");
 const ApiResponse = require("../utils/apiResponse");
@@ -7,13 +8,26 @@ const aiService = require("../services/ai.service");
 
 const router = express.Router();
 
+const isTest = process.env.NODE_ENV === "test";
+const isDev = process.env.NODE_ENV === "development";
+
+// Custom keyGenerator compatible avec express-rate-limit IPv6
+const aiKeyGenerator = (req) => {
+  try {
+    if (req.user?.organisation_id) return `ai:org:${req.user.organisation_id}`;
+    return ipKeyGenerator(req) || req.ip || "unknown";
+  } catch (e) {
+    return req.ip || "unknown";
+  }
+};
+
 // Rate limit dédié IA : 20 requêtes/minute par organisation pour contrôler les coûts OpenAI.
 // En test, le limiter est désactivé via skip.
 const aiLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: process.env.NODE_ENV === "development" ? 200 : 20,
-  skip: () => process.env.NODE_ENV === "test",
-  keyGenerator: (req) => `ai:org:${req.user?.organisation_id || req.ip}`,
+  max: isDev ? 200 : 20,
+  skip: () => isTest,
+  keyGenerator: aiKeyGenerator,
   standardHeaders: true,
   legacyHeaders: false,
   message: { message: "Limite de l'assistant IA atteinte. Réessayez dans une minute." },

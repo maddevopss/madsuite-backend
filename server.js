@@ -70,8 +70,10 @@ async function shutdown(signal) {
 
   // Close database connection
   try {
-    await pool.end();
-    console.log("✅ Connexion base de données fermée");
+    if (pool && typeof pool.end === "function") {
+      await pool.end();
+      console.log("✅ Connexion base de données fermée");
+    }
   } catch (err) {
     console.error("Erreur lors de la fermeture de la BD:", err);
   }
