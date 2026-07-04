@@ -1,17 +1,19 @@
 const logger = require("../config/logger");
+const { sanitizeUrlForLog } = require("../utils/sanitizeLog");
 
 module.exports = function requestLogger(req, res, next) {
   const start = process.hrtime();
-  
+   
   res.on("finish", () => {
     const diff = process.hrtime(start);
     const durationMs = (diff[0] * 1e3 + diff[1] * 1e-6).toFixed(2);
+    const url = sanitizeUrlForLog(req.originalUrl || req.url);
     
-    const message = `${req.method} ${req.originalUrl || req.url} ${res.statusCode} ${durationMs}ms`;
+    const message = `${req.method} ${url} ${res.statusCode} ${durationMs}ms`;
     
     const meta = {
       method: req.method,
-      url: req.originalUrl || req.url,
+      url,
       status: res.statusCode,
       durationMs: Number(durationMs),
       ip: req.ip || req.connection?.remoteAddress,
