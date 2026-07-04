@@ -224,22 +224,50 @@ async function ensureE2EOrganisation(client) {
 }
 
 async function seedE2EUsers(client) {
-  const organisationId = await ensureE2EOrganisation(client);
-  const adminEmail = process.env.E2E_ADMIN_EMAIL || process.env.TEST_USER_EMAIL;
-  const password = process.env.E2E_PASSWORD || process.env.TEST_USER_PASSWORD;
-  if (!adminEmail || !password) {
-    throw new Error("TEST_USER_EMAIL et TEST_USER_PASSWORD sont requis pour initialiser les utilisateurs E2E.");
-  }
-  
-  debugLog(`seedE2EUsers: adminEmail=${adminEmail}, password=${password}`);
-  
-  const passwordHash = await bcrypt.hash(password, 10);
+   const organisationId = await ensureE2EOrganisation(client);
+   const adminEmail = process.env.E2E_ADMIN_EMAIL || process.env.TEST_USER_EMAIL;
+   const password = process.env.E2E_PASSWORD || process.env.TEST_USER_PASSWORD;
+   if (!adminEmail || !password) {
+     throw new Error("TEST_USER_EMAIL et TEST_USER_PASSWORD sont requis pour initialiser les utilisateurs E2E.");
+   }
+   
+   debugLog(`seedE2EUsers: adminEmail=${adminEmail}, password=${password}`);
+   
+   const passwordHash = await bcrypt.hash(password, 10);
 
-  const users = [
-    { nom: "Admin E2E", email: adminEmail, role: "admin" },
-    { nom: "Employé E2E", email: process.env.E2E_EMPLOYEE_EMAIL || "user@test.com", role: "employe" },
-    { nom: "Employé 2 E2E", email: "user2@test.com", role: "employe" },
-  ];
+   // Create a dedicated Revenue Core E2E org if using revenue-e2e@test.com
+   let revenueCoreOrgId = organisationId;
+   if (adminEmail === "revenue-e2e@test.com") {
+     const revenueCoreOrgResult = await client.query(
+       `INSERT INTO organisations (nom) VALUES ($1) ON CONFLICT DO NOTHING RETURNING id`,
+       ["Revenue Core E2E"]
+     );
+     if (revenueCoreOrgResult.rows[0]?.id) {
+       revenueCoreOrgId = revenueCoreOrgResult.rows[0].id;
+     } else {
+       const existing = await client.query(
+         `SELECT id FROM organisations WHERE nom = $1 LIMIT 1`,
+         ["Revenue Core E2E"]
+       );
+       if (existing.rows[0]?.id) {
+         revenueCoreOrgId = existing.rows[0].id;
+       }
+     }
+     // Activate all modules for Revenue Core org
+     const modules = ['billing_assistant', 'activity_intelligence', 'dashboard', 'timesheet', 'clients', 'projects', 'invoices', 'reports', 'kiosk_punch', 'estimates'];
+     for (const mod of modules) {
+       await client.query(
+         `INSERT INTO organisation_modules (organisation_id, module_key, is_active) VALUES ($1, $2, true) ON CONFLICT (organisation_id, module_key) DO UPDATE SET is_active = true`,
+         [revenueCoreOrgId, mod]
+       );
+     }
+   }
+
+   const users = [
+     { nom: "Admin E2E", email: adminEmail, role: "admin", org: revenueCoreOrgId },
+     { nom: "Employé E2E", email: process.env.E2E_EMPLOYEE_EMAIL || "user@test.com", role: "employe", org: organisationId },
+     { nom: "Employé 2 E2E", email: "user2@test.com", role: "employe", org: organisationId },
+   ];
 
   for (const user of users) {
     await client.query(
@@ -254,7 +282,7 @@ async function seedE2EUsers(client) {
           role_org = EXCLUDED.role_org,
           deleted_at = NULL
       `,
-      [user.nom, user.email, passwordHash, user.role, organisationId, user.role === "admin" ? "admin" : "user"],
+      [user.nom, user.email, passwordHash, user.role, user.org, user.role === "admin" ? "admin" : "user"],
     );
   }
 

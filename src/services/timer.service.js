@@ -198,16 +198,35 @@ async function startTimer({ userId, organisationId, projetId, description = null
       [projetId, userId, description, organisationValue(organisationId)],
     );
 
-    if (result.rows.length === 0) {
-      const err = new Error("Projet introuvable ou non accessible.");
-      err.statusCode = 404;
-      throw err;
-    }
+     if (result.rows.length === 0) {
+       const err = new Error("Projet introuvable ou non accessible.");
+       err.statusCode = 404;
+       throw err;
+     }
 
-    return result.rows[0];
-  } catch (err) {
-    throw err;
-  }
+     const entry = result.rows[0];
+
+     // P0-4: Track first_time_entry_created event
+     try {
+       const analyticsService = require("./analytics.service");
+       const countRes = await db.query(
+         "SELECT COUNT(*) FROM time_entries WHERE organisation_id = $1",
+         [organisationValue(organisationId)]
+       );
+       if (parseInt(countRes.rows[0].count, 10) === 1) {
+         await analyticsService.trackEvent("first_time_entry_created", {
+           organisationId,
+           metadata: { timeEntryId: entry.id }
+         });
+       }
+     } catch (e) {
+       // non-blocking
+     }
+
+     return entry;
+   } catch (err) {
+     throw err;
+   }
 }
 
 /**

@@ -67,6 +67,7 @@ const ALLOWED_FRONTEND_EVENTS = new Set([
   "ai_copilot_opened",
   "settings_viewed",
   "billing_viewed",
+  "checkout_clicked_from_invoice",
 ]);
 
 // Generic track endpoint (for non-critical frontend events only).

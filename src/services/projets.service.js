@@ -119,13 +119,34 @@ function buildProjectInsert({ data, organisationId }) {
 }
 
 async function createProject({ data, organisationId }) {
-  const { clientConditions, params, sql } = buildProjectInsert({ data, organisationId });
+   const { clientConditions, params, sql } = buildProjectInsert({ data, organisationId });
 
-  clientConditions.push(scopedOrganisationCondition("c", params, organisationId));
+   clientConditions.push(scopedOrganisationCondition("c", params, organisationId));
 
-  const result = await db.query(sql.replace("%CLIENT_CONDITIONS%", clientConditions.join(" AND ")), params);
+   const result = await db.query(sql.replace("%CLIENT_CONDITIONS%", clientConditions.join(" AND ")), params);
 
-  return result.rows[0] || null;
+   const project = result.rows[0] || null;
+
+   // P0-4: Track first_project_created event
+   if (project) {
+     try {
+       const analyticsService = require("./analytics.service");
+       const countRes = await db.query(
+         "SELECT COUNT(*) FROM projets WHERE organisation_id = $1",
+         [organisationValue(organisationId)]
+       );
+       if (parseInt(countRes.rows[0].count, 10) === 1) {
+         await analyticsService.trackEvent("first_project_created", {
+           organisationId,
+           metadata: { projectId: project.id }
+         });
+       }
+     } catch (e) {
+       // non-blocking
+     }
+   }
+
+   return project;
 }
 
 function addOptionalSet(setClauses, params, column, value) {
