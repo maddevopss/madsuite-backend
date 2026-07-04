@@ -18,6 +18,7 @@ const activityIntelligenceService = require("../services/activityIntelligence.se
 const aiService = require("../services/ai.service");
 
 const router = express.Router();
+const MAX_BRAIN_DUMP_PROMPT_LENGTH = 5000;
 
 router.use(requireOrganisation);
 router.use(requireRole("admin"));
@@ -90,7 +91,7 @@ router.post("/ai-categorize-unclassified", async (req, res, next) => {
     const result = await db.query(
       `SELECT id, app_name, window_title 
        FROM activity_logs 
-       WHERE (organisation_id = $1 OR organisation_id IS NULL) 
+       WHERE organisation_id = $1
          AND (activity_category IS NULL OR activity_category = 'Non classé' OR activity_category = 'Autre')
          AND window_title IS NOT NULL
        ORDER BY captured_at DESC LIMIT 30`,
@@ -266,6 +267,14 @@ router.post("/brain-dump", async (req, res, next) => {
 
   if (!prompt || typeof prompt !== "string") {
     return res.status(400).json(ApiResponse.error("VALIDATION_ERROR", { message: "Prompt est requis" }));
+  }
+
+  if (prompt.length > MAX_BRAIN_DUMP_PROMPT_LENGTH) {
+    return res.status(400).json(
+      ApiResponse.error("VALIDATION_ERROR", {
+        message: `Prompt trop long. Maximum ${MAX_BRAIN_DUMP_PROMPT_LENGTH} caractères.`,
+      }),
+    );
   }
 
   logger.info(`[${requestId}] Brain Dump process start`, { userId: req.user.id });
