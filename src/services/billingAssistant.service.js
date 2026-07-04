@@ -126,6 +126,17 @@ async function applySuggestion(
     const orgRes = await dbClient.query("SELECT timezone FROM organisations WHERE id = $1", [organisationId]);
     const tz = orgRes.rows[0]?.timezone || "UTC";
 
+    const projectRes = await dbClient.query(
+      "SELECT id FROM projets WHERE id = $1 AND organisation_id = $2 AND deleted_at IS NULL LIMIT 1",
+      [projet_id, organisationId],
+    );
+
+    if (projectRes.rowCount === 0) {
+      const err = new Error("Projet introuvable pour cette organisation.");
+      err.statusCode = 404;
+      throw err;
+    }
+
     const description = `[Assistant] ${app_name}: ${window_title}`;
     const startTime = `${date} 09:00:00`; // Idéalement, calculer dynamiquement selon les logs d'activité
 
