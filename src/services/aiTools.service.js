@@ -6,122 +6,134 @@ const projetsService = require("./projets.service");
 const invoiceService = require("./invoice/invoice.service");
 const { recordBusinessAudit } = require("./auditLog.service");
 
-/**
- * Définit la configuration des outils (Function Calling) pour OpenAI
- * Phase 3 : Agent Complet
- */
-const getToolsSchema = () => {
-  return [
-    {
-      type: "function",
-      function: {
-        name: "get_unpaid_invoices",
-        description: "Obtient le nombre total et la liste détaillée des factures impayées ou en retard.",
-        parameters: { type: "object", properties: {}, required: [] }
-      }
-    },
-    {
-      type: "function",
-      function: {
-        name: "get_top_clients",
-        description: "Obtient la liste des meilleurs clients basés sur les revenus générés.",
-        parameters: { type: "object", properties: {}, required: [] }
-      }
-    },
-    {
-      type: "function",
-      function: {
-        name: "get_monthly_revenue",
-        description: "Obtient le total facturé pour le mois en cours.",
-        parameters: { type: "object", properties: {}, required: [] }
-      }
-    },
-    {
-      type: "function",
-      function: {
-        name: "get_projects_summary",
-        description: "Obtient un résumé des projets actifs.",
-        parameters: { type: "object", properties: {}, required: [] }
-      }
-    },
-    {
-      type: "function",
-      function: {
-        name: "search_clients",
-        description: "Recherche un client par nom pour obtenir son identifiant (ID).",
-        parameters: {
-          type: "object",
-          properties: {
-            name: { type: "string" }
-          },
-          required: ["name"]
-        }
-      }
-    },
-    {
-      type: "function",
-      function: {
-        name: "create_client",
-        description: "Crée un nouveau client dans le système.",
-        parameters: {
-          type: "object",
-          properties: {
-            nom: { type: "string" },
-            email: { type: "string" },
-            phone: { type: "string" }
-          },
-          required: ["nom"]
-        }
-      }
-    },
-    {
-      type: "function",
-      function: {
-        name: "create_project",
-        description: "Crée un nouveau projet pour un client.",
-        parameters: {
-          type: "object",
-          properties: {
-            client_id: { type: "number" },
-            nom: { type: "string" },
-            budget: { type: "number" },
-            taux_horaire: { type: "number" }
-          },
-          required: ["client_id", "nom"]
-        }
-      }
-    },
-    {
-      type: "function",
-      function: {
-        name: "create_invoice",
-        description: "Génère une facture pour un client (statut 'draft').",
-        parameters: {
-          type: "object",
-          properties: {
-            client_id: { type: "number" },
-            amount: { type: "number" },
-            notes: { type: "string" }
-          },
-          required: ["client_id", "amount"]
-        }
-      }
-    },
-    {
-      type: "function",
-      function: {
-        name: "send_invoice_reminders",
-        description: "Envoie un courriel de relance pour une liste de factures données.",
-        parameters: {
-          type: "object",
-          properties: {
-            invoice_ids: { type: "array", items: { type: "number" } }
-          },
-          required: ["invoice_ids"]
-        }
+const AI_WRITE_TOOLS_ENABLED = process.env.AI_WRITE_TOOLS_ENABLED === "1";
+const WRITE_TOOLS = ["create_client", "create_project", "create_invoice", "send_invoice_reminders"];
+
+const READ_ONLY_TOOLS_SCHEMA = [
+  {
+    type: "function",
+    function: {
+      name: "get_unpaid_invoices",
+      description: "Obtient le nombre total et la liste détaillée des factures impayées ou en retard.",
+      parameters: { type: "object", properties: {}, required: [] }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_top_clients",
+      description: "Obtient la liste des meilleurs clients basés sur les revenus générés.",
+      parameters: { type: "object", properties: {}, required: [] }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_monthly_revenue",
+      description: "Obtient le total facturé pour le mois en cours.",
+      parameters: { type: "object", properties: {}, required: [] }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_projects_summary",
+      description: "Obtient un résumé des projets actifs.",
+      parameters: { type: "object", properties: {}, required: [] }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "search_clients",
+      description: "Recherche un client par nom pour obtenir son identifiant (ID).",
+      parameters: {
+        type: "object",
+        properties: {
+          name: { type: "string" }
+        },
+        required: ["name"]
       }
     }
-  ];
+  }
+];
+
+const WRITE_TOOLS_SCHEMA = [
+  {
+    type: "function",
+    function: {
+      name: "create_client",
+      description: "Crée un nouveau client dans le système.",
+      parameters: {
+        type: "object",
+        properties: {
+          nom: { type: "string" },
+          email: { type: "string" },
+          phone: { type: "string" }
+        },
+        required: ["nom"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "create_project",
+      description: "Crée un nouveau projet pour un client.",
+      parameters: {
+        type: "object",
+        properties: {
+          client_id: { type: "number" },
+          nom: { type: "string" },
+          budget: { type: "number" },
+          taux_horaire: { type: "number" }
+        },
+        required: ["client_id", "nom"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "create_invoice",
+      description: "Génère une facture pour un client (statut 'draft').",
+      parameters: {
+        type: "object",
+        properties: {
+          client_id: { type: "number" },
+          amount: { type: "number" },
+          notes: { type: "string" }
+        },
+        required: ["client_id", "amount"]
+      }
+    }
+  },
+  {
+    type: "function",
+    function: {
+      name: "send_invoice_reminders",
+      description: "Envoie un courriel de relance pour une liste de factures données.",
+      parameters: {
+        type: "object",
+        properties: {
+          invoice_ids: { type: "array", items: { type: "number" } }
+        },
+        required: ["invoice_ids"]
+      }
+    }
+  }
+];
+
+/**
+ * Définit la configuration des outils (Function Calling) pour OpenAI.
+ * Par défaut, le Copilot est en lecture seule. Les outils d'écriture doivent être activés explicitement.
+ */
+const getToolsSchema = () => {
+  if (!AI_WRITE_TOOLS_ENABLED) {
+    return READ_ONLY_TOOLS_SCHEMA;
+  }
+
+  return [...READ_ONLY_TOOLS_SCHEMA, ...WRITE_TOOLS_SCHEMA];
 };
 
 async function executeToolCall(toolCall, organisationId) {
@@ -136,9 +148,14 @@ async function executeToolCall(toolCall, organisationId) {
     }
   }
 
-  // Outils en écriture : audit trail obligatoire avant exécution.
-  const WRITE_TOOLS = ["create_client", "create_project", "create_invoice", "send_invoice_reminders"];
   const isWriteTool = WRITE_TOOLS.includes(functionName);
+
+  if (isWriteTool && !AI_WRITE_TOOLS_ENABLED) {
+    return {
+      success: false,
+      error: "Les actions d'écriture du Copilot sont désactivées. Présentez plutôt un brouillon ou des étapes à valider."
+    };
+  }
 
   try {
     let result;
