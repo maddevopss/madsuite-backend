@@ -1,5 +1,6 @@
 // Middleware d'authentification pour protéger les routes
 const jwt = require("jsonwebtoken");
+const ApiResponse = require("../utils/apiResponse");
 
 function getAccessToken(req) {
   const authHeader = req.headers.authorization;
@@ -11,12 +12,20 @@ function getAccessToken(req) {
   return req.cookies?.access_token || null;
 }
 
+function unauthorized(res) {
+  return res.status(401).json(
+    ApiResponse.error("UNAUTHORIZED", {
+      message: "Authentication required.",
+    }),
+  );
+}
+
 // Vérifie le token JWT dans les requêtes protégées
 module.exports = (req, res, next) => {
   const token = getAccessToken(req);
 
   if (!token) {
-    return res.status(401).json({ message: "Token manquant" });
+    return unauthorized(res);
   }
 
   try {
@@ -25,12 +34,12 @@ module.exports = (req, res, next) => {
     });
 
     if (decoded.token_type === "refresh") {
-      return res.status(401).json({ message: "Token invalide ou expiré" });
+      return unauthorized(res);
     }
 
     req.user = decoded;
     next();
-  } catch (err) {
-    return res.status(401).json({ message: "Token invalide ou expiré" });
+  } catch {
+    return unauthorized(res);
   }
 };
