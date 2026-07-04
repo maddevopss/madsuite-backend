@@ -165,6 +165,17 @@ async function getActiveProjects(organisationId) {
   }
 }
 
+async function ensureProjectInOrganisation({ projetId, organisationId }) {
+  if (!projetId) return false;
+
+  const result = await db.query(
+    `SELECT id FROM projets WHERE id = $1 AND organisation_id = $2 AND deleted_at IS NULL LIMIT 1`,
+    [projetId, organisationId],
+  );
+
+  return result.rowCount > 0;
+}
+
 async function suggestProject({ appName = "", windowTitle = "", organisationId }) {
   const text = `${appName} ${windowTitle}`;
   const projects = await getActiveProjects(organisationId);
@@ -186,6 +197,14 @@ async function suggestProject({ appName = "", windowTitle = "", organisationId }
 }
 
 async function createPattern({ projetId, keyword, weight, organisationId }) {
+  const projectExists = await ensureProjectInOrganisation({ projetId, organisationId });
+
+  if (!projectExists) {
+    const err = new Error("Projet introuvable pour cette organisation.");
+    err.statusCode = 404;
+    throw err;
+  }
+
   const result = await db.query(
     `
     INSERT INTO activity_patterns (organisation_id, projet_id, keyword, weight)
@@ -198,7 +217,7 @@ async function createPattern({ projetId, keyword, weight, organisationId }) {
   return result.rows[0];
 }
 
-async function updateActivityLogSuggestion({ activityLogId, projetId, feedbackType, userId }) {
+async function updateActivityLogSuggestion({ activityLogId, projetId, feedbackType, userId, organisationId }) {
   if (!activityLogId) return;
 
   await db
@@ -212,8 +231,9 @@ async function updateActivityLogSuggestion({ activityLogId, projetId, feedbackTy
           END
       WHERE id = $3
         AND utilisateur_id = $4
+        AND organisation_id = $5
       `,
-      [feedbackType === "rejected" ? null : projetId || null, feedbackType, activityLogId, userId],
+      [feedbackType === "rejected" ? null : projetId || null, feedbackType, activityLogId, userId, organisationId],
     )
     .catch(() => null);
 }
@@ -222,6 +242,9 @@ async function maybeCreateFeedbackPattern({ feedbackType, projetId, windowTitle,
   const keyword = feedbackType !== "rejected" && projetId ? buildFeedbackKeyword(windowTitle) : null;
 
   if (!keyword) return null;
+
+  const projectExists = await ensureProjectInOrganisation({ projetId, organisationId });
+  if (!projectExists) return null;
 
   await db
     .query(
@@ -237,6 +260,16 @@ async function maybeCreateFeedbackPattern({ feedbackType, projetId, windowTitle,
 }
 
 async function saveFeedback({ userId, organisationId, activityLogId, projetId, appName, windowTitle, feedbackType }) {
+  if (projetId) {
+    const projectExists = await ensureProjectInOrganisation({ projetId, organisationId });
+
+    if (!projectExists) {
+      const err = new Error("Projet introuvable pour cette organisation.");
+      err.statusCode = 404;
+      throw err;
+    }
+  }
+
   const result = await db.query(
     `
     INSERT INTO activity_feedback
@@ -260,6 +293,7 @@ async function saveFeedback({ userId, organisationId, activityLogId, projetId, a
     projetId,
     feedbackType,
     userId,
+    organisationId,
   });
 
   await maybeCreateFeedbackPattern({
