@@ -11,11 +11,12 @@ const ApiResponse = require("../utils/apiResponse");
 
 /**
  * GET /api/organisation/health
- * Route de diagnostic rapide pour la Beta
+ * Route de diagnostic rapide pour la Beta.
+ * Nécessite un contexte organisationnel, car elle lit les settings de l'organisation courante.
  */
-router.get("/health", auth, async (req, res) => {
+router.get("/health", auth, requireOrganisation, async (req, res) => {
   try {
-    const dbCheck = await organisationService.getOrganisationSettings(req.user.organisation_id, req.db || undefined);
+    const dbCheck = await organisationService.getOrganisationSettings(req.user.organisation_id, req.db);
     return res.status(200).json(ApiResponse.success("HEALTH_OK", { 
       database: !!dbCheck,
       timestamp: new Date().toISOString() 
