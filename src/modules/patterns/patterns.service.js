@@ -1,6 +1,6 @@
 const pool = require('../../../db');
 
-async function analyzePatterns(userId, days = 7) {
+async function analyzePatterns(userId, orgId, days = 7) {
     // Determine the date range
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
@@ -10,17 +10,17 @@ async function analyzePatterns(userId, days = 7) {
     const eventsRes = await pool.query(`
         SELECT state, started_at, duration_minutes, projet_id
         FROM cognitive_state_events
-        WHERE utilisateur_id = $1 AND started_at >= $2
+        WHERE utilisateur_id = $1 AND organisation_id = $2 AND started_at >= $3
         ORDER BY started_at ASC
-    `, [userId, startDateStr]);
+    `, [userId, orgId, startDateStr]);
     const events = eventsRes.rows;
 
     // 2. Fetch daily cognitive metrics
     const dailyRes = await pool.query(`
         SELECT flow_minutes, deep_focus_minutes, friction_minutes, fatigue_minutes, context_switches
         FROM daily_cognitive_metrics
-        WHERE utilisateur_id = $1 AND date >= $2
-    `, [userId, startDateStr]);
+        WHERE utilisateur_id = $1 AND organisation_id = $2 AND date >= $3
+    `, [userId, orgId, startDateStr]);
     const dailyMetrics = dailyRes.rows;
 
     if (events.length === 0 && dailyMetrics.length === 0) {
@@ -30,7 +30,7 @@ async function analyzePatterns(userId, days = 7) {
     return {
         bestFocusWindow: calculateBestFocusWindow(events),
         worstFocusWindow: calculateWorstFocusWindow(events),
-        dominantProject: await calculateDominantProject(events),
+        dominantProject: await calculateDominantProject(events, orgId),
         averageTimeToDeepFocus: calculateAverageTimeToDeepFocus(events),
         averageContextSwitches: calculateAverageContextSwitches(dailyMetrics)
     };
@@ -100,7 +100,7 @@ function calculateWorstFocusWindow(events) {
     };
 }
 
-async function calculateDominantProject(events) {
+async function calculateDominantProject(events, orgId) {
     const projectMins = {};
     events.forEach(ev => {
         if (ev.state === 'deep_focus' && ev.projet_id) {
@@ -119,8 +119,8 @@ async function calculateDominantProject(events) {
 
     if (!domProjId) return null;
 
-    // Fetch name
-    const projRes = await pool.query(`SELECT nom FROM projets WHERE id = $1`, [domProjId]);
+    // Fetch name within the current organisation only.
+    const projRes = await pool.query(`SELECT nom FROM projets WHERE id = $1 AND organisation_id = $2`, [domProjId, orgId]);
     const nom = projRes.rows.length > 0 ? projRes.rows[0].nom : 'Projet inconnu';
 
     return {
