@@ -3,16 +3,24 @@ const router = express.Router();
 const db = require("../../db");
 const auth = require("../middleware/auth");
 const requireRole = require("../middleware/requireRole");
+const { requireOrganisation } = require("../middleware/organization.middleware");
 const { MODULES, isModuleIncludedInPlan } = require("../config/modules");
 const ApiResponse = require("../utils/apiResponse");
 const analyticsService = require("../services/analytics.service");
+
+/**
+ * Toutes les routes de modules utilisent l'organisation courante.
+ * On force donc le contexte organisationnel explicitement avant les handlers.
+ */
+router.use(auth);
+router.use(requireOrganisation);
 
 /**
  * GET /api/organisation/modules
  * Liste tous les modules avec leur statut (actif/inactif) pour l'organisation courante.
  * Accessible par tous les utilisateurs authentifiés.
  */
-router.get("/", auth, async (req, res) => {
+router.get("/", async (req, res) => {
   try {
     const organisationId = req.user.organisation_id;
 
@@ -81,7 +89,7 @@ router.get("/", auth, async (req, res) => {
  * POST /api/organisation/modules/:key
  * Active un module pour l'organisation. Admin only.
  */
-router.post("/:key", auth, requireRole("admin"), async (req, res) => {
+router.post("/:key", requireRole("admin"), async (req, res) => {
   try {
     const { key } = req.params;
     const organisationId = req.user.organisation_id;
@@ -110,7 +118,7 @@ router.post("/:key", auth, requireRole("admin"), async (req, res) => {
  * Désactive un module pour l'organisation. Admin only.
  * Les données restent en lecture seule.
  */
-router.delete("/:key", auth, requireRole("admin"), async (req, res) => {
+router.delete("/:key", requireRole("admin"), async (req, res) => {
   try {
     const { key } = req.params;
     const organisationId = req.user.organisation_id;
@@ -136,7 +144,7 @@ router.delete("/:key", auth, requireRole("admin"), async (req, res) => {
  * Crée une Stripe Checkout Session pour l'add‑on demandé.
  * Admin only.
  */
-router.post('/:key/checkout', auth, requireRole('admin'), async (req, res) => {
+router.post('/:key/checkout', requireRole('admin'), async (req, res) => {
   try {
     const { key } = req.params;
     const organisationId = req.user.organisation_id;
