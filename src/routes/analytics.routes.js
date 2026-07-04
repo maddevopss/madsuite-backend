@@ -3,14 +3,14 @@ const router = express.Router();
 
 const metricsAggregationJob = require("../jobs/metricsAggregationJob");
 const auth = require("../middleware/auth");
-const requireRole = require("../middleware/requireRole");
+const requireSuperAdmin = require("../middleware/requireSuperAdmin");
 const analyticsService = require("../services/analytics.service");
 const db = require("../../db");
 
 router.get(
   "/funnel",
   auth,
-  requireRole("admin"),
+  requireSuperAdmin,
   async (req, res, next) => {
     try {
       const days = parseInt(req.query.days, 10) || 30;
