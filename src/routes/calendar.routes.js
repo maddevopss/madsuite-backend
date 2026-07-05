@@ -1,17 +1,19 @@
 const express = require("express");
 const router = express.Router();
 const ApiResponse = require("../utils/apiResponse");
-const { fetchAndParseICal } = require("../utils/icalParser");
+const { fetchAndParseICal, validateICalUrl } = require("../utils/icalParser");
 const db = require("../../db");
 const { requireOrganisation } = require("../middleware/organization.middleware");
+const { getOrganisationId } = require("../utils/organisationScope");
 
 router.use(requireOrganisation);
 
 router.get("/events", async (req, res, next) => {
   try {
+    const organisationId = getOrganisationId(req);
     const { rows } = await db.query(
       "SELECT ical_feed_url FROM utilisateurs WHERE id = $1 AND organisation_id = $2",
-      [req.user.id, req.user.organisation_id || req.organisationId]
+      [req.user.id, organisationId]
     );
     const url = rows[0]?.ical_feed_url;
     
@@ -28,7 +30,7 @@ router.get("/events", async (req, res, next) => {
     
     const recentEvents = events.filter(e => {
       return e.start >= oneWeekAgo && e.start <= oneWeekFuture;
-    });
+    }).slice(0, 100);
 
     return res.status(200).json(ApiResponse.success("CALENDAR_EVENTS", recentEvents));
   } catch (err) {
@@ -38,12 +40,21 @@ router.get("/events", async (req, res, next) => {
 
 router.put("/feed", async (req, res, next) => {
   try {
+    const organisationId = getOrganisationId(req);
     const { ical_feed_url } = req.body;
+    const safeUrl = validateICalUrl(ical_feed_url);
+
+    if (!safeUrl) {
+      return res.status(400).json(ApiResponse.error("CALENDAR_INVALID_URL", {
+        message: "URL iCal invalide ou non autorisée.",
+      }));
+    }
+
     await db.query(
       "UPDATE utilisateurs SET ical_feed_url = $1 WHERE id = $2 AND organisation_id = $3",
-      [ical_feed_url, req.user.id, req.user.organisation_id || req.organisationId]
+      [safeUrl, req.user.id, organisationId]
     );
-    return res.status(200).json(ApiResponse.success("CALENDAR_URL_UPDATED", { ical_feed_url }));
+    return res.status(200).json(ApiResponse.success("CALENDAR_URL_UPDATED", { ical_feed_url: safeUrl }));
   } catch (err) {
     next(err);
   }
