@@ -3,6 +3,9 @@ const router = express.Router();
 const ApiResponse = require("../utils/apiResponse");
 const { fetchAndParseICal } = require("../utils/icalParser");
 const db = require("../../db");
+const { requireOrganisation } = require("../middleware/organization.middleware");
+
+router.use(requireOrganisation);
 
 router.get("/events", async (req, res, next) => {
   try {
