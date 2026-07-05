@@ -207,7 +207,7 @@ async function handleWebhook(event) {
 
               // Update status securely
               await db.query(
-                `UPDATE invoices SET status = 'paid', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND status IN ('sent', 'draft') AND organisation_id = $2`,
+                `UPDATE invoices SET status = 'paid', updated_at = CURRENT_TIMESTAMP WHERE id = $1 AND status IN ('sent', 'draft', 'finalized') AND organisation_id = $2`,
                 [invoiceId, inv.org_id]
               );
 
