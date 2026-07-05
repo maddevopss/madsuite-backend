@@ -6,6 +6,8 @@ const { getOrganisationId, getTimezone, organisationValue } = require("../utils/
 const ApiResponse = require("../utils/apiResponse");
 
 const router = express.Router();
+const MAX_DAY_SUMMARY_ENTRIES = 200;
+const MAX_DESCRIPTION_LENGTH = 500;
 const updateSummarySchema = z.object({
   summary_text: z.string().trim().min(1).max(10000),
 });
@@ -26,6 +28,10 @@ function durationSeconds(startTime, endTime) {
   const diff = new Date(endTime).getTime() - new Date(startTime).getTime();
   if (!Number.isFinite(diff) || diff <= 0) return 0;
   return Math.floor(diff / 1000);
+}
+
+function safeDescription(value) {
+  return String(value || "Entrée sans description").slice(0, MAX_DESCRIPTION_LENGTH);
 }
 
 function buildOptionalDeletedFilters() {
@@ -108,6 +114,7 @@ router.get("/:date", async (req, res, next) => {
         AND (te.start_time AT TIME ZONE $4)::date = $2::date
         ${timeEntriesFilter}
       ORDER BY te.start_time ASC
+      LIMIT ${MAX_DAY_SUMMARY_ENTRIES}
       `,
       [userId, date, organisationValue(organisationId), timezone],
     );
@@ -117,7 +124,7 @@ router.get("/:date", async (req, res, next) => {
     const billableSeconds = entries
       .filter((entry) => entry.is_billed !== false)
       .reduce((sum, entry) => sum + durationSeconds(entry.start_time, entry.end_time), 0);
-    const projects = [...new Set(entries.map((entry) => entry.projet_nom).filter(Boolean))];
+    const projects = [...new Set(entries.map((entry) => entry.projet_nom).filter(Boolean))].slice(0, 50);
 
     const summaryText = `
 Résumé du ${date}
@@ -129,7 +136,7 @@ Projets travaillés :
 ${projects.map((project) => `- ${project}`).join("\n") || "- Aucun projet détecté"}
 
 Activités principales :
-${entries.map((entry) => `- ${entry.description || "Entrée sans description"}`).join("\n") || "- Aucune entrée"}
+${entries.map((entry) => `- ${safeDescription(entry.description)}`).join("\n") || "- Aucune entrée"}
 `.trim();
 
     return res.status(200).json(
@@ -142,6 +149,7 @@ ${entries.map((entry) => `- ${entry.description || "Entrée sans description"}`)
         generated_summary_text: summaryText,
         is_edited: Boolean(storedSummary),
         entries_count: entries.length,
+        entries_limit: MAX_DAY_SUMMARY_ENTRIES,
         projects,
       }),
     );
