@@ -1,5 +1,4 @@
 const db = require("../../db");
-const { hasColumn } = require("../utils/dbSchema");
 const { organisationScope, getTimezone, organisationValue } = require("../utils/organisationScope");
 
 function addParam(params, value) {
@@ -7,7 +6,17 @@ function addParam(params, value) {
   return `$${params.length}`;
 }
 
+function requireOrganisationId(organisationId) {
+  if (!organisationId) {
+    const err = new Error("OrganisationId requis pour les rapports.");
+    err.statusCode = 403;
+    throw err;
+  }
+}
+
 async function generateReport({ userId, role, organisationId, dateDebut, dateFin, isBilled, groupBy }) {
+  requireOrganisationId(organisationId);
+
   const isAdmin = role === "admin";
   const tz = await getTimezone(organisationId);
   const params = [dateDebut, dateFin, tz];
@@ -37,7 +46,7 @@ async function generateReport({ userId, role, organisationId, dateDebut, dateFin
     groupByClause = "c.id, c.nom, p.id, p.nom, u.id, u.nom, DATE_TRUNC('month', te.start_time AT TIME ZONE $3)";
   } else if (groupBy === "week") {
     selectPeriod = `,
-      TO_CHAR(DATE_TRUNC('week', te.start_time AT TIME ZONE $3), 'YYYY-"W"IW') AS periode,
+      TO_CHAR(DATE_TRUNC('week', te.start_time AT TIME ZONE $3), 'YYYY-\"W\"IW') AS periode,
       TO_CHAR(DATE_TRUNC('week', te.start_time AT TIME ZONE $3), 'TMMonth DD, YYYY') AS periode_label`;
     groupByClause = "c.id, c.nom, p.id, p.nom, u.id, u.nom, DATE_TRUNC('week', te.start_time AT TIME ZONE $3)";
   }
@@ -95,7 +104,8 @@ async function generateReport({ userId, role, organisationId, dateDebut, dateFin
        ${billedCondition}
        ${userCondition}
      GROUP BY ${groupByClause}
-     ORDER BY c.nom ASC, p.nom ASC, montant_estime DESC`,
+     ORDER BY c.nom ASC, p.nom ASC, montant_estime DESC
+     LIMIT 1000`,
     params,
   );
 
@@ -114,7 +124,77 @@ async function generateReport({ userId, role, organisationId, dateDebut, dateFin
   return { rows, total };
 }
 
+async function getMonthlyData({ year, organisationId }) {
+  requireOrganisationId(organisationId);
+
+  const orgId = organisationValue(organisationId);
+  const result = await db.query(
+    `
+    SELECT
+      TO_CHAR(date_trunc('month', te.start_time), 'YYYY-MM') AS month,
+      ROUND(SUM(EXTRACT(EPOCH FROM (te.end_time - te.start_time)) / 3600), 2) AS hours,
+      ROUND(SUM(
+        (EXTRACT(EPOCH FROM (te.end_time - te.start_time)) / 3600)
+        * COALESCE(te.hourly_rate_used, p.taux_horaire, c.hourly_rate_defaut, 0)
+      ), 2) AS estimated_amount,
+      COUNT(te.id) AS entries
+    FROM time_entries te
+    LEFT JOIN projets p ON p.id = te.projet_id AND p.organisation_id = $1 AND p.deleted_at IS NULL
+    LEFT JOIN clients c ON c.id = p.client_id AND c.organisation_id = $1 AND c.deleted_at IS NULL
+    WHERE te.organisation_id = $1
+      AND te.deleted_at IS NULL
+      AND te.end_time IS NOT NULL
+      AND EXTRACT(YEAR FROM te.start_time) = $2
+    GROUP BY date_trunc('month', te.start_time)
+    ORDER BY month ASC
+    `,
+    [orgId, Number(year)],
+  );
+
+  return {
+    year: Number(year),
+    organisation_id: orgId,
+    months: result.rows || [],
+  };
+}
+
+async function getDailyData({ date, organisationId }) {
+  requireOrganisationId(organisationId);
+
+  const orgId = organisationValue(organisationId);
+  const result = await db.query(
+    `
+    SELECT
+      te.id,
+      te.start_time,
+      te.end_time,
+      te.description,
+      p.nom AS projet,
+      c.nom AS client,
+      ROUND(EXTRACT(EPOCH FROM (te.end_time - te.start_time)) / 3600, 2) AS hours
+    FROM time_entries te
+    LEFT JOIN projets p ON p.id = te.projet_id AND p.organisation_id = $1 AND p.deleted_at IS NULL
+    LEFT JOIN clients c ON c.id = p.client_id AND c.organisation_id = $1 AND c.deleted_at IS NULL
+    WHERE te.organisation_id = $1
+      AND te.deleted_at IS NULL
+      AND te.end_time IS NOT NULL
+      AND te.start_time::date = $2::date
+    ORDER BY te.start_time ASC
+    LIMIT 500
+    `,
+    [orgId, date],
+  );
+
+  return {
+    date,
+    organisation_id: orgId,
+    entries: result.rows || [],
+  };
+}
+
 async function listDebugTimeEntries({ organisationId }) {
+  requireOrganisationId(organisationId);
+
   const params = [organisationValue(organisationId)];
 
   const result = await db.query(
@@ -131,21 +211,17 @@ async function listDebugTimeEntries({ organisationId }) {
   return result.rows;
 }
 
-async function listDebugActivityLogs({ organisationId, userId, type }) {
-  const params = [type];
-  const conditions = ["type = $1"];
+async function listDebugActivityLogs({ organisationId, type }) {
+  requireOrganisationId(organisationId);
 
-  if (await hasColumn("activity_logs", "organisation_id")) {
-    conditions.push(`organisation_id = ${addParam(params, organisationValue(organisationId))}`);
-  } else {
-    conditions.push(`utilisateur_id = ${addParam(params, userId)}`);
-  }
+  const params = [type, organisationValue(organisationId)];
 
   const result = await db.query(
     `
     SELECT *
     FROM activity_logs
-    WHERE ${conditions.join(" AND ")}
+    WHERE type = $1
+      AND organisation_id = $2
     LIMIT 10
     `,
     params,
@@ -156,6 +232,8 @@ async function listDebugActivityLogs({ organisationId, userId, type }) {
 
 module.exports = {
   generateReport,
+  getMonthlyData,
+  getDailyData,
   listDebugTimeEntries,
   listDebugActivityLogs,
 };
