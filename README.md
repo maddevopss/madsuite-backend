@@ -45,6 +45,33 @@ npm run db:migrate
 npm run db:preflight:org
 ```
 
+## MADPROOF checks
+
+Avant de pousser une correction backend sensible, exécuter au minimum :
+
+```bash
+npm run guard:gitignore
+npm run guard:hygiene
+npm run guard:routes
+npm run guard:organisation-routes
+npm run test:security -- --runInBand
+```
+
+Validation complète locale :
+
+```bash
+npm run check:backend
+```
+
+Les guards bloquent notamment :
+
+- règles `.gitignore` critiques manquantes;
+- fichiers `.env` réels, artefacts générés ou secrets évidents;
+- routes platform montées sans garde super-admin;
+- routes métier organisationnelles sans contexte `requireOrganisation` / RLS.
+
+Si un guard tombe rouge, corriger le code ou la politique plutôt que de contourner le guard. Une exception doit être documentée dans `SYSTEME_MAD` avant fusion.
+
 ## Environnement
 
 Ne jamais commiter de fichier `.env` réel. Utiliser `.env.example` comme référence sans secret.
@@ -67,4 +94,4 @@ Avant un déploiement : valider les variables d’environnement, migrations, tes
 
 ## Statut
 
-Actif. Priorités : valider `.env.example`, documenter CI/CD, auditer les routes IA/cognitive selon MADPROOF et vérifier la cohérence modules frontend/backend.
+Actif. Priorités : garder les guards MADPROOF verts, valider CI/CD, auditer les routes IA/cognitive selon MADPROOF et vérifier la cohérence modules frontend/backend.
