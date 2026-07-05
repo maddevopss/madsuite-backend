@@ -44,6 +44,13 @@ const routeExpectations = [
     routerRequired: ["requireSuperAdmin"],
     rationale: "system health/cron data is global platform data",
   },
+  {
+    route: "/api/analytics",
+    required: ["auth"],
+    routerFile: path.join(repoRoot, "src", "routes", "analytics.routes.js"),
+    routerRequired: ["requireSuperAdmin"],
+    rationale: "analytics funnel and revenue truth snapshots are platform data",
+  },
 ];
 
 function findAppUseCall(route) {
