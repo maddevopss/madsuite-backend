@@ -181,7 +181,7 @@ app.use("/api/invoices", auth, requireModule("invoices"), invoicesRoutes);
 app.use("/api/billing", auth, requireModule("invoices"), billingDashboardRoutes);
 app.use("/api/revenue", auth, requireModule("invoices"), revenueRoutes);
 app.use("/api/estimates", auth, requireModule("estimates"), estimatesRoutes);
-app.use("/api/quotes", auth, requireModule("estimates"), quotesRoutes);
+app.use("/api/quotes", auth, requireModule("quotes"), quotesRoutes);
 app.use("/api/expenses", auth, requireModule("expenses"), expensesRoutes);
 app.use("/api/calendar", auth, require("./routes/calendar.routes"));
 app.use("/api/ai-assistant", auth, aiAssistantRoutes);
