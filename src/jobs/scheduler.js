@@ -16,6 +16,7 @@ const cronMonitor = require("../services/cronMonitor.service");
 const distributedLock = require("../services/distributedLock.service");
 const cronRegistry = require("../config/cron_registry");
 const { runWithContext } = require("../core/executionContext");
+const notificationService = require("../services/notification.service");
 
 function startSchedulers() {
   const activeJobs = [
@@ -42,12 +43,10 @@ function startSchedulers() {
     const message = `WARNING_CRON_REGISTRY_MISMATCH: missing_in_registry=[${missingInRegistry.join(', ')}], missing_in_scheduler=[${missingInScheduler.join(', ')}]`;
     logger.warn(message);
 
-    pool.query(`
-      INSERT INTO notifications (organisation_id, utilisateur_id, type, message)
-      SELECT organisation_id, id, 'system_alert', $1 
-      FROM utilisateurs 
-      WHERE role = 'admin'
-    `, [message]).catch(err => logger.error("Erreur notification admin (cron registry mismatch):", err));
+    notificationService.notifyAllOrganisationAdmins({
+      type: "system_alert",
+      message,
+    }).catch(err => logger.error("Erreur notification admin (cron registry mismatch):", err));
   }
 
   // Agrégation toutes les heures pour garder activity_logs léger
