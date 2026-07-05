@@ -26,6 +26,20 @@ const organisationScopedRouters = [
 
 const violations = [];
 
+function routeDefinitions(source) {
+  return source
+    .split(/\r?\n/)
+    .filter((line) => /router\.(get|post|put|patch|delete)\(/.test(line));
+}
+
+function hasOrganisationMiddleware(source) {
+  if (!source.includes("requireOrganisation")) return false;
+  if (/router\.use\(\s*requireOrganisation\s*\)/.test(source)) return true;
+
+  const routes = routeDefinitions(source);
+  return routes.length > 0 && routes.every((line) => line.includes("requireOrganisation"));
+}
+
 for (const [mount, relativeFile] of organisationScopedRouters) {
   const file = path.join(repoRoot, relativeFile);
   if (!fs.existsSync(file)) {
@@ -34,11 +48,9 @@ for (const [mount, relativeFile] of organisationScopedRouters) {
   }
 
   const source = fs.readFileSync(file, "utf8");
-  const importsRequireOrganisation = source.includes("requireOrganisation");
-  const appliesRequireOrganisation = /router\.use\(\s*requireOrganisation\s*\)/.test(source);
 
-  if (!importsRequireOrganisation || !appliesRequireOrganisation) {
-    violations.push(`${mount}: ${relativeFile} must import and apply router.use(requireOrganisation)`);
+  if (!hasOrganisationMiddleware(source)) {
+    violations.push(`${mount}: ${relativeFile} must apply requireOrganisation globally or on every route`);
   }
 }
 
