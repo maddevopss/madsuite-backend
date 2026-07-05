@@ -7,13 +7,14 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
   validate:
-    name: Lint, syntax, tests and security checks
+    name: Guard, lint, syntax, tests and security checks
     runs-on: ubuntu-latest
 
     services:
@@ -73,6 +74,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Route security guard
+        run: npm run guard:routes
 
       - name: Lint
         run: npm run lint
