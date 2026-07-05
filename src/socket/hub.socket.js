@@ -12,6 +12,11 @@
 const jwt = require("jsonwebtoken");
 const cookie = require("cookie");
 
+const MAX_SOCKET_PAYLOAD_BYTES = 4096;
+const TIMER_RELAY_FIELDS = new Set(["timerId", "projectId", "status", "startedAt", "stoppedAt", "elapsedSeconds", "description"]);
+const TIMER_COMMAND_FIELDS = new Set(["command", "timerId", "projectId", "description"]);
+const ALLOWED_TIMER_COMMANDS = new Set(["start", "stop", "pause", "resume", "sync"]);
+
 function getAccessTokenFromSocket(socket) {
   if (socket.handshake.auth && socket.handshake.auth.token) {
     return socket.handshake.auth.token;
@@ -24,6 +29,34 @@ function getAccessTokenFromSocket(socket) {
     }
   }
   return null;
+}
+
+function payloadSize(payload) {
+  try {
+    return Buffer.byteLength(JSON.stringify(payload || {}), "utf8");
+  } catch (err) {
+    return MAX_SOCKET_PAYLOAD_BYTES + 1;
+  }
+}
+
+function pickAllowedFields(payload, allowedFields) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return null;
+  if (payloadSize(payload) > MAX_SOCKET_PAYLOAD_BYTES) return null;
+
+  return Object.fromEntries(
+    Object.entries(payload).filter(([key]) => allowedFields.has(key)),
+  );
+}
+
+function sanitizeTimerUpdatePayload(payload) {
+  return pickAllowedFields(payload, TIMER_RELAY_FIELDS);
+}
+
+function sanitizeTimerCommandPayload(payload) {
+  const safePayload = pickAllowedFields(payload, TIMER_COMMAND_FIELDS);
+  if (!safePayload) return null;
+  if (!ALLOWED_TIMER_COMMANDS.has(safePayload.command)) return null;
+  return safePayload;
 }
 
 module.exports = (io) => {
@@ -71,11 +104,15 @@ module.exports = (io) => {
     });
 
     socket.on("hub:timer:update", (payload) => {
-      socket.to(orgRoom).emit("hub:timer:sync", payload);
+      const safePayload = sanitizeTimerUpdatePayload(payload);
+      if (!safePayload) return;
+      socket.to(orgRoom).emit("hub:timer:sync", safePayload);
     });
 
     socket.on("hub:timer:command", (payload) => {
-      socket.to(orgRoom).emit("hub:timer:command", payload);
+      const safePayload = sanitizeTimerCommandPayload(payload);
+      if (!safePayload) return;
+      socket.to(orgRoom).emit("hub:timer:command", safePayload);
     });
   });
 
