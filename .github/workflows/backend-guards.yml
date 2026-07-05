@@ -77,3 +77,6 @@ jobs:
 
       - name: Export contract guard
         run: npm run guard:export-contract
+
+      - name: Analytics contract guard
+        run: npm run guard:analytics-contract
