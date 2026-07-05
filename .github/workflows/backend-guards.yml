@@ -71,3 +71,6 @@ jobs:
 
       - name: Hub contract guard
         run: npm run guard:hub-contract
+
+      - name: Notifications contract guard
+        run: npm run guard:notifications-contract
