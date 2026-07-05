@@ -74,3 +74,6 @@ jobs:
 
       - name: Notifications contract guard
         run: npm run guard:notifications-contract
+
+      - name: Export contract guard
+        run: npm run guard:export-contract
