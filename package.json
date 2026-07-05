@@ -16,7 +16,7 @@
     "test": "cross-env NODE_ENV=test jest --detectOpenHandles",
     "test:coverage": "cross-env NODE_ENV=test jest --coverage --detectOpenHandles",
     "test:db:reset": "cross-env NODE_ENV=test node src/test/setupInvoicesTestDB.js",
-    "test:modules": "cross-env NODE_ENV=test jest src/test/modulesRegistry.test.js src/test/modulesService.test.js --runInBand",
+    "test:modules": "cross-env NODE_ENV=test jest src/test/modulesRegistry.test.js src/test/modulesService.test.js src/test/requireModule.test.js --runInBand",
     "test:security": "cross-env NODE_ENV=test jest src/test/requireSuperAdmin.security.test.js src/test/migrations.integration.test.js src/test/multiTenantJobs.security.test.js --detectOpenHandles",
     "guard:gitignore": "node scripts/guard-gitignore-policy.js",
     "guard:hygiene": "node scripts/guard-repo-hygiene.js",
