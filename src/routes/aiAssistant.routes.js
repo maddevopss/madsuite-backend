@@ -2,6 +2,7 @@ const express = require("express");
 const rateLimit = require("express-rate-limit");
 const { ipKeyGenerator } = require("express-rate-limit");
 const { requireOrganisation } = require("../middleware/organization.middleware");
+const { getOrganisationId } = require("../utils/organisationScope");
 const { handleServiceError } = require("../utils/routeError");
 const ApiResponse = require("../utils/apiResponse");
 const aiService = require("../services/ai.service");
@@ -14,7 +15,8 @@ const isDev = process.env.NODE_ENV === "development";
 // Custom keyGenerator compatible avec express-rate-limit IPv6
 const aiKeyGenerator = (req) => {
   try {
-    if (req.user?.organisation_id) return `ai:org:${req.user.organisation_id}`;
+    const organisationId = getOrganisationId(req);
+    if (organisationId) return `ai:org:${organisationId}`;
     return ipKeyGenerator(req) || req.ip || "unknown";
   } catch (e) {
     return req.ip || "unknown";
@@ -44,6 +46,7 @@ const MAX_MESSAGE_LENGTH = 2000;
 router.post("/chat", async (req, res, next) => {
   try {
     const { messages } = req.body;
+    const organisationId = getOrganisationId(req);
     
     if (!messages || !Array.isArray(messages)) {
       return res.status(400).json(ApiResponse.error("VALIDATION_ERROR", { message: "Le champ messages est requis et doit être un tableau." }));
@@ -68,7 +71,7 @@ router.post("/chat", async (req, res, next) => {
 
     const responseText = await aiService.askCopilot(
       safeMessages,
-      req.user.organisation_id,
+      organisationId,
       req.user.id
     );
 
