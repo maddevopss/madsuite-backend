@@ -1,18 +1,10 @@
 const nodemailer = require("nodemailer");
-const { pool } = require("../../db");
+const db = require("../../db");
 const logger = require("../config/logger");
-// const { getBullQueue } = require("../config/redis");
 const analyticsService = require("./analytics.service");
 
 let Queue = null;
 let IORedis = null;
-
-let redis = null;
-try {
-  redis = require("../config/redis");
-} catch (e) {
-  console.warn("Redis disabled");
-}
 
 try {
   ({ Queue } = require("bullmq"));
@@ -37,7 +29,9 @@ function buildTransporter() {
 }
 
 class EmailService {
-  constructor() {
+  constructor(pool) {
+    this.pool = pool || db;
+
     this.PRIORITIES = {
       HIGH: 1,
       NORMAL: 10,
@@ -47,8 +41,8 @@ class EmailService {
     this.THROTTLE_SECONDS = 3600;
     this.transporter = null;
 
-    if (Queue && IORedis) {
-      const connection = new IORedis(process.env.REDIS_URL || "redis://127.0.0.1:6379");
+    if (Queue && IORedis && process.env.REDIS_URL) {
+      const connection = new IORedis(process.env.REDIS_URL);
       this.emailQueue = new Queue("email-notifications", { connection });
     } else {
       this.emailQueue = null;
@@ -63,15 +57,17 @@ class EmailService {
     return this.transporter;
   }
 
-  async _sendWithIdempotency(idempotency_key, mailOptions) {
+  async _sendWithIdempotency(idempotency_key, mailOptions, poolOverride) {
     if (!idempotency_key) {
       throw new Error("idempotency_key est obligatoire pour l'envoi d'email");
     }
 
+    const queryClient = poolOverride || this.pool || db;
+
     try {
-      const { rows } = await pool.query(
+      const { rows } = await queryClient.query(
         "SELECT id FROM email_delivery_log WHERE idempotency_key = $1",
-        [idempotency_key]
+        [idempotency_key],
       );
 
       if (rows.length > 0) {
@@ -81,9 +77,9 @@ class EmailService {
 
       const result = await this.getTransporter().sendMail(mailOptions);
 
-      await pool.query(
+      await queryClient.query(
         "INSERT INTO email_delivery_log (idempotency_key, recipient, subject, status) VALUES ($1, $2, $3, $4)",
-        [idempotency_key, mailOptions.to, mailOptions.subject || 'Sans sujet', 'sent']
+        [idempotency_key, mailOptions.to, mailOptions.subject || "Sans sujet", "sent"],
       );
 
       return { sent: true, result, idempotency_key };
@@ -107,10 +103,11 @@ class EmailService {
 
   async sendSecurityAlert(userId, { type, ip, userAgent }) {
     try {
-      await pool.query(
+      await this.pool.query(
         `INSERT INTO security_incidents_buffer (organisation_id, utilisateur_id, type, details)
          SELECT organisation_id, id, $2, $3::jsonb
-         FROM utilisateurs WHERE id = $1`,
+         FROM utilisateurs
+         WHERE id = $1`,
         [userId, type, JSON.stringify({ ip, userAgent, created_at: new Date() })],
       );
 
@@ -149,17 +146,25 @@ class EmailService {
     if (!idempotency_key) throw new Error("idempotency_key est obligatoire");
 
     if (invoice?.organisation_id) {
-      analyticsService.trackEvent("dunning_triggered", {
-        organisationId: invoice.organisation_id,
-        metadata: { invoiceId: invoice.id, type: 'gentle' }
-      }).catch(err => logger.error("Analytics error:", err));
+      analyticsService
+        .trackEvent("dunning_triggered", {
+          organisationId: invoice.organisation_id,
+          metadata: { invoiceId: invoice.id, type: "gentle" },
+        })
+        .catch((err) => logger.error("Analytics error:", err));
     }
 
     if (this.emailQueue) {
-      return this.emailQueue.add("send-invoice-reminder", { to, invoice, type: 'gentle', idempotency_key }, { priority: this.PRIORITIES.NORMAL, attempts: 3 });
+      return this.emailQueue.add(
+        "send-invoice-reminder",
+        { to, invoice, type: "gentle", idempotency_key },
+        { priority: this.PRIORITIES.NORMAL, attempts: 3 },
+      );
     }
+
     const { invoice_number, total, due_date, public_token } = invoice;
     const portalUrl = `${process.env.FRONTEND_URL || "http://localhost:5173"}/portal/${public_token}`;
+
     return this._sendWithIdempotency(idempotency_key, {
       from: process.env.EMAIL_FROM || '"MADSuite Billing" <billing@madsuite.com>',
       to,
@@ -179,17 +184,25 @@ class EmailService {
     if (!idempotency_key) throw new Error("idempotency_key est obligatoire");
 
     if (invoice?.organisation_id) {
-      analyticsService.trackEvent("dunning_triggered", {
-        organisationId: invoice.organisation_id,
-        metadata: { invoiceId: invoice.id, type: 'firm' }
-      }).catch(err => logger.error("Analytics error:", err));
+      analyticsService
+        .trackEvent("dunning_triggered", {
+          organisationId: invoice.organisation_id,
+          metadata: { invoiceId: invoice.id, type: "firm" },
+        })
+        .catch((err) => logger.error("Analytics error:", err));
     }
 
     if (this.emailQueue) {
-      return this.emailQueue.add("send-invoice-reminder", { to, invoice, type: 'firm', idempotency_key }, { priority: this.PRIORITIES.NORMAL, attempts: 3 });
+      return this.emailQueue.add(
+        "send-invoice-reminder",
+        { to, invoice, type: "firm", idempotency_key },
+        { priority: this.PRIORITIES.NORMAL, attempts: 3 },
+      );
     }
+
     const { invoice_number, total, due_date, public_token } = invoice;
     const portalUrl = `${process.env.FRONTEND_URL || "http://localhost:5173"}/portal/${public_token}`;
+
     return this._sendWithIdempotency(idempotency_key, {
       from: process.env.EMAIL_FROM || '"MADSuite Billing" <billing@madsuite.com>',
       to,
@@ -208,17 +221,25 @@ class EmailService {
     if (!idempotency_key) throw new Error("idempotency_key est obligatoire");
 
     if (invoice?.organisation_id) {
-      analyticsService.trackEvent("dunning_triggered", {
-        organisationId: invoice.organisation_id,
-        metadata: { invoiceId: invoice.id, type: 'final' }
-      }).catch(err => logger.error("Analytics error:", err));
+      analyticsService
+        .trackEvent("dunning_triggered", {
+          organisationId: invoice.organisation_id,
+          metadata: { invoiceId: invoice.id, type: "final" },
+        })
+        .catch((err) => logger.error("Analytics error:", err));
     }
 
     if (this.emailQueue) {
-      return this.emailQueue.add("send-invoice-reminder", { to, invoice, type: 'final', idempotency_key }, { priority: this.PRIORITIES.HIGH, attempts: 3 });
+      return this.emailQueue.add(
+        "send-invoice-reminder",
+        { to, invoice, type: "final", idempotency_key },
+        { priority: this.PRIORITIES.HIGH, attempts: 3 },
+      );
     }
+
     const { invoice_number, total, due_date, public_token } = invoice;
     const portalUrl = `${process.env.FRONTEND_URL || "http://localhost:5173"}/portal/${public_token}`;
+
     return this._sendWithIdempotency(idempotency_key, {
       from: process.env.EMAIL_FROM || '"MADSuite Billing" <billing@madsuite.com>',
       to,

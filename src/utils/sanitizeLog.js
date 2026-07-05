@@ -1,44 +1,43 @@
-const SENSITIVE_QUERY_KEYS = new Set([
-  "access_token",
-  "auth",
-  "authorization",
-  "bearer",
-  "code",
-  "cookie",
-  "key",
-  "password",
-  "refresh",
-  "refresh_token",
-  "secret",
-  "signature",
+const SENSITIVE_QUERY_KEY_PATTERNS = [
   "token",
-]);
+  "secret",
+  "password",
+  "signature",
+  "stripe_signature",
+  "api_key",
+  "apikey",
+  "authorization",
+  "auth",
+  "code",
+];
 
-function isSensitiveKey(key) {
+function isSensitiveQueryKey(key) {
   const normalized = String(key || "").toLowerCase();
-  return SENSITIVE_QUERY_KEYS.has(normalized) || normalized.includes("token") || normalized.includes("secret") || normalized.includes("password");
+
+  return SENSITIVE_QUERY_KEY_PATTERNS.some((pattern) =>
+    normalized.includes(pattern),
+  );
 }
 
-function sanitizeUrlForLog(value) {
-  if (!value || typeof value !== "string") return value;
+function sanitizeUrlForLog(url) {
+  if (!url || typeof url !== "string") return url;
 
   try {
-    const parsed = new URL(value, "http://madsuite.local");
+    const parsed = new URL(url, "http://localhost");
 
-    for (const key of Array.from(parsed.searchParams.keys())) {
-      if (isSensitiveKey(key)) {
+    for (const key of parsed.searchParams.keys()) {
+      if (isSensitiveQueryKey(key)) {
         parsed.searchParams.set(key, "[REDACTED]");
       }
     }
 
-    const query = parsed.searchParams.toString();
-    return `${parsed.pathname}${query ? `?${query}` : ""}`;
+    return `${parsed.pathname}${parsed.search}`;
   } catch {
-    return value.replace(/([?&][^=]*(?:token|secret|password|key|code|signature)[^=]*=)[^&\s]+/gi, "$1[REDACTED]");
+    return url;
   }
 }
 
 module.exports = {
-  isSensitiveKey,
   sanitizeUrlForLog,
+  isSensitiveQueryKey,
 };
