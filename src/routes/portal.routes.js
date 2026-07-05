@@ -2,8 +2,26 @@ const express = require("express");
 const router = express.Router();
 const portalService = require("../services/portal.service");
 const { generateInvoicePdf } = require("../services/invoice/invoice.service");
+const { requireModuleForOrg } = require("../middleware/requireModule");
 const db = require("../../db");
 const logger = require("../config/logger");
+
+async function hasOrgModule(organisationId, moduleKey) {
+  return await requireModuleForOrg(moduleKey, organisationId)();
+}
+
+async function ensurePortalModule(res, organisationId, moduleKey) {
+  const hasAccess = await hasOrgModule(organisationId, moduleKey);
+  if (hasAccess) return true;
+
+  res.status(403).json({
+    success: false,
+    code: "MODULE_NOT_AVAILABLE",
+    message: `Le module "${moduleKey}" n'est pas disponible pour cette organisation.`,
+    module_key: moduleKey,
+  });
+  return false;
+}
 
 router.get("/:token", async (req, res) => {
   try {
@@ -64,6 +82,8 @@ router.post("/:token/checkout", async (req, res) => {
     if (!data || data.type !== "invoice") {
       return res.status(400).json({ message: "Facture introuvable ou invalide pour le paiement." });
     }
+
+    if (!(await ensurePortalModule(res, data.organisationId, "payments"))) return;
 
     if (data.document.status === "paid") {
       return res.status(400).json({ message: "Cette facture est déjà payée." });
