@@ -86,3 +86,6 @@ jobs:
 
       - name: Suggestions and day summary contract guard
         run: npm run guard:suggestions-summary-contract
+
+      - name: Master admin contract guard
+        run: npm run guard:master-admin-contract
