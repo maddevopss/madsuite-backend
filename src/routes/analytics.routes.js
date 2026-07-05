@@ -5,7 +5,51 @@ const metricsAggregationJob = require("../jobs/metricsAggregationJob");
 const auth = require("../middleware/auth");
 const requireSuperAdmin = require("../middleware/requireSuperAdmin");
 const analyticsService = require("../services/analytics.service");
+const { getOrganisationId } = require("../utils/organisationScope");
 const db = require("../../db");
+
+const MAX_METADATA_BYTES = 4096;
+const MAX_METADATA_DEPTH = 3;
+const MAX_METADATA_KEYS = 25;
+
+function sanitizeAnalyticsMetadata(value, depth = 0) {
+  if (depth > MAX_METADATA_DEPTH) return null;
+  if (value === null || value === undefined) return null;
+
+  if (["string", "number", "boolean"].includes(typeof value)) {
+    if (typeof value === "string") return value.slice(0, 500);
+    if (typeof value === "number" && !Number.isFinite(value)) return null;
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.slice(0, 25).map((item) => sanitizeAnalyticsMetadata(item, depth + 1));
+  }
+
+  if (typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value)
+        .slice(0, MAX_METADATA_KEYS)
+        .filter(([key]) => typeof key === "string" && key.length <= 80)
+        .map(([key, item]) => [key, sanitizeAnalyticsMetadata(item, depth + 1)]),
+    );
+  }
+
+  return null;
+}
+
+function validateAndSanitizeMetadata(metadata) {
+  const safeMetadata = sanitizeAnalyticsMetadata(metadata || {});
+  const serialized = JSON.stringify(safeMetadata || {});
+
+  if (Buffer.byteLength(serialized, "utf8") > MAX_METADATA_BYTES) {
+    const err = new Error("metadata trop volumineux");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  return safeMetadata || {};
+}
 
 router.get(
   "/funnel",
@@ -13,7 +57,7 @@ router.get(
   requireSuperAdmin,
   async (req, res, next) => {
     try {
-      const days = parseInt(req.query.days, 10) || 30;
+      const days = Math.min(90, Math.max(1, parseInt(req.query.days, 10) || 30));
       const metrics = await metricsAggregationJob.calculateMetrics(days);
 
       // Quick Revenue Truth snapshot (for before/after verification)
@@ -72,10 +116,11 @@ const ALLOWED_FRONTEND_EVENTS = new Set([
 
 // Generic track endpoint (for non-critical frontend events only).
 // Critical funnel events (signup_completed, first_*, checkout_started for subs/modules, subscription_active) are tracked server-side.
-router.post("/track", auth, async (req, res) => {
+router.post("/track", auth, async (req, res, next) => {
   try {
-    const { event_name, metadata = {} } = req.body;
-    const organisationId = req.user?.organisation_id;
+    const { event_name } = req.body;
+    const metadata = validateAndSanitizeMetadata(req.body.metadata || {});
+    const organisationId = getOrganisationId(req);
     const userId = req.user?.id;
 
     if (!event_name || !organisationId) {
@@ -95,8 +140,12 @@ router.post("/track", auth, async (req, res) => {
 
     res.json({ success: true });
   } catch (e) {
+    if (e.statusCode === 400) {
+      return res.status(400).json({ success: false, error: e.message });
+    }
+
     // non blocking for tracking
-    res.json({ success: true });
+    return res.json({ success: true });
   }
 });
 
