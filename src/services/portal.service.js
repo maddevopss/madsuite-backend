@@ -77,15 +77,15 @@ class PortalService {
     }
 
     // Stocker la signature si fournie
-    const updateParams = [action, id];
+    const updateParams = [action, id, organisation_id];
     let signatureClause = "";
     if (signatureData && action === "accepted") {
-      signatureClause = ", signature_data = $3, signed_at = CURRENT_TIMESTAMP, signed_ip = $4";
+      signatureClause = ", signature_data = $4, signed_at = CURRENT_TIMESTAMP, signed_ip = $5";
       updateParams.push(signatureData, clientIp || null);
     }
 
     const result = await db.query(
-      `UPDATE estimates SET status = $1, updated_at = CURRENT_TIMESTAMP${signatureClause} WHERE id = $2 RETURNING *`,
+      `UPDATE estimates SET status = $1, updated_at = CURRENT_TIMESTAMP${signatureClause} WHERE id = $2 AND organisation_id = $3 RETURNING *`,
       updateParams
     );
 
