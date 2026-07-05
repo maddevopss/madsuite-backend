@@ -83,3 +83,6 @@ jobs:
 
       - name: Calendar contract guard
         run: npm run guard:calendar-contract
+
+      - name: Suggestions and day summary contract guard
+        run: npm run guard:suggestions-summary-contract
