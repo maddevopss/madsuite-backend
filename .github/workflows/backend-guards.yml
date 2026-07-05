@@ -89,3 +89,6 @@ jobs:
 
       - name: Master admin contract guard
         run: npm run guard:master-admin-contract
+
+      - name: Reports contract guard
+        run: npm run guard:reports-contract
