@@ -21,7 +21,8 @@
     "aggregate:logs": "node src/jobs/runAggregateActivityLogs.js",
     "lint": "eslint src/**/*.js",
     "db:preflight:org": "node src/migrate/preflightOrganisationScope.js",
-    "db:migrate": "node -e \"require('./src/migrate/runMigrations').runMigrations({ backup: process.env.ENABLE_DB_BACKUP === '1' }).then(()=>process.exit(0)).catch(e=>{ console.error(e.message); process.exit(1); })\""
+    "db:migrate": "node -e \"require('./src/migrate/runMigrations').runMigrations({ backup: process.env.ENABLE_DB_BACKUP === '1' }).then(()=>process.exit(0)).catch(e=>{ console.error(e.message); process.exit(1); })\"",
+    "deploy:migrate": "cross-env NODE_ENV=production npm run db:migrate"
   },
   "dependencies": {
     "@prisma/adapter-neon": "^7.8.0",
