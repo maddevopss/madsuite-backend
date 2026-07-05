@@ -1,10 +1,59 @@
 const axios = require('axios');
+const logger = require('../config/logger');
+
+const MAX_ICAL_BYTES = 1024 * 1024;
+const ICAL_TIMEOUT_MS = 10000;
+const PRIVATE_HOST_PATTERNS = [
+  /^localhost$/i,
+  /^127\./,
+  /^10\./,
+  /^192\.168\./,
+  /^172\.(1[6-9]|2\d|3[0-1])\./,
+  /^0\./,
+  /^169\.254\./,
+  /^::1$/,
+];
+
+function validateICalUrl(rawUrl) {
+  if (!rawUrl || typeof rawUrl !== 'string') return null;
+  if (rawUrl.length > 2048) return null;
+
+  let parsed;
+  try {
+    parsed = new URL(rawUrl);
+  } catch (err) {
+    return null;
+  }
+
+  if (!['https:', 'http:'].includes(parsed.protocol)) return null;
+  if (!parsed.hostname) return null;
+
+  const hostname = parsed.hostname.toLowerCase();
+  if (PRIVATE_HOST_PATTERNS.some((pattern) => pattern.test(hostname))) return null;
+
+  return parsed.toString();
+}
 
 async function fetchAndParseICal(url) {
+  const safeUrl = validateICalUrl(url);
+  if (!safeUrl) return [];
+
   try {
-    const { data } = await axios.get(url);
+    const { data } = await axios.get(safeUrl, {
+      timeout: ICAL_TIMEOUT_MS,
+      maxContentLength: MAX_ICAL_BYTES,
+      maxBodyLength: MAX_ICAL_BYTES,
+      responseType: 'text',
+      transformResponse: [(body) => body],
+      validateStatus: (status) => status >= 200 && status < 300,
+    });
+
+    if (typeof data !== 'string' || Buffer.byteLength(data, 'utf8') > MAX_ICAL_BYTES) {
+      return [];
+    }
+
     const events = [];
-    const lines = data.split(/\r?\n/);
+    const lines = data.split(/\r?\n/).slice(0, 50000);
     
     let currentEvent = null;
     
@@ -18,20 +67,20 @@ async function fetchAndParseICal(url) {
         }
       } else if (currentEvent) {
         if (line.startsWith('SUMMARY:')) {
-          currentEvent.summary = line.substring(8);
+          currentEvent.summary = line.substring(8).slice(0, 500);
         } else if (line.startsWith('DTSTART:')) {
           currentEvent.start = parseICalDate(line.substring(8));
         } else if (line.startsWith('DTEND:')) {
           currentEvent.end = parseICalDate(line.substring(6));
         } else if (line.startsWith('UID:')) {
-          currentEvent.uid = line.substring(4);
+          currentEvent.uid = line.substring(4).slice(0, 300);
         }
       }
     }
     
     return events;
   } catch (error) {
-    console.error('Erreur iCal:', error.message);
+    logger.warn('Erreur iCal', { error: error.message });
     return [];
   }
 }
@@ -54,9 +103,11 @@ function parseICalDate(icalDateStr) {
       seconds = timePart.substring(4, 6);
     }
     
-    return new Date(`${year}-${month}-${day}T${hours}:${minutes}:${seconds}Z`);
+    const parsed = new Date(`${year}-${month}-${day}T${hours}:${minutes}:${seconds}Z`);
+    if (Number.isNaN(parsed.getTime())) return new Date();
+    return parsed;
   }
   return new Date();
 }
 
-module.exports = { fetchAndParseICal };
+module.exports = { fetchAndParseICal, validateICalUrl };
