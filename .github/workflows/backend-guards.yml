@@ -41,3 +41,6 @@ jobs:
 
       - name: Organisation route guard
         run: npm run guard:organisation-routes
+
+      - name: Modules contract guard
+        run: npm run guard:modules-contract
