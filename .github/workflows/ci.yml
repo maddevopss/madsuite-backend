@@ -13,8 +13,53 @@ permissions:
 
 jobs:
   validate:
-    name: Lint and syntax checks
+    name: Lint, syntax, tests and security checks
     runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: change_me
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      NODE_ENV: test
+      CI: true
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: change_me
+      DB_NAME: madsuite_test
+      TEST_DB_NAME: madsuite_test
+      MIGRATION_TEST_DB_NAME: madsuite_migrations_test
+      DATABASE_URL: postgresql://postgres:change_me@localhost:5432/madsuite_test
+      TEST_DATABASE_URL: postgresql://postgres:change_me@localhost:5432/madsuite_test
+      POSTGRES_ADMIN_URL: postgresql://postgres:change_me@localhost:5432/postgres
+      JWT_SECRET: test-secret-madsuite-1234567890-ABC!
+      TEST_ORG_ID: 1
+      TEST_USER_EMAIL: revenue-e2e@test.com
+      TEST_USER_PASSWORD: change-me-test-password-123!
+      E2E_ADMIN_EMAIL: revenue-e2e@test.com
+      E2E_PASSWORD: change-me-test-password-123!
+      MASTER_ADMIN_USER_IDS: 999999
+      FRONTEND_URL: http://localhost:3000
+      ELECTRON_URL: http://localhost:3000
+      REDIS_DISABLED: true
+      SCHEDULERS_ENABLED: false
+      TRIAL_REMINDER_JOB_ENABLED: false
+      RETENTION_JOB_ENABLED: false
+      AI_ASSISTANT_ENABLED: false
+      SKIP_MIGRATIONS: 0
+      ENABLE_DB_BACKUP: 0
 
     steps:
       - name: Checkout
@@ -35,8 +80,8 @@ jobs:
       - name: Syntax check server entrypoint
         run: node -c server.js
 
-      - name: Document DB integration tests
-        run: |
-          echo "Backend DB integration tests are intentionally not run in this Linux CI phase."
-          echo "Current Jest global setup starts a Windows-local PostgreSQL test cluster."
-          echo "See SYSTEME_MAD/09-CHECKLISTS/audit-007-ci-tests-build-multirepo-madsuite.md."
+      - name: Run backend test suite
+        run: npm test -- --runInBand
+
+      - name: Run backend security tests
+        run: npm run test:security -- --runInBand
