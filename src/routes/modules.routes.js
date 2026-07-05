@@ -4,7 +4,12 @@ const db = require("../../db");
 const auth = require("../middleware/auth");
 const requireRole = require("../middleware/requireRole");
 const { requireOrganisation } = require("../middleware/organization.middleware");
-const { MODULES, isModuleIncludedInPlan, getModuleRegistryDiagnostics } = require("../config/modules");
+const { MODULES } = require("../config/modules");
+const {
+  buildModulesPayload,
+  normalizeEnabledMap,
+  normalizePricingMap,
+} = require("../services/modules.service");
 const ApiResponse = require("../utils/apiResponse");
 const analyticsService = require("../services/analytics.service");
 
@@ -40,53 +45,19 @@ router.get("/", async (req, res) => {
       "SELECT module_key, is_active FROM organisation_modules WHERE organisation_id = $1",
       [organisationId]
     );
-    const enabledMap = {};
-    enabledResult.rows.forEach(row => {
-      enabledMap[row.module_key] = row.is_active;
-    });
 
     // Retrieve dynamic pricing for all modules
     const pricingResult = await db.query(
       "SELECT module_key, price_cents, currency FROM module_pricing"
     );
-    const pricingMap = {};
-    pricingResult.rows.forEach(row => {
-      pricingMap[row.module_key] = {
-        price_cents: row.price_cents,
-        currency: row.currency
-      };
+
+    const payload = buildModulesPayload({
+      planType,
+      enabledMap: normalizeEnabledMap(enabledResult.rows),
+      pricingMap: normalizePricingMap(pricingResult.rows),
     });
 
-    // Build the full response
-    const modules = Object.entries(MODULES).map(([key, config]) => {
-      const includedInPlan = isModuleIncludedInPlan(key, planType);
-      const explicitlyEnabled = enabledMap[key] === true;
-      const isActive = includedInPlan || explicitlyEnabled;
-
-      // Override static price with dynamic pricing if present
-      const dynamic = pricingMap[key];
-      const price = dynamic ? dynamic.price_cents / 100 : config.price; // convert to dollars
-
-      return {
-        key,
-        label: config.label,
-        plan: config.plan,
-        price,
-        currency: dynamic ? dynamic.currency : "CAD",
-        matrix_status: config.matrix_status,
-        is_active: isActive,
-        active: isActive,
-        included_in_plan: includedInPlan,
-        included: includedInPlan,
-        is_addon_active: !includedInPlan && explicitlyEnabled,
-      };
-    });
-
-    return res.status(200).json(ApiResponse.success("MODULES_LISTED", {
-      plan_type: planType,
-      modules,
-      diagnostics: getModuleRegistryDiagnostics(),
-    }));
+    return res.status(200).json(ApiResponse.success("MODULES_LISTED", payload));
   } catch (err) {
     console.error("Erreur modules list:", err);
     res.status(500).json(ApiResponse.error("SERVER_ERROR", { message: "Erreur serveur" }));
