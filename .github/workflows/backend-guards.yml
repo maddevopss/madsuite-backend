@@ -68,3 +68,6 @@ jobs:
 
       - name: Cognitive contract guard
         run: npm run guard:cognitive-contract
+
+      - name: Hub contract guard
+        run: npm run guard:hub-contract
