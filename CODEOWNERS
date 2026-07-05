@@ -1,0 +1,14 @@
+# MADSuite backend ownership
+
+* @bleeband
+
+# Security-sensitive backend surfaces
+src/middleware/ @bleeband
+src/routes/ @bleeband
+src/services/ @bleeband
+src/jobs/ @bleeband
+src/migrations/ @bleeband
+src/migrate/ @bleeband
+.github/workflows/ @bleeband
+.github/dependabot.yml @bleeband
+scripts/ @bleeband
