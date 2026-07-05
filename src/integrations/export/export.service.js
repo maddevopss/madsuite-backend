@@ -24,7 +24,8 @@ function toCSV(data) {
 }
 
 async function exportInvoicesToCSV(organisationId, { startDate, endDate } = {}) {
-  const params = [organisationValue(organisationId)];
+  const orgId = organisationValue(organisationId);
+  const params = [orgId];
   const conditions = ["i.organisation_id = $1", "i.deleted_at IS NULL"];
 
   if (startDate) {
@@ -49,7 +50,7 @@ async function exportInvoicesToCSV(organisationId, { startDate, endDate } = {}) 
       i.notes AS "Notes",
       i.created_at AS "CreatedAt"
     FROM invoices i
-    LEFT JOIN clients c ON i.client_id = c.id
+    LEFT JOIN clients c ON i.client_id = c.id AND c.organisation_id = $1
     WHERE ${conditions.join(" AND ")}
     ORDER BY i.issue_date DESC, i.id DESC
   `;
@@ -59,7 +60,8 @@ async function exportInvoicesToCSV(organisationId, { startDate, endDate } = {}) 
 }
 
 async function exportExpensesToCSV(organisationId, { startDate, endDate } = {}) {
-  const params = [organisationValue(organisationId)];
+  const orgId = organisationValue(organisationId);
+  const params = [orgId];
   const conditions = ["e.organisation_id = $1", "e.deleted_at IS NULL"];
 
   if (startDate) {
@@ -83,8 +85,8 @@ async function exportExpensesToCSV(organisationId, { startDate, endDate } = {}) 
       e.invoice_id AS "InvoiceID",
       e.created_at AS "CreatedAt"
     FROM expenses e
-    LEFT JOIN projets p ON e.projet_id = p.id
-    LEFT JOIN clients c ON p.client_id = c.id
+    LEFT JOIN projets p ON e.projet_id = p.id AND p.organisation_id = $1
+    LEFT JOIN clients c ON p.client_id = c.id AND c.organisation_id = $1
     WHERE ${conditions.join(" AND ")}
     ORDER BY e.date_depense DESC, e.id DESC
   `;
@@ -94,7 +96,8 @@ async function exportExpensesToCSV(organisationId, { startDate, endDate } = {}) 
 }
 
 async function exportLedgerToCSV(organisationId, { startDate, endDate } = {}) {
-  const params = [organisationValue(organisationId)];
+  const orgId = organisationValue(organisationId);
+  const params = [orgId];
   const conditions = ["organisation_id = $1"];
 
   if (startDate) {
