@@ -50,3 +50,6 @@ jobs:
 
       - name: App module mounts guard
         run: npm run guard:app-module-mounts
+
+      - name: Public kiosk module guard
+        run: npm run guard:public-kiosk-modules
