@@ -81,6 +81,9 @@ jobs:
       - name: Route security guard
         run: npm run guard:routes
 
+      - name: Organisation route guard
+        run: npm run guard:organisation-routes
+
       - name: Lint
         run: npm run lint
 
