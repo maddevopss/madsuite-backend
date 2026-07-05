@@ -65,3 +65,6 @@ jobs:
 
       - name: AI contract guard
         run: npm run guard:ai-contract
+
+      - name: Cognitive contract guard
+        run: npm run guard:cognitive-contract
