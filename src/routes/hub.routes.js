@@ -7,16 +7,22 @@
  * SECURITY FIX (P0-1, P0-2):
  * - req.user.organisationId → req.user.organisation_id (JWT uses snake_case)
  * - io.emit() global → io.of('/hub').to(`org_${orgId}`).emit() (tenant isolation)
+ *
+ * SECURITY FIX (P0-3):
+ * - Require the canonical organisation middleware for every Hub endpoint.
+ * - This binds req.db and db.query() to the request-scoped RLS transaction.
  */
 
 const express = require('express');
 const router = express.Router();
 const hubService = require('../services/hub.service');
 const auth = require('../middleware/auth');
+const { requireOrganisation } = require('../middleware/organization.middleware');
 const logger = require('../config/logger');
 
-// Apply auth to all hub routes
+// Apply auth + request-scoped organisation/RLS context to all hub routes.
 router.use(auth);
+router.use(requireOrganisation);
 
 // ---------- Projects ----------
 router.get('/projects', async (req, res) => {
