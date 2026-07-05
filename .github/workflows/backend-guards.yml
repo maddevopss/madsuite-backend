@@ -80,3 +80,6 @@ jobs:
 
       - name: Analytics contract guard
         run: npm run guard:analytics-contract
+
+      - name: Calendar contract guard
+        run: npm run guard:calendar-contract
