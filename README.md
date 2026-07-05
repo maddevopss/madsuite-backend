@@ -54,6 +54,8 @@ npm run guard:gitignore
 npm run guard:hygiene
 npm run guard:routes
 npm run guard:organisation-routes
+npm run guard:modules-contract
+npm run test:modules
 npm run test:security -- --runInBand
 ```
 
@@ -68,9 +70,54 @@ Les guards bloquent notamment :
 - règles `.gitignore` critiques manquantes;
 - fichiers `.env` réels, artefacts générés ou secrets évidents;
 - routes platform montées sans garde super-admin;
-- routes métier organisationnelles sans contexte `requireOrganisation` / RLS.
+- routes métier organisationnelles sans contexte `requireOrganisation` / RLS;
+- reconstruction inline du contrat API modules dans `src/routes/modules.routes.js`.
 
 Si un guard tombe rouge, corriger le code ou la politique plutôt que de contourner le guard. Une exception doit être documentée dans `SYSTEME_MAD` avant fusion.
+
+## Contrat modules
+
+Le contrat API modules doit rester centralisé dans :
+
+```text
+src/services/modules.service.js
+```
+
+La route :
+
+```text
+src/routes/modules.routes.js
+```
+
+doit rester une couche d’orchestration : authentification, contexte organisation, lectures DB et retour `ApiResponse`.
+
+Ne pas reconstruire manuellement les champs suivants dans la route :
+
+```text
+plan_type
+modules
+diagnostics
+matrix_status
+is_active
+active
+included_in_plan
+included
+is_addon_active
+```
+
+Commandes dédiées :
+
+```bash
+npm run guard:modules-contract
+npm run test:modules
+```
+
+Références SYSTEME_MAD :
+
+```text
+SYSTEME_MAD/02-PRODUIT/madsuite-matrice-plans-modules.md
+SYSTEME_MAD/09-CHECKLISTS/chk-052-p3-plans-modules-subscriptions.md
+```
 
 ## Environnement
 
