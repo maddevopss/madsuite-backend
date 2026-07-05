@@ -1,0 +1,43 @@
+name: Backend Guards
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  guards:
+    name: Repository and route guards
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Gitignore policy guard
+        run: npm run guard:gitignore
+
+      - name: Repository hygiene guard
+        run: npm run guard:hygiene
+
+      - name: Route security guard
+        run: npm run guard:routes
+
+      - name: Organisation route guard
+        run: npm run guard:organisation-routes
