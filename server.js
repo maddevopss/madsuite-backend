@@ -18,6 +18,12 @@ function splitOrigins(value) {
     .filter(Boolean);
 }
 
+function shouldRunMigrationsOnStartup() {
+  if (process.env.SKIP_MIGRATIONS === "1") return false;
+  if (process.env.RUN_MIGRATIONS_ON_STARTUP === "1") return true;
+  return process.env.NODE_ENV !== "production";
+}
+
 // INITIALISATION DE SENTRY
 const Sentry = require("@sentry/node");
 const { nodeProfilingIntegration } = require("@sentry/profiling-node");
@@ -161,24 +167,19 @@ async function start() {
   try {
     console.log("🚀 Démarrage du serveur...");
 
-    // 1. Run database migrations (idempotent runner)
-    // IMPORTANT: This was previously commented out (risk of new envs, dev/prod drift, hard diagnostics).
-    // The runner (runMigrations.js) is designed to be safe:
-    // - Uses schema_migration_lock to prevent concurrent runs
-    // - Handles baseline snapshot for empty DBs
-    // - Skips already-applied migrations
-    // - Calls assertRuntimeSchema and selective preflight
-    // We now run it on every start for reliability.
-    // Escape hatch: SKIP_MIGRATIONS=1
-    console.log("📦 Exécution des migrations...");
-    if (process.env.SKIP_MIGRATIONS !== "1") {
+    // 1. Run database migrations.
+    // Dev/test keep automatic migrations by default for local reliability.
+    // Production must run migrations as an explicit deploy step with npm run db:migrate,
+    // or opt in with RUN_MIGRATIONS_ON_STARTUP=1 for platforms that require startup migrations.
+    if (shouldRunMigrationsOnStartup()) {
+      console.log("📦 Exécution des migrations...");
       await runMigrations({
         backup: process.env.ENABLE_DB_BACKUP === "1",
       });
+      console.log("✅ Migrations terminées");
     } else {
-      console.log("⏭️  SKIP_MIGRATIONS=1 → migrations sautées");
+      console.log("⏭️  Migrations de démarrage désactivées");
     }
-    console.log("✅ Migrations terminées");
 
     // 2. Create HTTP server
     const server = http.createServer(app);
