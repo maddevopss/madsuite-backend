@@ -100,8 +100,11 @@ async function generateTimesheetSuggestions({ organisationId, userId, targetDate
     if (Object.keys(projectGroups).length > 0) {
       const projectIds = Object.keys(projectGroups);
       const projRes = await db.query(
-        `SELECT id, nom, taux_horaire FROM projets WHERE id = ANY($1)`,
-        [projectIds]
+        `SELECT id, nom, taux_horaire
+        FROM projets
+        WHERE id = ANY($1)
+          AND organisation_id = $2`,
+        [projectIds, organisationId]
       );
 
       const projectDetails = {};
@@ -248,7 +251,7 @@ async function generateProjectSummary({ projectId, organisationId }) {
   try {
     const openai = getOpenAI();
     const projectRes = await db.query(
-      `SELECT * FROM projets WHERE id = $1 AND (organisation_id = $2 OR organisation_id IS NULL)`,
+      `SELECT * FROM projets WHERE id = $1 AND organisation_id = $2`,
       [projectId, organisationId]
     );
     const project = projectRes.rows[0];
@@ -260,7 +263,7 @@ async function generateProjectSummary({ projectId, organisationId }) {
 
     const entriesRes = await db.query(
       `SELECT description, duration_seconds FROM time_entries 
-       WHERE projet_id = $1 AND (organisation_id = $2 OR organisation_id IS NULL) AND end_time IS NOT NULL
+       WHERE projet_id = $1 AND organisation_id = $2 AND end_time IS NOT NULL
        ORDER BY created_at DESC LIMIT 50`,
       [projectId, organisationId]
     );
@@ -270,7 +273,7 @@ async function generateProjectSummary({ projectId, organisationId }) {
       `SELECT 
          COALESCE(SUM(duration_seconds), 0) / 3600.0 AS total_hours,
          COUNT(*) as total_entries
-       FROM time_entries WHERE projet_id = $1 AND (organisation_id = $2 OR organisation_id IS NULL)`,
+       FROM time_entries WHERE projet_id = $1 AND organisation_id = $2`,
       [projectId, organisationId]
     );
     const stats = statsRes.rows[0];
@@ -321,10 +324,19 @@ async function categorizeActivitiesBatch({ activities, organisationId }) {
       messages: [
         {
           role: "system",
-          content: `Tu es un expert en productivité. Je vais te donner une liste d'activités (fenêtres ouvertes par l'utilisateur).
-Pour chaque ID, donne une catégorie la plus pertinente (ex: "Développement", "Communication", "Recherche", "Administration", "Design", "Autre") et précise si c'est productif (true/false).
-Réponds STRICTEMENT sous format JSON:
-{ "results": [ { "id": ID_NUMERIQUE, "category": "Nom de la catégorie", "is_productive": true } ] }`
+          content: `Tu aides à classer des activités applicatives pour un outil de gestion du temps.
+          Je vais te donner une liste d'activités sous forme de fenêtres ouvertes par l'utilisateur.
+
+          Pour chaque ID, donne:
+          - la catégorie la plus pertinente, par exemple: "Développement", "Communication", "Recherche", "Administration", "Design", "Autre";
+          - "is_productive": true seulement si l'activité semble liée au travail, à un contexte métier ou à une tâche facturable; false sinon.
+
+          Important:
+          Le champ "is_productive" est un indicateur technique de contexte de travail.
+          Il ne doit jamais être interprété comme un jugement sur la personne, sa discipline, son attention, sa valeur ou sa performance.
+
+          Réponds STRICTEMENT sous format JSON:
+          { "results": [ { "id": ID_NUMERIQUE, "category": "Nom de la catégorie", "is_productive": true } ] }`
         },
         {
           role: "user",

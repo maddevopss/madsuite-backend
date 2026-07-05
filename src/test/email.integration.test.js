@@ -1,23 +1,24 @@
-const nodemailer = require("nodemailer");
-const db = require("../../db");
-const { sendResetPasswordEmail } = require("../services/email.service"); // Ajuste le chemin
-
-// On mocke nodemailer
 jest.mock("nodemailer");
 
-// On mocke db
 jest.mock("../../db", () => ({
-  query: jest.fn().mockResolvedValue({ rows: [] })
+  query: jest.fn().mockResolvedValue({ rows: [] }),
 }));
+
+const nodemailer = require("nodemailer");
+const db = require("../../db");
+const { sendResetPasswordEmail } = require("../services/email.service");
 
 describe("Email Integration Service", () => {
   let sendMailMock;
 
   beforeEach(() => {
     sendMailMock = jest.fn().mockResolvedValue({ messageId: "test-id" });
+
     nodemailer.createTransport.mockReturnValue({
       sendMail: sendMailMock,
     });
+
+    db.query.mockResolvedValue({ rows: [] });
   });
 
   afterEach(() => {

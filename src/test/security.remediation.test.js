@@ -26,6 +26,22 @@ function makeToken(user, overrides = {}) {
   );
 }
 
+async function cleanupOrgs(orgIds) {
+  if (!orgIds || orgIds.length === 0) return;
+
+  await db.query("DELETE FROM notifications WHERE organisation_id = ANY($1)", [orgIds]);
+  await db.query("DELETE FROM recurring_invoices WHERE organisation_id = ANY($1)", [orgIds]);
+  await db.query("DELETE FROM invoice_items WHERE invoice_id IN (SELECT id FROM invoices WHERE organisation_id = ANY($1))", [orgIds]);
+  await db.query("DELETE FROM invoices WHERE organisation_id = ANY($1)", [orgIds]);
+  await db.query("DELETE FROM time_entries WHERE organisation_id = ANY($1)", [orgIds]);
+  await db.query("DELETE FROM cognitive_state_events WHERE organisation_id = ANY($1)", [orgIds]);
+  await db.query("DELETE FROM daily_cognitive_metrics WHERE organisation_id = ANY($1)", [orgIds]);
+  await db.query("DELETE FROM clients WHERE organisation_id = ANY($1)", [orgIds]);
+  await db.query("DELETE FROM projets WHERE organisation_id = ANY($1)", [orgIds]);
+  await db.query("DELETE FROM utilisateurs WHERE organisation_id = ANY($1)", [orgIds]);
+  await db.query("DELETE FROM organisations WHERE id = ANY($1)", [orgIds]);
+}
+
 // ─── P0-1 / P0-2 : Hub Routes — organisation_id correct + socket isolé ────────
 describe("P0-1/P0-2: Hub Routes — organisation_id snake_case + socket isolation", () => {
   let orgA, adminA;
@@ -37,8 +53,9 @@ describe("P0-1/P0-2: Hub Routes — organisation_id snake_case + socket isolatio
 
   afterAll(async () => {
     // Supprimer l'utilisateur avant l'organisation (contrainte chk_org_context)
-    await db.query("DELETE FROM utilisateurs WHERE id = $1", [adminA.id]);
-    await db.query("DELETE FROM organisations WHERE id = $1", [orgA.id]);
+    await cleanupOrgs([orgA.id]);
+    
+await cleanupOrgs([orgA.id]);
   });
 
   test("GET /api/hub/projects utilise req.user.organisation_id (snake_case)", async () => {
@@ -75,8 +92,9 @@ describe("P0-5: AI Copilot — injection de prompt système bloquée", () => {
 
   afterAll(async () => {
     // Supprimer l'utilisateur avant l'organisation (contrainte chk_org_context)
-    await db.query("DELETE FROM utilisateurs WHERE id = $1", [adminA.id]);
-    await db.query("DELETE FROM organisations WHERE id = $1", [orgA.id]);
+    await cleanupOrgs([orgA.id]);
+    
+await cleanupOrgs([orgA.id]);
   });
 
   test("POST /api/ai-assistant/chat refuse les messages avec role:system", async () => {
@@ -156,8 +174,9 @@ describe("P1-4: GET /api/organisations — requireSuperAdmin (pas requireRole ad
 
   afterAll(async () => {
     // Supprimer l'utilisateur avant l'organisation (contrainte chk_org_context)
-    await db.query("DELETE FROM utilisateurs WHERE id = $1", [adminA.id]);
-    await db.query("DELETE FROM organisations WHERE id = $1", [orgA.id]);
+    await cleanupOrgs([orgA.id]);
+    
+await cleanupOrgs([orgA.id]);
   });
 
   test("Un admin d'organisation ne peut pas accéder à GET /api/organisations (403)", async () => {
@@ -187,8 +206,9 @@ describe("P1-6: POST /api/analytics/track — whitelist event_name", () => {
 
   afterAll(async () => {
     // Supprimer l'utilisateur avant l'organisation (contrainte chk_org_context)
-    await db.query("DELETE FROM utilisateurs WHERE id = $1", [adminA.id]);
-    await db.query("DELETE FROM organisations WHERE id = $1", [orgA.id]);
+    await cleanupOrgs([orgA.id]);
+    
+await cleanupOrgs([orgA.id]);
   });
 
   test("POST /api/analytics/track refuse un event_name non autorisé", async () => {
@@ -246,8 +266,9 @@ describe("P2-1: GET /api/organisation/audit-logs — limit borné à 100", () =>
 
   afterAll(async () => {
     // Supprimer l'utilisateur avant l'organisation (contrainte chk_org_context)
-    await db.query("DELETE FROM utilisateurs WHERE id = $1", [adminA.id]);
-    await db.query("DELETE FROM organisations WHERE id = $1", [orgA.id]);
+    await cleanupOrgs([orgA.id]);
+    
+await cleanupOrgs([orgA.id]);
   });
 
   test("GET /api/organisation/audit-logs avec limit=999999 est borné à 100", async () => {
@@ -276,7 +297,8 @@ describe("P2-4: Onboarding routes — requireRole admin", () => {
   afterAll(async () => {
     // Supprimer l'utilisateur avant l'organisation (contrainte chk_org_context)
     await db.query("DELETE FROM utilisateurs WHERE id = $1", [employeA.id]);
-    await db.query("DELETE FROM organisations WHERE id = $1", [orgA.id]);
+    
+await cleanupOrgs([orgA.id]);
   });
 
   test("POST /api/onboarding/setup refuse un employé (403)", async () => {

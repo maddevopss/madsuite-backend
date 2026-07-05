@@ -2,6 +2,22 @@ const { runDataPurge } = require("../jobs/dataRetention");
 const db = require("../../db");
 const { createTestUser } = require("./helpers/testData");
 
+async function cleanupOrgs(orgIds) {
+  if (!orgIds || orgIds.length === 0) return;
+
+  await db.query("DELETE FROM notifications WHERE organisation_id = ANY($1)", [orgIds]);
+  await db.query("DELETE FROM recurring_invoices WHERE organisation_id = ANY($1)", [orgIds]);
+  await db.query("DELETE FROM invoice_items WHERE invoice_id IN (SELECT id FROM invoices WHERE organisation_id = ANY($1))", [orgIds]);
+  await db.query("DELETE FROM invoices WHERE organisation_id = ANY($1)", [orgIds]);
+  await db.query("DELETE FROM time_entries WHERE organisation_id = ANY($1)", [orgIds]);
+  await db.query("DELETE FROM cognitive_state_events WHERE organisation_id = ANY($1)", [orgIds]);
+  await db.query("DELETE FROM daily_cognitive_metrics WHERE organisation_id = ANY($1)", [orgIds]);
+  await db.query("DELETE FROM clients WHERE organisation_id = ANY($1)", [orgIds]);
+  await db.query("DELETE FROM projets WHERE organisation_id = ANY($1)", [orgIds]);
+  await db.query("DELETE FROM utilisateurs WHERE organisation_id = ANY($1)", [orgIds]);
+  await db.query("DELETE FROM organisations WHERE id = ANY($1)", [orgIds]);
+}
+
 describe("Data Retention Integration Test", () => {
   let orgA, orgB, userA, userB;
 
@@ -24,8 +40,8 @@ describe("Data Retention Integration Test", () => {
 
   afterAll(async () => {
     await db.query("DELETE FROM activity_logs WHERE organisation_id IN ($1, $2)", [orgA, orgB]);
-    await db.query("DELETE FROM utilisateurs WHERE id IN ($1, $2)", [userA.id, userB.id]);
-    await db.query("DELETE FROM organisations WHERE id IN ($1, $2)", [orgA, orgB]);
+    await db.query("DELETE FROM utilisateurs WHERE organisation_id IN ($1, $2)", [orgA.id, orgB.id]);
+await cleanupOrgs([orgA.id, orgB.id]);
   });
 
   it("should purge logs based on specific organisation retention policies", async () => {

@@ -18,7 +18,7 @@ async function processReminders() {
     // qu'aucune facture orpheline (sans organisation) ne soit traitée.
     const overdueInvoicesQuery = `
       SELECT i.*, c.email as client_email,
-      EXTRACT(DAY FROM (CURRENT_DATE - i.due_date)) as days_overdue
+      (CURRENT_DATE - i.due_date::date) AS days_overdue
       FROM invoices i
       JOIN clients c ON i.client_id = c.id
       WHERE i.status = 'sent' 

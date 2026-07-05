@@ -386,6 +386,7 @@ describe("DB migrations integration - source de vérité", () => {
       "invoice_items",
       "time_entries",
       "utilisateurs",
+      "organisations",
       "clients",
       "projets",
       "activity_patterns",
@@ -396,6 +397,8 @@ describe("DB migrations integration - source de vérité", () => {
       "activity_daily_summary",
       "activity_logs",
     ];
+
+    
 
     try {
       await runMigrations({ backup: false });

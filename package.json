@@ -9,6 +9,7 @@
   "type": "commonjs",
   "scripts": {
     "build": "tsc",
+    "check:backend": "npm test && npm run test:security && npm run lint",
     "start": "node server.js",
     "dev": "nodemon server.js",
     "postinstall": "prisma generate",

@@ -1,7 +1,9 @@
 const express = require("express");
 const { exportInvoicesToCSV, exportExpensesToCSV, exportLedgerToCSV } = require("./export.service");
+const { requireOrganisation } = require("../../middleware/organization.middleware");
 
 const router = express.Router();
+router.use(requireOrganisation);
 
 /**
  * Helper to wrap async route handlers

@@ -28,6 +28,22 @@ function makeAdminToken(user, org) {
   );
 }
 
+async function cleanupOrgs(orgIds) {
+  if (!orgIds || orgIds.length === 0) return;
+
+  await db.query("DELETE FROM notifications WHERE organisation_id = ANY($1)", [orgIds]);
+  await db.query("DELETE FROM recurring_invoices WHERE organisation_id = ANY($1)", [orgIds]);
+  await db.query("DELETE FROM invoice_items WHERE invoice_id IN (SELECT id FROM invoices WHERE organisation_id = ANY($1))", [orgIds]);
+  await db.query("DELETE FROM invoices WHERE organisation_id = ANY($1)", [orgIds]);
+  await db.query("DELETE FROM time_entries WHERE organisation_id = ANY($1)", [orgIds]);
+  await db.query("DELETE FROM cognitive_state_events WHERE organisation_id = ANY($1)", [orgIds]);
+  await db.query("DELETE FROM daily_cognitive_metrics WHERE organisation_id = ANY($1)", [orgIds]);
+  await db.query("DELETE FROM clients WHERE organisation_id = ANY($1)", [orgIds]);
+  await db.query("DELETE FROM projets WHERE organisation_id = ANY($1)", [orgIds]);
+  await db.query("DELETE FROM utilisateurs WHERE organisation_id = ANY($1)", [orgIds]);
+  await db.query("DELETE FROM organisations WHERE id = ANY($1)", [orgIds]);
+}
+
 // ─── AUDIT E/F : /api/system/health restreint aux super-admins ───────────────
 describe("E/F: GET /api/system/health — restreint aux super-admins plateforme", () => {
   let orgA, adminA;
@@ -38,7 +54,8 @@ describe("E/F: GET /api/system/health — restreint aux super-admins plateforme"
   });
 
   afterAll(async () => {
-    await db.query("DELETE FROM organisations WHERE id = $1", [orgA.id]);
+    
+await cleanupOrgs([orgA.id]);
   });
 
   test("PROOF: admin d'organisation ne peut pas accéder à GET /api/system/health (403)", async () => {
@@ -99,7 +116,7 @@ describe("A: cognitiveAggregator — isolation multi-tenant prouvée", () => {
       "DELETE FROM daily_cognitive_metrics WHERE utilisateur_id IN ($1, $2)",
       [userA.id, userB.id]
     );
-    await db.query("DELETE FROM organisations WHERE id IN ($1, $2)", [orgA.id, orgB.id]);
+    await cleanupOrgs([orgA.id, orgB.id]);
   });
 
   test("PROOF: aggregateCognitiveMetrics isole correctement par organisation", async () => {
@@ -165,7 +182,7 @@ describe("B: billingAssistantJob — notifications cross-tenant impossibles", ()
   afterAll(async () => {
     if (invoiceA) await db.query("DELETE FROM invoices WHERE id = $1", [invoiceA.id]);
     if (clientA) await db.query("DELETE FROM clients WHERE id = $1", [clientA.id]);
-    await db.query("DELETE FROM organisations WHERE id IN ($1, $2)", [orgA.id, orgB.id]);
+    await cleanupOrgs([orgA.id, orgB.id]);
   });
 
   test("PROOF: notification de relance ne va pas aux admins de org B", async () => {
@@ -220,13 +237,15 @@ describe("C: recurringInvoiceJob — template cross-tenant bloqué par guard app
     invoiceA = invRes.rows[0];
 
     // Récurrence dans org B pointant vers template de org A (tentative d'attaque cross-tenant)
-    const recRes = await db.query(
-      `INSERT INTO recurring_invoices (organisation_id, client_id, template_invoice_id, frequency, next_issue_date, status)
-       VALUES ($1, $2, $3, 'monthly', CURRENT_DATE, 'active')
-       RETURNING *`,
-      [orgB.id, clientB.id, invoiceA.id]
-    );
-    recurringB = recRes.rows[0];
+await expect(
+  db.query(
+    `INSERT INTO recurring_invoices (organisation_id, client_id, template_invoice_id, frequency, next_issue_date, status)
+     VALUES ($1, $2, $3, 'monthly', CURRENT_DATE, 'active')
+     RETURNING *`,
+    [orgB.id, clientB.id, invoiceA.id]
+  )
+).rejects.toThrow(/fk_recurring_template_invoice_org|violates foreign key|viole la contrainte/i);
+    // recurringB = recRes.rows[0];
   });
 
   afterAll(async () => {
@@ -234,10 +253,21 @@ describe("C: recurringInvoiceJob — template cross-tenant bloqué par guard app
     if (invoiceA) await db.query("DELETE FROM invoices WHERE id = $1", [invoiceA.id]);
     if (clientA) await db.query("DELETE FROM clients WHERE id = $1", [clientA.id]);
     if (clientB) await db.query("DELETE FROM clients WHERE id = $1", [clientB.id]);
-    await db.query("DELETE FROM organisations WHERE id IN ($1, $2)", [orgA.id, orgB.id]);
+    await cleanupOrgs([orgA.id, orgB.id]);
   });
 
-  test("PROOF: récurrence cross-tenant ne génère pas de facture dans org B", async () => {
+test("PROOF: la DB bloque une récurrence cross-tenant avant le job", async () => {
+  await expect(
+    db.query(
+      `INSERT INTO recurring_invoices (organisation_id, client_id, template_invoice_id, frequency, next_issue_date, status)
+       VALUES ($1, $2, $3, 'monthly', CURRENT_DATE, 'active')
+       RETURNING *`,
+      [orgB.id, clientB.id, invoiceA.id]
+    )
+  ).rejects.toThrow(/fk_recurring_template_invoice_org|foreign key|contrainte/i);
+});
+
+  test("PROOF: aucun job ne crée de nouvelle facture pour org B", async () => {
     const invoicesBeforeRes = await db.query(
       "SELECT COUNT(*) as count FROM invoices WHERE organisation_id = $1",
       [orgB.id]
@@ -280,7 +310,8 @@ describe("D: dataRetention — stats globales non exposées via business_audit_l
   });
 
   afterAll(async () => {
-    await db.query("DELETE FROM organisations WHERE id = $1", [orgA.id]);
+    
+await cleanupOrgs([orgA.id]);
   });
 
   test("PROOF: business_audit_logs ne contient pas d'entrée system.purge_executed après runDataPurge", async () => {
