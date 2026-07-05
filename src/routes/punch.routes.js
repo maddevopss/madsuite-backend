@@ -41,8 +41,8 @@ async function ensureKioskModule(res, org, moduleKey) {
   const hasAccess = await hasOrgModule(org.id, moduleKey);
   if (hasAccess) return true;
 
-  res.status(403).json(ApiResponse.error("MODULE_NOT_ENABLED", {
-    message: `Le module "${moduleKey}" n'est pas activé pour votre organisation.`,
+  res.status(403).json(ApiResponse.error("MODULE_NOT_AVAILABLE", {
+    message: `Le module "${moduleKey}" n'est pas disponible pour cette organisation.`,
     module_key: moduleKey
   }));
   return false;
@@ -62,8 +62,8 @@ router.get("/kiosk/:kiosk_token", async (req, res) => {
     }
 
     if (!(await ensureAnyKioskModule(org))) {
-      return res.status(403).json(ApiResponse.error("MODULE_NOT_ENABLED", {
-        message: "Aucun module kiosque n'est activé pour votre organisation.",
+      return res.status(403).json(ApiResponse.error("MODULE_NOT_AVAILABLE", {
+        message: "Aucun module kiosque n'est disponible pour votre organisation.",
       }));
     }
 
