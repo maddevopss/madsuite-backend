@@ -4,17 +4,33 @@ require("dotenv").config({
   override: false,
 });
 
+function parseSampleRate(value, fallback) {
+  if (value === undefined || value === "") return fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.min(1, Math.max(0, parsed));
+}
+
+function splitOrigins(value) {
+  return String(value || "")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+}
+
 // INITIALISATION DE SENTRY
 const Sentry = require("@sentry/node");
 const { nodeProfilingIntegration } = require("@sentry/profiling-node");
 
 if (process.env.SENTRY_DSN) {
+  const isProd = process.env.NODE_ENV === "production";
+
   Sentry.init({
     dsn: process.env.SENTRY_DSN,
     environment: process.env.NODE_ENV || "development",
     integrations: [nodeProfilingIntegration()],
-    tracesSampleRate: 1.0,
-    profilesSampleRate: 1.0,
+    tracesSampleRate: parseSampleRate(process.env.SENTRY_TRACES_SAMPLE_RATE, isProd ? 0.1 : 1.0),
+    profilesSampleRate: parseSampleRate(process.env.SENTRY_PROFILES_SAMPLE_RATE, isProd ? 0.05 : 1.0),
   });
 }
 
@@ -95,25 +111,28 @@ function initializeSocket(server) {
     throw new Error("FATAL: FRONTEND_URL est requis en production pour la configuration CORS Socket.IO. Déploiement bloqué.");
   }
 
-  // Réutilise la même logique whitelist que config/cors.js
+  // Réutilise la même logique whitelist stricte que config/cors.js.
+  // En production, aucun wildcard *.vercel.app n'est accepté.
   const allowedOrigins = [
     ...(isProd
       ? []
       : ["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:3001", "http://127.0.0.1:3001"]),
     frontendUrl,
     process.env.ELECTRON_URL,
+    "https://madsuite.ca",
+    "https://www.madsuite.ca",
     "https://madsuite.vercel.app",
     process.env.VERCEL_FRONTEND_URL,
+    ...splitOrigins(process.env.ALLOWED_CORS_ORIGINS),
   ].filter(Boolean);
+  const allowedOriginsSet = new Set(allowedOrigins);
 
   io = new Server(server, {
     cors: {
       origin: (origin, callback) => {
         // Non-browser requests: autoriser.
         if (!origin) return callback(null, true);
-        const isVercelPreview = origin.endsWith(".vercel.app");
-        const isWww = origin === "https://www.madsuite.ca" || origin === "https://madsuite.ca";
-        if (!allowedOrigins.includes(origin) && !isVercelPreview && !isWww) {
+        if (!allowedOriginsSet.has(origin)) {
           return callback(new Error(`Socket.IO CORS refusé pour origine: ${origin}`));
         }
         return callback(null, true);
