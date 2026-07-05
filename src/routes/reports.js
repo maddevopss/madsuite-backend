@@ -12,6 +12,54 @@ const logger = require("../config/logger");
 
 router.use(requireOrganisation);
 
+const VALID_GROUP_BY = new Set(["week", "month"]);
+const VALID_BILLED_FILTERS = new Set(["true", "false"]);
+
+function isValidDate(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
+}
+
+function parseReportDateRange({ dateDebut, dateFin }) {
+  if (!isValidDate(dateDebut) || !isValidDate(dateFin)) {
+    const err = new Error("Dates invalides. Format attendu: YYYY-MM-DD.");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  if (String(dateDebut) > String(dateFin)) {
+    const err = new Error("date_debut doit être avant ou égale à date_fin.");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  return {
+    dateDebut: String(dateDebut),
+    dateFin: String(dateFin),
+  };
+}
+
+function parseYear(rawYear) {
+  const year = Number(rawYear || new Date().getFullYear());
+  const currentYear = new Date().getFullYear();
+
+  if (!Number.isInteger(year) || year < 2000 || year > currentYear + 1) {
+    const err = new Error("Année invalide.");
+    err.statusCode = 400;
+    throw err;
+  }
+
+  return year;
+}
+
+function handleValidationError(err, res) {
+  if (err.statusCode !== 400) return false;
+
+  res.status(400).json(ApiResponse.error("VALIDATION_ERROR", {
+    message: err.message,
+  }));
+  return true;
+}
+
 /**
  * GET /api/reports
  * Generate a custom report with date range and filters
@@ -21,16 +69,16 @@ router.get("/", async (req, res, next) => {
 
   logger.info(`[${requestId}] Generate report start`, {
     userId: req.user.id,
-    organisationId: req.organisationId,
+    organisationId: getOrganisationId(req),
   });
 
   try {
-    const { date_debut: dateDebut, date_fin: dateFin, is_billed: isBilled, group_by: groupBy } = req.query;
+    const { date_debut: rawDateDebut, date_fin: rawDateFin, is_billed: isBilled, group_by: groupBy } = req.query;
 
-    if (!dateDebut || !dateFin) {
+    if (!rawDateDebut || !rawDateFin) {
       logger.warn(`[${requestId}] Missing date parameters`, {
-        dateDebut,
-        dateFin,
+        dateDebut: rawDateDebut,
+        dateFin: rawDateFin,
       });
 
       return res.status(400).json(
@@ -38,6 +86,16 @@ router.get("/", async (req, res, next) => {
           message: "Une date de debut et une date de fin sont obligatoires pour generer un rapport.",
         }),
       );
+    }
+
+    const { dateDebut, dateFin } = parseReportDateRange({ dateDebut: rawDateDebut, dateFin: rawDateFin });
+
+    if (isBilled && !VALID_BILLED_FILTERS.has(String(isBilled))) {
+      return res.status(400).json(ApiResponse.error("VALIDATION_ERROR", { message: "is_billed invalide." }));
+    }
+
+    if (groupBy && !VALID_GROUP_BY.has(String(groupBy))) {
+      return res.status(400).json(ApiResponse.error("VALIDATION_ERROR", { message: "group_by invalide." }));
     }
 
     const report = await reportsService.generateReport({
@@ -52,12 +110,14 @@ router.get("/", async (req, res, next) => {
     });
 
     logger.info(`[${requestId}] Report generated successfully`, {
-      entryCount: report.entries?.length || 0,
-      totalHours: report.total_hours,
+      rowCount: report.rows?.length || 0,
+      totalHours: report.total?.heures,
     });
 
     return res.status(200).json(ApiResponse.success("REPORT_GENERATED", report));
   } catch (err) {
+    if (handleValidationError(err, res)) return;
+
     logger.error(`[${requestId}] Generate report failed`, {
       error: err.message,
       stack: err.stack,
@@ -76,7 +136,7 @@ if (process.env.NODE_ENV !== "production") {
     const requestId = req.id;
 
     logger.info(`[${requestId}] Debug: List time entries`, {
-      organisationId: req.organisationId,
+      organisationId: getOrganisationId(req),
     });
 
     try {
@@ -106,7 +166,7 @@ if (process.env.NODE_ENV !== "production") {
     const requestId = req.id;
 
     logger.info(`[${requestId}] Debug: List activity logs`, {
-      organisationId: req.organisationId,
+      organisationId: getOrganisationId(req),
       userId: req.user.id,
     });
 
@@ -139,7 +199,7 @@ if (process.env.NODE_ENV !== "production") {
     const requestId = req.id;
 
     logger.info(`[${requestId}] Debug: List window logs`, {
-      organisationId: req.organisationId,
+      organisationId: getOrganisationId(req),
       userId: req.user.id,
     });
 
@@ -174,7 +234,7 @@ router.get("/monthly-data", async (req, res, next) => {
   const requestId = req.id;
 
   try {
-    const year = req.query.year || new Date().getFullYear();
+    const year = parseYear(req.query.year);
     const organisationId = getOrganisationId(req);
 
     // Generate cache key
@@ -223,6 +283,8 @@ router.get("/monthly-data", async (req, res, next) => {
       _cacheAge: null,
     });
   } catch (err) {
+    if (handleValidationError(err, res)) return;
+
     logger.error(`[${requestId}] Monthly data fetch failed`, {
       error: err.message,
       stack: err.stack,
@@ -241,6 +303,10 @@ router.get("/daily-data", async (req, res, next) => {
 
   try {
     const date = req.query.date || new Date().toISOString().split("T")[0];
+    if (!isValidDate(date)) {
+      return res.status(400).json(ApiResponse.error("VALIDATION_ERROR", { message: "Date invalide." }));
+    }
+
     const organisationId = getOrganisationId(req);
 
     // Generate cache key
