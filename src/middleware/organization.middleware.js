@@ -1,14 +1,59 @@
 const ApiResponse = require("../utils/apiResponse");
-const { pool } = require("../../db");
+const db = require("../../db");
+const dbStore = require("../utils/dbStore");
+
+function releaseClientOnce({ req, res, client }) {
+  let released = false;
+  let responseFinished = false;
+
+  async function cleanup(origin) {
+    if (released) return;
+    released = true;
+
+    const shouldCommit = responseFinished && res.statusCode < 400;
+
+    try {
+      if (shouldCommit) {
+        await client.query("COMMIT");
+      } else {
+        await client.query("ROLLBACK");
+      }
+    } catch (err) {
+      // La réponse est déjà terminée dans la majorité des cas; on journalise sans relancer.
+      // eslint-disable-next-line no-console
+      console.error("RLS context cleanup failed", {
+        origin,
+        path: req.originalUrl,
+        statusCode: res.statusCode,
+        error: err.message,
+      });
+    } finally {
+      client.release();
+    }
+  }
+
+  res.once("finish", () => {
+    responseFinished = true;
+    void cleanup("finish");
+  });
+
+  res.once("close", () => {
+    void cleanup(responseFinished ? "close-after-finish" : "close-before-finish");
+  });
+
+  res.once("error", () => {
+    void cleanup("error");
+  });
+
+  return cleanup;
+}
 
 // Middleware pour vérifier qu'un utilisateur est associé à une organisation
-// et injecter un client DB configuré pour la Row-Level Security (RLS)
+// et injecter un client DB transactionnel configuré pour la Row-Level Security (RLS).
 async function requireOrganisation(req, res, next) {
-  // On priorise le JWT décodé par le middleware d'auth précédent
   const organisationId = req.user?.organisation_id;
 
   if (!organisationId) {
-    // 403: utilisateur authentifié, mais sans contexte d'organisation exploitable.
     return res.status(403).json(
       ApiResponse.error("ORGANISATION_REQUIRED", {
         message: "Aucune organisation associée à cet utilisateur.",
@@ -17,48 +62,38 @@ async function requireOrganisation(req, res, next) {
   }
 
   let client;
+
   try {
-    // On réserve un client du pool pour toute la durée de la requête
-    client = await pool.connect();
+    client = await db.pool.connect();
 
-    /**
-     * Configuration du contexte RLS.
-     * 'true' en 3ème paramètre de set_config rend le paramètre LOCAL à la transaction.
-     * Cela garantit que l'ID ne fuite pas vers d'autres requêtes réutilisant la même connexion.
-     */
-    await client.query("SELECT set_config('app.current_organisation_id', $1, true)", [organisationId.toString()]);
+    // SET LOCAL ne survit que dans une transaction explicite.
+    // Sans BEGIN, la valeur locale serait perdue dès la fin du SELECT set_config.
+    await client.query("BEGIN");
+    await client.query("SELECT set_config('app.current_organisation_id', $1, true)", [String(organisationId)]);
 
-    // On injecte le client et l'ID dans la requête pour usage dans les contrôleurs
     req.db = client;
     req.organisationId = organisationId;
 
-    // Sécurité supplémentaire : On s'assure que si une transaction est restée ouverte
-    // par erreur dans un contrôleur, elle est annulée avant de rendre le client.
-    const originalRelease = client.release.bind(client);
-    client.release = async (err) => {
-      if (err) await client.query('ROLLBACK').catch(() => {});
-      originalRelease();
-    };
+    releaseClientOnce({ req, res, client });
 
-    // Nettoyage : libération automatique du client une fois la réponse envoyée
-    let released = false;
-    const cleanup = (origin) => {
-      if (released) return;
-      if (client) {
-        client.release();
-        client = null;
-        released = true;
-      }
-    };
-
-    res.on("error", cleanup);
-    res.on("finish", cleanup);
-    res.on("close", cleanup);
-
-    next();
+    return dbStore.run(
+      {
+        dbClient: client,
+        organisationId,
+      },
+      () => next(),
+    );
   } catch (err) {
-    if (client) client.release();
-    next(err);
+    if (client) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {
+        // ignore rollback failure during setup
+      }
+      client.release();
+    }
+
+    return next(err);
   }
 }
 
