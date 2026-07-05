@@ -21,6 +21,7 @@ const organisationScopedRouters = [
   ["/api/ai-assistant", "src/routes/aiAssistant.routes.js"],
   ["/api/cognitive", "src/routes/cognitive.routes.js"],
   ["/api/notifications", "src/routes/notifications.routes.js"],
+  ["/api/calendar", "src/routes/calendar.routes.js"],
 ];
 
 const violations = [];
