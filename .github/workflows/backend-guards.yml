@@ -56,3 +56,6 @@ jobs:
 
       - name: Public portal contract guard
         run: npm run guard:public-portal-contract
+
+      - name: Stripe contract guard
+        run: npm run guard:stripe-contract
