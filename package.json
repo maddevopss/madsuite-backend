@@ -9,7 +9,7 @@
   "type": "commonjs",
   "scripts": {
     "build": "tsc",
-    "check:backend": "npm run guard:routes && npm test && npm run test:security && npm run lint",
+    "check:backend": "npm run guard:hygiene && npm run guard:routes && npm test && npm run test:security && npm run lint",
     "start": "node server.js",
     "dev": "nodemon server.js",
     "postinstall": "prisma generate",
@@ -17,6 +17,7 @@
     "test:coverage": "cross-env NODE_ENV=test jest --coverage --detectOpenHandles",
     "test:db:reset": "cross-env NODE_ENV=test node src/test/setupInvoicesTestDB.js",
     "test:security": "cross-env NODE_ENV=test jest src/test/requireSuperAdmin.security.test.js src/test/migrations.integration.test.js src/test/multiTenantJobs.security.test.js --detectOpenHandles",
+    "guard:hygiene": "node scripts/guard-repo-hygiene.js",
     "guard:routes": "node scripts/guard-route-security.js",
     "start:test": "cross-env NODE_ENV=test node server.js",
     "aggregate:logs": "node src/jobs/runAggregateActivityLogs.js",
