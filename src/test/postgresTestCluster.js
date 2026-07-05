@@ -3,6 +3,7 @@ const os = require("os");
 const path = require("path");
 const { spawnSync, spawn } = require("child_process");
 const net = require("net");
+const { Pool } = require("pg");
 
 const PG_BIN_DIR = "C:\\Program Files\\PostgreSQL\\18\\bin";
 const STATE_FILE = path.join(os.tmpdir(), "madsuite-backend-pg-test-state.json");
@@ -78,7 +79,79 @@ function chooseFreePort() {
   });
 }
 
+function hasProvidedPostgresService() {
+  return Boolean(process.env.POSTGRES_ADMIN_URL || process.env.TEST_DATABASE_URL || process.env.CI);
+}
+
+function inferConnectionSettingsFromUrl(connectionString) {
+  if (!connectionString) return null;
+
+  try {
+    const url = new URL(connectionString);
+    return {
+      host: url.hostname || "localhost",
+      port: url.port || "5432",
+      user: decodeURIComponent(url.username || "postgres"),
+      password: decodeURIComponent(url.password || ""),
+    };
+  } catch {
+    return null;
+  }
+}
+
+function buildDefaultProvidedUrls() {
+  const user = encodeURIComponent(process.env.DB_USER || "postgres");
+  const password = encodeURIComponent(process.env.DB_PASSWORD || "change_me");
+  const host = process.env.DB_HOST || "localhost";
+  const port = process.env.DB_PORT || "5432";
+
+  process.env.TEST_DATABASE_URL ||= `postgresql://${user}:${password}@${host}:${port}/madsuite_test`;
+  process.env.POSTGRES_ADMIN_URL ||= `postgresql://${user}:${password}@${host}:${port}/postgres`;
+}
+
+async function waitForProvidedPostgres(timeoutMs = 30000) {
+  buildDefaultProvidedUrls();
+
+  const inferred = inferConnectionSettingsFromUrl(process.env.POSTGRES_ADMIN_URL) ||
+    inferConnectionSettingsFromUrl(process.env.TEST_DATABASE_URL);
+
+  if (inferred) {
+    process.env.DB_HOST ||= inferred.host;
+    process.env.DB_PORT ||= inferred.port;
+    process.env.DB_USER ||= inferred.user;
+    process.env.DB_PASSWORD ||= inferred.password;
+  }
+
+  const pool = new Pool({ connectionString: process.env.POSTGRES_ADMIN_URL });
+  const deadline = Date.now() + timeoutMs;
+  let lastError = null;
+
+  try {
+    while (Date.now() < deadline) {
+      try {
+        await pool.query("SELECT 1");
+        return {
+          provided: true,
+          adminUrl: process.env.POSTGRES_ADMIN_URL,
+          testUrl: process.env.TEST_DATABASE_URL,
+        };
+      } catch (err) {
+        lastError = err;
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+    }
+  } finally {
+    await pool.end().catch(() => null);
+  }
+
+  throw new Error(`Provided PostgreSQL service is not ready: ${lastError?.message || "timeout"}`);
+}
+
 async function startBackendTestCluster() {
+  if (hasProvidedPostgresService()) {
+    return waitForProvidedPostgres();
+  }
+
   const existing = readState();
   if (existing?.dataDir && (await isPortOpen(existing.port))) {
     process.env.BACKEND_TEST_PG_PORT = String(existing.port);
