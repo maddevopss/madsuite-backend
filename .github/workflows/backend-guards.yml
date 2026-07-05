@@ -44,3 +44,6 @@ jobs:
 
       - name: Modules contract guard
         run: npm run guard:modules-contract
+
+      - name: Module access contract guard
+        run: npm run guard:module-access-contract
