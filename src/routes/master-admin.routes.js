@@ -2,61 +2,32 @@ const express = require("express");
 const router = express.Router();
 const ApiResponse = require("../utils/apiResponse");
 const auth = require("../middleware/auth");
+const requireSuperAdmin = require("../middleware/requireSuperAdmin");
 const { createClientOrganisation } = require("../services/masteradmin.service");
 const { recordBusinessAudit } = require("../services/auditLog.service");
+const logger = require("../config/logger");
 const { z } = require("zod");
 
 /**
  * Master Admin access control.
  *
- * RULES (per audit P0 #2):
- * - No more magic `user.id === 1`
- * - Explicit list via MASTER_ADMIN_USER_IDS env (comma-separated IDs)
- * - All actions must produce an audit trail
- * - Future: should evolve to explicit role/permission + migration
+ * RULES:
+ * - No magic `user.id === 1`.
+ * - Shared platform superadmin guard via requireSuperAdmin.
+ * - Explicit list via MASTER_ADMIN_USER_IDS env.
+ * - All actions must produce an audit trail.
+ * - Future: should evolve to explicit role/permission + migration.
  */
-const requireMasterAdmin = (req, res, next) => {
-  const masterAdminEnv = process.env.MASTER_ADMIN_USER_IDS;
-  
-  // P0 SECURITY: No default, force explicit env var
-  if (!masterAdminEnv) {
-    console.error("CRITICAL: MASTER_ADMIN_USER_IDS not set in environment");
-    return res.status(500).json(ApiResponse.error("INTERNAL_ERROR", {
-      message: "Master admin configuration error. Contact system administrator.",
-    }));
-  }
-
-  const masterIds = masterAdminEnv
-    .split(",")
-    .map(s => parseInt(s.trim(), 10))
-    .filter(Boolean);
-
-  // Ensure parsed list is not empty
-  if (!masterIds.length) {
-    console.error("CRITICAL: MASTER_ADMIN_USER_IDS parsed to empty list");
-    return res.status(500).json(ApiResponse.error("INTERNAL_ERROR", {
-      message: "Master admin configuration error. Contact system administrator.",
-    }));
-  }
-
-  if (req.user && masterIds.includes(req.user.id)) {
-    return next();
-  }
-
-  return res.status(403).json(ApiResponse.error("FORBIDDEN", {
-    message: "Accès réservé au Master Admin.",
-  }));
-};
 
 const createOrgSchema = z.object({
-  organisation_nom: z.string().min(2, "Nom d'organisation requis"),
-  user_nom: z.string().min(2, "Nom d'utilisateur requis"),
-  email: z.string().email("Email invalide"),
-  password: z.string().min(8, "Mot de passe min 8 caractères"),
+  organisation_nom: z.string().trim().min(2, "Nom d'organisation requis").max(255),
+  user_nom: z.string().trim().min(2, "Nom d'utilisateur requis").max(255),
+  email: z.string().trim().email("Email invalide").max(320),
+  password: z.string().min(12, "Mot de passe min 12 caractères").max(200),
 });
 
 router.use(auth);
-router.use(requireMasterAdmin);
+router.use(requireSuperAdmin);
 
 router.post("/organisations", async (req, res, next) => {
   try {
@@ -71,7 +42,7 @@ router.post("/organisations", async (req, res, next) => {
 
     const result = await createClientOrganisation(parsed.data);
 
-    // Audit trail for master admin action (P0 #2 requirement)
+    // Audit trail for master admin action.
     try {
       await recordBusinessAudit({
         organisationId: result.organisation?.id || null,
@@ -88,8 +59,8 @@ router.post("/organisations", async (req, res, next) => {
         req,
       });
     } catch (auditErr) {
-      // Never fail the main action because of audit
-      console.error("Master admin audit log failed (non-blocking):", auditErr.message);
+      // Never fail the main action because of audit.
+      logger.warn("Master admin audit log failed", { error: auditErr.message });
     }
 
     return res.status(201).json(ApiResponse.success("ORGANISATION_CREATED", result));
