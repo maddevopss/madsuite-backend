@@ -62,3 +62,6 @@ jobs:
 
       - name: Activity ingestion contract guard
         run: npm run guard:activity-ingestion-contract
+
+      - name: AI contract guard
+        run: npm run guard:ai-contract
