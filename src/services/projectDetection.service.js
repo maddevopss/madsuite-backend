@@ -1,8 +1,11 @@
 const db = require("../../db");
 
 const logger = require("../config/logger");
-const { hasColumn } = require("../utils/dbSchema");
 const { buildFeedbackKeyword } = require("./activityIntelligence.service");
+
+const MAX_PROJECT_SUGGESTIONS = 10;
+const MAX_PATTERNS = 500;
+const MAX_ACTIVE_PROJECTS = 500;
 
 function normalize(value) {
   return String(value || "")
@@ -25,15 +28,12 @@ function containsPhrase(text, phrase) {
   return Boolean(normalizedPhrase && normalizedText.includes(normalizedPhrase));
 }
 
-function addOrganisationScope(conditions, params, alias, organisationId) {
+function requireOrganisationId(organisationId) {
   if (!organisationId) {
     const err = new Error("OrganisationId requis pour la detection projet.");
     err.statusCode = 403;
     throw err;
   }
-
-  params.push(organisationId);
-  conditions.push(`${alias}.organisation_id = $${params.length}`);
 }
 
 function scoreProject(text, project, patterns = []) {
@@ -66,22 +66,18 @@ function scoreProject(text, project, patterns = []) {
 }
 
 async function getPatterns(organisationId) {
+  requireOrganisationId(organisationId);
+
   try {
-    const hasOrganisationId = await hasColumn("activity_patterns", "organisation_id");
-    const params = [];
-    const conditions = [];
-
-    if (hasOrganisationId) {
-      addOrganisationScope(conditions, params, "activity_patterns", organisationId);
-    }
-
     const result = await db.query(
       `
       SELECT projet_id, keyword, COALESCE(weight, 1) AS weight
       FROM activity_patterns
-      ${conditions.length ? `WHERE ${conditions.join(" AND ")}` : ""}
+      WHERE organisation_id = $1
+      ORDER BY id DESC
+      LIMIT ${MAX_PATTERNS}
       `,
-      params,
+      [organisationId],
     );
 
     return result.rows || [];
@@ -94,20 +90,9 @@ async function getPatterns(organisationId) {
 }
 
 async function getActiveProjects(organisationId) {
-  const hasOrganisationId = await hasColumn("projets", "organisation_id");
+  requireOrganisationId(organisationId);
 
-  const params = [];
-  if (hasOrganisationId && !organisationId) {
-    const err = new Error("OrganisationId requis pour la detection projet.");
-    err.statusCode = 403;
-    throw err;
-  }
-
-  const organisationFilter = hasOrganisationId ? "organisation_id = $1" : "1=1";
-
-  if (hasOrganisationId) {
-    params.push(organisationId);
-  }
+  const params = [organisationId];
 
   const queries = [
     `
@@ -115,22 +100,17 @@ async function getActiveProjects(organisationId) {
     FROM projets
     WHERE COALESCE(status, 'actif') = 'actif'
       AND deleted_at IS NULL
-      AND ${organisationFilter}
+      AND organisation_id = $1
     ORDER BY nom ASC
+    LIMIT ${MAX_ACTIVE_PROJECTS}
     `,
     `
     SELECT id, nom, client_id
     FROM projets
-    WHERE COALESCE(status, 'actif') = 'actif'
-      AND deleted_at IS NULL
-      AND ${organisationFilter}
+    WHERE deleted_at IS NULL
+      AND organisation_id = $1
     ORDER BY nom ASC
-    `,
-    `
-    SELECT id, nom, client_id
-    FROM projets
-    WHERE deleted_at IS NULL AND ${organisationFilter}
-    ORDER BY nom ASC
+    LIMIT ${MAX_ACTIVE_PROJECTS}
     `,
   ];
 
@@ -147,25 +127,11 @@ async function getActiveProjects(organisationId) {
     }
   }
 
-  try {
-    const fallbackQuery = `
-      SELECT id, nom
-      FROM projets
-      WHERE deleted_at IS NULL
-        AND ${organisationFilter}
-      ORDER BY nom ASC
-    `;
-
-    const result = await db.query(fallbackQuery, params);
-
-    return result.rows || [];
-  } catch (err) {
-    logger.warn("projectDetection getActiveProjects empty fallback", { error: err.message });
-    return [];
-  }
+  return [];
 }
 
 async function ensureProjectInOrganisation({ projetId, organisationId }) {
+  requireOrganisationId(organisationId);
   if (!projetId) return false;
 
   const result = await db.query(
@@ -177,6 +143,8 @@ async function ensureProjectInOrganisation({ projetId, organisationId }) {
 }
 
 async function suggestProject({ appName = "", windowTitle = "", organisationId }) {
+  requireOrganisationId(organisationId);
+
   const text = `${appName} ${windowTitle}`;
   const projects = await getActiveProjects(organisationId);
   const patterns = await getPatterns(organisationId);
@@ -188,7 +156,8 @@ async function suggestProject({ appName = "", windowTitle = "", organisationId }
       source: "project-detection",
     }))
     .filter((project) => project.confidence > 0)
-    .sort((a, b) => b.confidence - a.confidence);
+    .sort((a, b) => b.confidence - a.confidence)
+    .slice(0, MAX_PROJECT_SUGGESTIONS);
 
   return {
     suggestion: suggestions[0] || null,
@@ -197,6 +166,8 @@ async function suggestProject({ appName = "", windowTitle = "", organisationId }
 }
 
 async function createPattern({ projetId, keyword, weight, organisationId }) {
+  requireOrganisationId(organisationId);
+
   const projectExists = await ensureProjectInOrganisation({ projetId, organisationId });
 
   if (!projectExists) {
@@ -218,6 +189,7 @@ async function createPattern({ projetId, keyword, weight, organisationId }) {
 }
 
 async function updateActivityLogSuggestion({ activityLogId, projetId, feedbackType, userId, organisationId }) {
+  requireOrganisationId(organisationId);
   if (!activityLogId) return;
 
   await db
@@ -239,6 +211,8 @@ async function updateActivityLogSuggestion({ activityLogId, projetId, feedbackTy
 }
 
 async function maybeCreateFeedbackPattern({ feedbackType, projetId, windowTitle, organisationId }) {
+  requireOrganisationId(organisationId);
+
   const keyword = feedbackType !== "rejected" && projetId ? buildFeedbackKeyword(windowTitle) : null;
 
   if (!keyword) return null;
@@ -260,6 +234,8 @@ async function maybeCreateFeedbackPattern({ feedbackType, projetId, windowTitle,
 }
 
 async function saveFeedback({ userId, organisationId, activityLogId, projetId, appName, windowTitle, feedbackType }) {
+  requireOrganisationId(organisationId);
+
   if (projetId) {
     const projectExists = await ensureProjectInOrganisation({ projetId, organisationId });
 
