@@ -4,9 +4,13 @@ const db = require("../../db");
 const auth = require("../middleware/auth");
 const requireRole = require("../middleware/requireRole");
 const { requireOrganisation } = require("../middleware/organization.middleware");
-const { MODULES, isModuleIncludedInPlan } = require("../config/modules");
+const { MODULES, isModuleIncludedInPlan, getModuleRegistryDiagnostics } = require("../config/modules");
 const ApiResponse = require("../utils/apiResponse");
 const analyticsService = require("../services/analytics.service");
+
+function currentOrganisationId(req) {
+  return req.organisationId || req.user?.organisation_id;
+}
 
 /**
  * Toutes les routes de modules utilisent l'organisation courante.
@@ -22,7 +26,7 @@ router.use(requireOrganisation);
  */
 router.get("/", async (req, res) => {
   try {
-    const organisationId = req.user.organisation_id;
+    const organisationId = currentOrganisationId(req);
 
     // Retrieve organisation plan
     const orgResult = await db.query(
@@ -69,15 +73,19 @@ router.get("/", async (req, res) => {
         plan: config.plan,
         price,
         currency: dynamic ? dynamic.currency : "CAD",
+        matrix_status: config.matrix_status,
         is_active: isActive,
+        active: isActive,
         included_in_plan: includedInPlan,
+        included: includedInPlan,
         is_addon_active: !includedInPlan && explicitlyEnabled,
       };
     });
 
     return res.status(200).json(ApiResponse.success("MODULES_LISTED", {
       plan_type: planType,
-      modules
+      modules,
+      diagnostics: getModuleRegistryDiagnostics(),
     }));
   } catch (err) {
     console.error("Erreur modules list:", err);
@@ -92,7 +100,7 @@ router.get("/", async (req, res) => {
 router.post("/:key", requireRole("admin"), async (req, res) => {
   try {
     const { key } = req.params;
-    const organisationId = req.user.organisation_id;
+    const organisationId = currentOrganisationId(req);
 
     if (!MODULES[key]) {
       return res.status(400).json(ApiResponse.error("INVALID_MODULE", { message: `Module "${key}" inconnu.` }));
@@ -121,7 +129,7 @@ router.post("/:key", requireRole("admin"), async (req, res) => {
 router.delete("/:key", requireRole("admin"), async (req, res) => {
   try {
     const { key } = req.params;
-    const organisationId = req.user.organisation_id;
+    const organisationId = currentOrganisationId(req);
 
     if (!MODULES[key]) {
       return res.status(400).json(ApiResponse.error("INVALID_MODULE", { message: `Module "${key}" inconnu.` }));
@@ -147,7 +155,7 @@ router.delete("/:key", requireRole("admin"), async (req, res) => {
 router.post('/:key/checkout', requireRole('admin'), async (req, res) => {
   try {
     const { key } = req.params;
-    const organisationId = req.user.organisation_id;
+    const organisationId = currentOrganisationId(req);
 
     if (!MODULES[key] || MODULES[key].plan !== 'addon') {
       return res.status(400).json(ApiResponse.error('INVALID_MODULE', { message: `Module "${key}" ne peut pas être acheté.` }));
