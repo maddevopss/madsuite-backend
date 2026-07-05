@@ -53,3 +53,6 @@ jobs:
 
       - name: Public kiosk module guard
         run: npm run guard:public-kiosk-modules
+
+      - name: Public portal contract guard
+        run: npm run guard:public-portal-contract
