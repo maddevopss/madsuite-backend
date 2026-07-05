@@ -4,24 +4,74 @@ const historyService = require('../../modules/history/history.service');
 const patternsService = require('../../modules/patterns/patterns.service');
 const memoryService = require('../../modules/memory/memory.service');
 const systemContract = require('../../core/systemContract/cognitiveSystemContract');
+const { getOrganisationId } = require('../../utils/organisationScope');
+const logger = require('../../config/logger');
+
+const REQUIRED_EVENT_FIELDS = ['sessionDuration', 'contextSwitches', 'timerRunning'];
+
+function isFiniteNumber(value) {
+    return typeof value === 'number' && Number.isFinite(value);
+}
+
+function buildSafeCognitivePayload(body) {
+    const missing = REQUIRED_EVENT_FIELDS.filter((field) => body[field] === undefined);
+    if (missing.length > 0) {
+        return { ok: false, error: 'Champs requis manquants', missing };
+    }
+
+    if (!isFiniteNumber(body.sessionDuration) || body.sessionDuration < 0 || body.sessionDuration > 1440) {
+        return { ok: false, error: 'sessionDuration invalide' };
+    }
+
+    if (!Number.isInteger(body.contextSwitches) || body.contextSwitches < 0 || body.contextSwitches > 1000) {
+        return { ok: false, error: 'contextSwitches invalide' };
+    }
+
+    if (typeof body.timerRunning !== 'boolean') {
+        return { ok: false, error: 'timerRunning invalide' };
+    }
+
+    if (body.idleTime !== undefined && (!isFiniteNumber(body.idleTime) || body.idleTime < 0 || body.idleTime > 1440)) {
+        return { ok: false, error: 'idleTime invalide' };
+    }
+
+    if (body.uiInteractions !== undefined && (!Number.isInteger(body.uiInteractions) || body.uiInteractions < 0 || body.uiInteractions > 100000)) {
+        return { ok: false, error: 'uiInteractions invalide' };
+    }
+
+    if (body.projectId !== undefined && body.projectId !== null && !Number.isInteger(body.projectId)) {
+        return { ok: false, error: 'projectId invalide' };
+    }
+
+    return {
+        ok: true,
+        payload: {
+            sessionDuration: body.sessionDuration,
+            contextSwitches: body.contextSwitches,
+            timerRunning: body.timerRunning,
+            idleTime: body.idleTime || 0,
+            uiInteractions: body.uiInteractions || 0,
+            projectId: body.projectId || null,
+        },
+    };
+}
 
 const logCognitiveState = async (req, res) => {
     try {
         const userId = req.user.id;
-        const orgId = req.user.organisation_id;
-        
-        // Validate required fields
-        const { sessionDuration, contextSwitches, timerRunning, idleTime, uiInteractions, projectId } = req.body;
-        
-        if (sessionDuration === undefined || contextSwitches === undefined || timerRunning === undefined) {
-            return res.status(400).json({ 
-                error: 'Champs requis manquants',
-                required: ['sessionDuration', 'contextSwitches', 'timerRunning'],
-                received: Object.keys(req.body)
+        const orgId = getOrganisationId(req);
+        const parsed = buildSafeCognitivePayload(req.body || {});
+
+        if (!parsed.ok) {
+            return res.status(400).json({
+                error: parsed.error,
+                required: REQUIRED_EVENT_FIELDS,
+                received: Object.keys(req.body || {}),
+                missing: parsed.missing || [],
             });
         }
-        
-        const result = await eventProcessor.processEvent(userId, orgId, req.body);
+
+        const result = await eventProcessor.processEvent(userId, orgId, parsed.payload);
 
         if (result.isUnchanged) {
             return res.status(200).json({ message: 'État inchangé', eventId: result.event.id });
@@ -32,7 +82,7 @@ const logCognitiveState = async (req, res) => {
         if (err.message === 'État cognitif invalide.') {
             return res.status(400).json({ error: err.message });
         }
-        console.error('Erreur lors du log cognitif:', err);
+        logger.error('Erreur lors du log cognitif', { error: err.message, stack: err.stack });
         res.status(500).json({ error: 'Erreur interne du serveur' });
     }
 };
@@ -40,13 +90,13 @@ const logCognitiveState = async (req, res) => {
 const getDailyCognitiveTimeline = async (req, res) => {
     try {
         const userId = req.user.id;
-        const orgId = req.user.organisation_id;
+        const orgId = getOrganisationId(req);
         const targetDate = req.query.date || new Date().toISOString().split('T')[0];
 
         const timeline = await historyService.getDailyTimeline(userId, targetDate, orgId);
         res.status(200).json(timeline);
     } catch (err) {
-        console.error('Erreur timeline cognitive:', err);
+        logger.error('Erreur timeline cognitive', { error: err.message, stack: err.stack });
         res.status(500).json({ error: 'Erreur interne du serveur' });
     }
 };
@@ -54,7 +104,7 @@ const getDailyCognitiveTimeline = async (req, res) => {
 const getDailyCognitiveInsight = async (req, res) => {
     try {
         const userId = req.user.id;
-        const orgId = req.user.organisation_id;
+        const orgId = getOrganisationId(req);
         const targetDate = req.query.date || new Date().toISOString().split('T')[0];
 
         // This remains a simple read model mapping
@@ -71,7 +121,7 @@ const getDailyCognitiveInsight = async (req, res) => {
 
         res.status(200).json(insightRes.rows[0]);
     } catch (err) {
-        console.error('Erreur insight cognitif:', err);
+        logger.error('Erreur insight cognitif', { error: err.message, stack: err.stack });
         res.status(500).json({ error: 'Erreur interne du serveur' });
     }
 };
@@ -79,14 +129,14 @@ const getDailyCognitiveInsight = async (req, res) => {
 const getCognitivePatterns = async (req, res) => {
     try {
         const userId = req.user.id;
-        const orgId = req.user.organisation_id;
+        const orgId = getOrganisationId(req);
         const rangeParam = req.query.range || '7d';
         const days = parseInt(rangeParam.replace('d', ''), 10) || 7;
 
         const patterns = await patternsService.analyzePatterns(userId, orgId, days);
         res.status(200).json(patterns || {});
     } catch (err) {
-        console.error('Erreur patterns cognitifs:', err);
+        logger.error('Erreur patterns cognitifs', { error: err.message, stack: err.stack });
         res.status(500).json({ error: 'Erreur interne du serveur' });
     }
 };
@@ -94,14 +144,14 @@ const getCognitivePatterns = async (req, res) => {
 const getCognitiveMemoryProfile = async (req, res) => {
     try {
         const userId = req.user.id;
-        const orgId = req.user.organisation_id;
+        const orgId = getOrganisationId(req);
         const rangeParam = req.query.range || '30d';
         const days = parseInt(rangeParam.replace('d', ''), 10) || 30;
 
         const profile = await memoryService.getMemoryProfile(userId, orgId, days);
         res.status(200).json(profile || {});
     } catch (err) {
-        console.error('Erreur memory profile:', err);
+        logger.error('Erreur memory profile', { error: err.message, stack: err.stack });
         res.status(500).json({ error: 'Erreur interne du serveur' });
     }
 };
@@ -109,7 +159,7 @@ const getCognitiveMemoryProfile = async (req, res) => {
 const getDebugSystemState = async (req, res) => {
     try {
         const userId = req.user.id;
-        const orgId = req.user.organisation_id;
+        const orgId = getOrganisationId(req);
         
         // Fetch last event
         const lastEventRes = await pool.query(`
@@ -128,7 +178,7 @@ const getDebugSystemState = async (req, res) => {
             thresholds: systemContract.getStateTraceabilityMap()
         });
     } catch (err) {
-        console.error('Erreur debug system:', err);
+        logger.error('Erreur debug system', { error: err.message, stack: err.stack });
         res.status(500).json({ error: 'Erreur interne du serveur' });
     }
 };
