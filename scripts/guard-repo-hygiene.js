@@ -23,6 +23,10 @@ const inspectedExtensions = new Set([
   ".js", ".jsx", ".ts", ".tsx", ".json", ".yml", ".yaml", ".md", ".env", ".example", ".txt",
 ]);
 
+function isAllowedEnvExample(relative) {
+  return relative === ".env.example" || relative.endsWith(`${path.sep}.env.example`) || relative.endsWith("/.env.example");
+}
+
 function walk(dir, files = []) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     if (ignoredDirs.has(entry.name)) continue;
@@ -31,7 +35,7 @@ function walk(dir, files = []) {
     const relative = path.relative(repoRoot, fullPath);
 
     for (const pattern of forbiddenPathPatterns) {
-      if (pattern.test(relative)) {
+      if (!isAllowedEnvExample(relative) && pattern.test(relative)) {
         files.push({ path: fullPath, forbiddenPath: true });
         break;
       }
