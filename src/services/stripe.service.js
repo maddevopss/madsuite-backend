@@ -12,6 +12,42 @@ if (!stripeSecretKey) {
 const stripe = Stripe(stripeSecretKey);
 
 /**
+ * Résout le plan_type à partir d'une subscription Stripe.
+ * 
+ * Stratégie de lookup (dans l'ordre) :
+ * 1. metadata.plan_type (si présent et valide)
+ * 2. lookup_key (si présent et valide)
+ * 3. Fallback : "pro" (pour préserver le comportement actuel)
+ * 
+ * Allowlist stricte : ["pro", "enterprise"]
+ * 
+ * @param {object} subscription - Objet subscription Stripe
+ * @returns {string} plan_type validé ("pro" ou "enterprise")
+ */
+function resolvePlanTypeFromStripeSubscription(subscription) {
+  const ALLOWED_PLANS = new Set(["pro", "enterprise"]);
+  
+  // 1. Vérifier metadata.plan_type
+  if (subscription?.metadata?.plan_type) {
+    const planFromMeta = String(subscription.metadata.plan_type).toLowerCase();
+    if (ALLOWED_PLANS.has(planFromMeta)) {
+      return planFromMeta;
+    }
+  }
+  
+  // 2. Vérifier lookup_key
+  if (subscription?.lookup_key) {
+    const planFromLookup = String(subscription.lookup_key).toLowerCase();
+    if (ALLOWED_PLANS.has(planFromLookup)) {
+      return planFromLookup;
+    }
+  }
+  
+  // 3. Fallback : "pro" (comportement actuel)
+  return "pro";
+}
+
+/**
  * Crée une session Checkout pour l'abonnement
  */
 async function createSubscriptionCheckoutSession(organisationId, userEmail, successUrl, cancelUrl) {
@@ -163,16 +199,17 @@ async function handleWebhook(event) {
 
             // Check current to make tracking more idempotent (avoid duplicate on webhook retry)
             const current = await db.query("SELECT plan_type FROM organisations WHERE id = $1", [orgId]);
-            const wasAlreadyPro = current.rows[0]?.plan_type === 'pro';
+            const resolvedPlanType = resolvePlanTypeFromStripeSubscription(session.subscription_details || {});
+            const wasAlreadyAtPlan = current.rows[0]?.plan_type === resolvedPlanType;
 
             await applyStripePlanUpdate({
               organisationId: orgId,
-              planType: "pro",
+              planType: resolvedPlanType,
               subscriptionId,
               status: "active",
             });
 
-            if (!wasAlreadyPro) {
+            if (!wasAlreadyAtPlan) {
               try {
                 await analyticsService.trackEvent("subscription_active", {
                   organisationId: orgId,
