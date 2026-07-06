@@ -8,6 +8,9 @@ module.exports = {
   billingAssistantJob: { frequencyHours: 24, criticality: 'HIGH' },
   recurringInvoiceJob: { frequencyHours: 24, criticality: 'HIGH' },
   
+  // Trial & Subscriptions
+  trialReminderJob: { frequencyHours: 24, criticality: 'MEDIUM' },
+  
   // Analytics & Activity
   activityAggregationTask: { frequencyHours: 1, criticality: 'MEDIUM' },
   metricsAggregationJob: { frequencyHours: 24, criticality: 'MEDIUM' },

@@ -3,11 +3,20 @@ const db = require("../../db");
 const emailService = require("../services/email.service");
 const logger = require("../utils/logger");
 const analyticsService = require("../services/analytics.service");
+const { expireTrials } = require("../services/trialExpiration.service");
 
 async function checkAndSendTrialReminders() {
   const client = await db.pool.connect();
   try {
-    // Near expiry (2 days)
+    // 1. Expire les trials qui ont dépassé trial_ends_at
+    try {
+      await expireTrials();
+    } catch (err) {
+      logger.error("Erreur lors de l'expiration des trials", { error: err.message });
+      // Continue anyway — les reminders doivent s'envoyer même si l'expiration échoue
+    }
+
+    // 2. Near expiry (2 days)
     const nearResult = await client.query(`
       SELECT o.id as org_id, o.nom as org_nom, o.trial_ends_at, u.email as admin_email, u.nom as admin_nom
       FROM organisations o
@@ -37,13 +46,13 @@ async function checkAndSendTrialReminders() {
       });
     }
 
-    // Expired trials that are still free (no active paid plan)
+    // 3. Already expired (for analytics only)
     const expiredResult = await client.query(`
       SELECT o.id as org_id, o.nom as org_nom
       FROM organisations o
       WHERE o.trial_ends_at IS NOT NULL
         AND o.trial_ends_at < NOW()
-        AND (o.plan_type = 'free' OR o.plan_type IS NULL OR o.subscription_status != 'active')
+        AND o.subscription_status = 'expired'
     `);
 
     for (const row of expiredResult.rows) {

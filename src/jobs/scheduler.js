@@ -12,6 +12,7 @@ const { processOutboxEvents } = require("./outboxWorker");
 const { generateMetricsSnapshots } = require("./metricsSnapshotJob");
 const { runSystemConsistencyCheck } = require("./systemConsistencyJob");
 const { runSystemReconciliation } = require("./systemReconciliationJob");
+const { checkAndSendTrialReminders } = require("./trialReminderJob");
 const cronMonitor = require("../services/cronMonitor.service");
 const distributedLock = require("../services/distributedLock.service");
 const cronRegistry = require("../config/cron_registry");
@@ -32,7 +33,8 @@ function startSchedulers() {
     "cronCleanupTask",
     "metricsSnapshotTask",
     "systemConsistencyTask",
-    "systemReconciliationTask"
+    "systemReconciliationTask",
+    "trialReminderJob"
   ];
 
   const registryJobs = Object.keys(cronRegistry);
@@ -296,9 +298,26 @@ function startSchedulers() {
     }
   });
 
+  // Trial Reminder (Daily at 8:00 AM)
+  const trialReminderTask = cron.schedule("0 8 * * *", async () => {
+    const jobName = "trialReminderJob";
+    if (!(await distributedLock.acquireLock(jobName))) return;
+
+    const logId = await cronMonitor.recordJobStart(jobName);
+    try {
+      await checkAndSendTrialReminders();
+      await cronMonitor.recordJobSuccess(logId);
+    } catch (error) {
+      logger.error("Erreur scheduler trial reminder", { error });
+      await cronMonitor.recordJobFailure(logId, error.message);
+    } finally {
+      await distributedLock.releaseLock(jobName);
+    }
+  });
+
   logger.info("Schedulers demarres");
 
-  return [activityAggregationTask, longRunningTimersTask, billingAssistantTask, securityBufferTask, cognitiveAggregatorTask, emailFollowupTask, recurringInvoiceTask, outboxWorkerTask, checkStaleJobsTask, cronCleanupTask, metricsSnapshotTask, systemConsistencyTask, systemReconciliationTask];
+  return [activityAggregationTask, longRunningTimersTask, billingAssistantTask, securityBufferTask, cognitiveAggregatorTask, emailFollowupTask, recurringInvoiceTask, outboxWorkerTask, checkStaleJobsTask, cronCleanupTask, metricsSnapshotTask, systemConsistencyTask, systemReconciliationTask, trialReminderTask];
 }
 
 module.exports = { startSchedulers };

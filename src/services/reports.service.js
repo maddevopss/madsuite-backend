@@ -46,7 +46,7 @@ async function generateReport({ userId, role, organisationId, dateDebut, dateFin
     groupByClause = "c.id, c.nom, p.id, p.nom, u.id, u.nom, DATE_TRUNC('month', te.start_time AT TIME ZONE $3)";
   } else if (groupBy === "week") {
     selectPeriod = `,
-      TO_CHAR(DATE_TRUNC('week', te.start_time AT TIME ZONE $3), 'YYYY-\"W\"IW') AS periode,
+      TO_CHAR(DATE_TRUNC('week', te.start_time AT TIME ZONE $3), 'YYYY-MM') AS periode,
       TO_CHAR(DATE_TRUNC('week', te.start_time AT TIME ZONE $3), 'TMMonth DD, YYYY') AS periode_label`;
     groupByClause = "c.id, c.nom, p.id, p.nom, u.id, u.nom, DATE_TRUNC('week', te.start_time AT TIME ZONE $3)";
   }
