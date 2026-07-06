@@ -56,4 +56,20 @@ describe("modules registry - admin plan access", () => {
       expect(isModuleIncludedInPlan("desktop_agent", planType)).toBe(true);
     });
   });
+
+  test("enterprise plan does NOT include INTERNAL modules", () => {
+    expect(isModuleIncludedInPlan("cognitive_engine", "enterprise")).toBe(false);
+    expect(isModuleIncludedInPlan("desktop_agent", "enterprise")).toBe(false);
+  });
+
+  test("enterprise plan includes ADDON modules", () => {
+    expect(isModuleIncludedInPlan("calcul_km", "enterprise")).toBe(true);
+    expect(isModuleIncludedInPlan("kiosk_km", "enterprise")).toBe(true);
+    expect(isModuleIncludedInPlan("estimates", "enterprise")).toBe(true);
+    expect(isModuleIncludedInPlan("quotes", "enterprise")).toBe(true);
+    expect(isModuleIncludedInPlan("expenses", "enterprise")).toBe(true);
+    expect(isModuleIncludedInPlan("payments", "enterprise")).toBe(true);
+    expect(isModuleIncludedInPlan("activity_intelligence", "enterprise")).toBe(true);
+    expect(isModuleIncludedInPlan("billing_assistant", "enterprise")).toBe(true);
+  });
 });

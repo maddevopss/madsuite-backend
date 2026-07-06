@@ -45,6 +45,22 @@ describe("modules registry", () => {
     expect(isModuleIncludedInPlan("invoices", "free")).toBe(false);
   });
 
+  test("enterprise plan includes ADDON modules but NOT INTERNAL", () => {
+    expect(isModuleIncludedInPlan("estimates", "enterprise")).toBe(true);
+    expect(isModuleIncludedInPlan("quotes", "enterprise")).toBe(true);
+    expect(isModuleIncludedInPlan("expenses", "enterprise")).toBe(true);
+    expect(isModuleIncludedInPlan("activity_intelligence", "enterprise")).toBe(true);
+    expect(isModuleIncludedInPlan("billing_assistant", "enterprise")).toBe(true);
+    expect(isModuleIncludedInPlan("cognitive_engine", "enterprise")).toBe(false);
+    expect(isModuleIncludedInPlan("desktop_agent", "enterprise")).toBe(false);
+  });
+
+  test("pro plan does NOT include ADDON modules", () => {
+    expect(isModuleIncludedInPlan("estimates", "pro")).toBe(false);
+    expect(isModuleIncludedInPlan("quotes", "pro")).toBe(false);
+    expect(isModuleIncludedInPlan("expenses", "pro")).toBe(false);
+  });
+
   test("returns registry diagnostics", () => {
     expect(getModuleRegistryDiagnostics()).toEqual(expect.objectContaining({
       duplicateKeys: [],
