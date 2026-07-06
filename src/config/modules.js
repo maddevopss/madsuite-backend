@@ -60,7 +60,8 @@ function isModuleIncludedInPlan(moduleKey, planType) {
 
   if (mod.plan === "free") return true;
   if (mod.plan === "trial" && ["trial", "solo", "pro", "enterprise"].includes(normalizedPlan)) return true;
-  if (mod.plan === "pro" && ["pro", "enterprise"].includes(normalizedPlan)) return true;
+  if (mod.plan === "pro" && ["pro", "enterprise", "admin", "internal", "master_admin", "platform_admin"].includes(normalizedPlan)) return true;
+  if (mod.plan === "addon" && INTERNAL_PLAN_TYPES.has(normalizedPlan)) return true;
   if (mod.plan === "internal" && INTERNAL_PLAN_TYPES.has(normalizedPlan)) return true;
 
   // Les add-ons ne sont jamais inclus dans un plan — ils doivent être activés explicitement

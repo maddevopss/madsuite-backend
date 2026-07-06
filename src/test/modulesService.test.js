@@ -49,9 +49,9 @@ describe("modules service", () => {
       matrix_status: expect.any(String),
       is_active: true,
       active: true,
-      included_in_plan: false,
-      included: false,
-      is_addon_active: true,
+      included_in_plan: true,
+      included: true,
+      is_addon_active: false,
     }));
   });
 
