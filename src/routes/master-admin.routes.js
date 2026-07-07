@@ -12,7 +12,7 @@ const { z } = require("zod");
  * Master Admin access control.
  *
  * RULES:
- * - No magic `user.id === 1`.
+ * - No magic hardcoded user id.
  * - Shared platform superadmin guard via requireSuperAdmin.
  * - Explicit list via MASTER_ADMIN_USER_IDS env.
  * - All actions must produce an audit trail.

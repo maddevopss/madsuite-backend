@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const { execFileSync } = require("child_process");
 
 const repoRoot = path.resolve(__dirname, "..");
 const ignoredDirs = new Set([".git", "node_modules", "coverage", ".next", ".turbo"]);
@@ -55,15 +56,36 @@ function walk(dir, files = []) {
   return files;
 }
 
+function gitVisibleFiles() {
+  try {
+    const output = execFileSync("git", ["ls-files", "-z", "--cached", "--others", "--exclude-standard"], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+
+    return output
+      .split("\0")
+      .filter(Boolean)
+      .map((relative) => ({
+        path: path.join(repoRoot, relative),
+        forbiddenPath: forbiddenPathPatterns.some((pattern) => !isAllowedEnvExample(relative) && pattern.test(relative)),
+      }));
+  } catch (err) {
+    return walk(repoRoot);
+  }
+}
+
 const violations = [];
 
-for (const item of walk(repoRoot)) {
+for (const item of gitVisibleFiles()) {
   const relative = path.relative(repoRoot, item.path);
 
   if (item.forbiddenPath) {
     violations.push(`${relative}: forbidden path or generated artifact should not be committed`);
   }
 
+  if (!fs.existsSync(item.path)) continue;
   if (fs.statSync(item.path).isDirectory()) continue;
 
   const content = fs.readFileSync(item.path, "utf8");

@@ -34,7 +34,7 @@ const routeExpectations = [
     route: "/api/master-admin",
     required: ["auth"],
     routerFile: path.join(repoRoot, "src", "routes", "master-admin.routes.js"),
-    routerRequired: ["requireMasterAdmin"],
+    routerRequired: ["requireSuperAdmin"],
     rationale: "master-admin surface is platform-super-admin only",
   },
   {

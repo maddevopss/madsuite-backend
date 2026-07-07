@@ -65,5 +65,7 @@ afterAll(async () => {
     }
   } catch (err) {
     console.error("Erreur lors du nettoyage de la DB de test:", err);
+  } finally {
+    await db.end().catch(() => null);
   }
 });

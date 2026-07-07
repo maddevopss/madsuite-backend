@@ -1,8 +1,8 @@
 module.exports = async () => {
   try {
-    const pool = require("../db");
-    if (pool?.end) {
-      await pool.end();
+    const db = require("./db");
+    if (db?.end) {
+      await db.end();
     }
   } catch {
     // ignore teardown errors

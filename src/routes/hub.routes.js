@@ -1,12 +1,12 @@
 // backend/src/routes/hub.routes.js
 
 /**
- * Express router for the Smart Work‑Flow Hub APIs.
+ * Express router for the Smart Workâ€‘Flow Hub APIs.
  * All endpoints are protected by auth middleware and canonical organisation context.
  *
  * SECURITY FIX (P0-1, P0-2):
- * - req.user.organisationId → req.user.organisation_id (JWT uses snake_case)
- * - io.emit() global → io.of('/hub').to(`org_${orgId}`).emit() (tenant isolation)
+ * - Use canonical organisation scope from getOrganisationId(req)
+ * - Broadcast only to the /hub namespace organisation room
  *
  * SECURITY FIX (P0-3):
  * - Require the canonical organisation middleware for every Hub endpoint.

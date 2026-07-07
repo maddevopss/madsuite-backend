@@ -31,7 +31,7 @@ if (route && !route.includes("requireSuperAdmin")) {
   violations.push("analytics funnel route must require superadmin.");
 }
 
-if (route && !route.includes('router.get(\n  "/funnel"') && !route.includes('router.get("/funnel"')) {
+if (route && !/router\.get\(\s*["']\/funnel["']/.test(route)) {
   violations.push("analytics funnel route must exist.");
 }
 

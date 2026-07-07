@@ -116,7 +116,7 @@ if (service && !service.includes("LIMIT 500")) {
   violations.push("daily report data must cap entries to 500.");
 }
 
-if (service && !service.includes("WHERE type = $1\n      AND organisation_id = $2")) {
+if (service && !/WHERE\s+type\s*=\s*\$1\s+AND\s+organisation_id\s*=\s*\$2/.test(service)) {
   violations.push("debug activity logs must be scoped by organisation_id.");
 }
 

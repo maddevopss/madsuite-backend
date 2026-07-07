@@ -19,6 +19,16 @@ npm-debug.log*
 
 # Testing
 coverage/
+test-results/
+.last-run.json
+
+# Generated debug artifacts
+*.png
+cookies.txt
+src.tar.gz
+audit_results.json
+tenant_safety_report.md
+browser_logs.txt
 
 # IDEs and Editors
 .vscode/
