@@ -4,11 +4,15 @@ const { expireTrials } = require("../services/trialExpiration.service");
 describe("trialExpiration.service", () => {
   beforeEach(async () => {
     // Cleanup before each test
+    // Delete users first to respect FK constraints, then organisations
+    await db.query("DELETE FROM utilisateurs WHERE organisation_id IN (SELECT id FROM organisations WHERE nom LIKE 'Test%')");
     await db.query("DELETE FROM organisations WHERE nom LIKE 'Test%'");
   });
 
   afterAll(async () => {
     // Cleanup after all tests
+    // Delete users first to respect FK constraints, then organisations
+    await db.query("DELETE FROM utilisateurs WHERE organisation_id IN (SELECT id FROM organisations WHERE nom LIKE 'Test%')");
     await db.query("DELETE FROM organisations WHERE nom LIKE 'Test%'");
   });
 
