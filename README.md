@@ -4,15 +4,15 @@ Backend officiel de MADSuite.
 
 Source de vérité documentaire : `bleeband/SYSTEME_MAD`.
 
-Avant toute décision structurante, consulter :
+Avant toute décision structurante, consulter les documents officiels à la racine du dépôt `bleeband/SYSTEME_MAD` :
 
 ```text
-SYSTEME_MAD/MANIFEST.md
-SYSTEME_MAD/00-SYSTEME-MAD/ai-context.md
-SYSTEME_MAD/00-SYSTEME-MAD/ai-context-madsuite-madproof.md
-SYSTEME_MAD/00-SYSTEME-MAD/repos.md
-SYSTEME_MAD/04-ADR/
-SYSTEME_MAD/09-CHECKLISTS/
+MANIFEST.md
+00-SYSTEME-MAD/ai-context.md
+00-SYSTEME-MAD/ai-context-madsuite-madproof.md
+00-SYSTEME-MAD/repos.md
+04-ADR/
+09-CHECKLISTS/
 ```
 
 ## Rôle
@@ -68,12 +68,12 @@ npm run check:backend
 Les guards bloquent notamment :
 
 - règles `.gitignore` critiques manquantes;
-- fichiers `.env` réels, artefacts générés ou secrets évidents;
+- fichiers d’environnement réels, artefacts générés ou informations sensibles évidentes;
 - routes platform montées sans garde super-admin;
 - routes métier organisationnelles sans contexte `requireOrganisation` / RLS;
 - reconstruction inline du contrat API modules dans `src/routes/modules.routes.js`.
 
-Si un guard tombe rouge, corriger le code ou la politique plutôt que de contourner le guard. Une exception doit être documentée dans `SYSTEME_MAD` avant fusion.
+Si un guard tombe rouge, corriger le code ou la politique plutôt que de contourner le guard. Une exception doit être documentée dans `bleeband/SYSTEME_MAD` avant fusion.
 
 ## Contrat modules
 
@@ -115,17 +115,17 @@ npm run test:modules
 Références SYSTEME_MAD :
 
 ```text
-SYSTEME_MAD/02-PRODUIT/madsuite-matrice-plans-modules.md
-SYSTEME_MAD/09-CHECKLISTS/chk-052-p3-plans-modules-subscriptions.md
+02-PRODUIT/madsuite-matrice-plans-modules.md
+09-CHECKLISTS/chk-052-p3-plans-modules-subscriptions.md
 ```
 
 ## Environnement
 
-Ne jamais commiter de fichier `.env` réel. Utiliser `.env.example` comme référence sans secret.
+Ne jamais commiter de fichier d’environnement réel. Utiliser l’exemple fourni comme référence sans valeur sensible.
 
 ## Sécurité
 
-Toute route métier doit respecter l’isolation par organisation. Ne jamais exposer les données d’une autre organisation, ne jamais envoyer de notification cross-org, protéger les webhooks, éviter les logs contenant des secrets et garder les endpoints IA limités et audités.
+Toute route métier doit respecter l’isolation par organisation. Ne jamais exposer les données d’une autre organisation, ne jamais envoyer de notification cross-org, protéger les webhooks, éviter les logs sensibles et garder les endpoints IA limités et audités.
 
 ## MADSuite / MADPROOF
 
@@ -137,7 +137,7 @@ Les labels internes comme `flow`, `deep_focus`, `friction` ou `fatigue` doivent 
 
 ## Déploiement
 
-Avant un déploiement : valider les variables d’environnement, migrations, tests critiques, CORS, Socket.IO, Stripe webhook, routes système, Sentry/logging et absence de secrets.
+Avant un déploiement : valider les variables d’environnement, migrations, tests critiques, CORS, Socket.IO, Stripe webhook, routes système, Sentry/logging et absence d’information sensible.
 
 ## Statut
 
