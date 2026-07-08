@@ -54,6 +54,8 @@ jobs:
       MASTER_ADMIN_USER_IDS: 999999
       FRONTEND_URL: http://localhost:3000
       ELECTRON_URL: http://localhost:3000
+      STRIPE_SECRET_KEY: sk_test_madsuite_ci_dummy
+      STRIPE_WEBHOOK_SECRET: whsec_madsuite_ci_dummy
       REDIS_DISABLED: true
       SCHEDULERS_ENABLED: false
       TRIAL_REMINDER_JOB_ENABLED: false
