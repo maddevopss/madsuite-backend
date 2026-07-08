@@ -198,9 +198,10 @@ describe("Users", () => {
     });
 
     expect(res.statusCode).toBe(201);
-    expect(res.body).toHaveProperty("id");
-    expect(res.body).toHaveProperty("email", email);
-    expect(res.body).toHaveProperty("role", "employe");
+    const createdUser = res.body.data ?? res.body;
+    expect(createdUser).toHaveProperty("id");
+    expect(createdUser).toHaveProperty("email", email);
+    expect(createdUser).toHaveProperty("role", "employe");
 
     const dbUser = await db.query(
       `
@@ -208,12 +209,13 @@ describe("Users", () => {
       FROM utilisateurs
       WHERE id = $1
       `,
-      [res.body.id],
+      [createdUser.id],
     );
 
+    expect(dbUser.rows).toHaveLength(1);
     expect(Number(dbUser.rows[0].organisation_id)).toBe(organisation.id);
 
-    await db.query(`DELETE FROM utilisateurs WHERE id = $1`, [res.body.id]);
+    await db.query(`DELETE FROM utilisateurs WHERE id = $1`, [createdUser.id]);
     await db.query(`DELETE FROM organisations WHERE id = $1`, [organisation.id]);
   });
 
