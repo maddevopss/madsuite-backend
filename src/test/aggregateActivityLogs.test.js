@@ -15,7 +15,12 @@ describe("aggregateActivityLogs", () => {
 
   beforeEach(() => {
     db.connect.mockResolvedValue(mockClient);
-    mockClient.query.mockResolvedValue({ rows: [] });
+    mockClient.query.mockImplementation((sql, params) => {
+      if (String(sql).includes("FROM organisations")) {
+        return Promise.resolve({ rows: [{ id: 123, timezone: "America/Montreal" }] });
+      }
+      return Promise.resolve({ rows: [] });
+    });
   });
 
   afterEach(() => {
@@ -36,7 +41,7 @@ describe("aggregateActivityLogs", () => {
     const updateCall = mockClient.query.mock.calls.find(([sql]) => sql.includes("UPDATE activity_logs"));
 
     expect(updateCall).toBeTruthy();
-    expect(updateCall[1]).toEqual(["America/Montreal"]);
+    expect(updateCall[1]).toEqual(["America/Montreal", 123]);
   });
 
   test("aggregates logs by organisation timezone with configured fallback", async () => {
@@ -45,10 +50,10 @@ describe("aggregateActivityLogs", () => {
     const aggregateCall = mockClient.query.mock.calls.find(([sql]) => sql.includes("INSERT INTO activity_daily_summary"));
 
     expect(aggregateCall).toBeTruthy();
-    expect(aggregateCall[0]).toContain("AT TIME ZONE timezone");
-    expect(aggregateCall[0]).toContain("COALESCE(o.timezone, $1)");
+    expect(aggregateCall[0]).toContain("AT TIME ZONE $1");
+    expect(aggregateCall[0]).toContain("organisation_id = $2");
     expect(aggregateCall[0]).toContain("organisation_id");
-    expect(aggregateCall[1]).toEqual(["America/Montreal"]);
+    expect(aggregateCall[1]).toEqual(["America/Montreal", 123]);
   });
 
   test("wraps aggregation and purge in a transaction", async () => {
