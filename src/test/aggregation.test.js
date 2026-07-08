@@ -1,14 +1,18 @@
 const db = require("../../db");
 const { aggregateActivityLogs } = require("../jobs/aggregateActivityLogs");
-const { DEFAULT_TIMEZONE } = require("../utils/organisationScope");
+const { createTestOrganisation, createTestUser } = require("./helpers/testData");
 
 describe("Aggregation Activity Logs Integration", () => {
   let testUser;
+  let testOrganisation;
 
   beforeAll(async () => {
-    // Récupération d'un utilisateur existant pour le test
-    const res = await db.query("SELECT id, organisation_id FROM utilisateurs LIMIT 1");
-    testUser = res.rows[0];
+    testOrganisation = await createTestOrganisation({ nom: `Org Aggregation ${Date.now()}` });
+    testUser = await createTestUser({
+      role: "admin",
+      password: "Password123!",
+      organisation_id: testOrganisation.id,
+    });
   });
 
   test("should mark logs as aggregated after successful processing", async () => {
@@ -17,7 +21,7 @@ describe("Aggregation Activity Logs Integration", () => {
       `INSERT INTO activity_logs (organisation_id, utilisateur_id, app_name, captured_at, duration_seconds, is_aggregated)
        VALUES ($1, $2, 'TestAggApp', NOW() - INTERVAL '1 day', 120, false)
        RETURNING id`,
-      [testUser.organisation_id, testUser.id],
+      [testOrganisation.id, testUser.id],
     );
     const logId = logRes.rows[0].id;
 
