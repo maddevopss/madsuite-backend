@@ -60,14 +60,46 @@ async function ensureMigrationsTable(client) {
   `);
 }
 
-async function getAppliedMigrations(client) {
-  // On vérifie d'abord si la nouvelle table existe, sinon on se rabat sur l'ancienne
-  const tableExists = await client.query(`
+async function hasMigrationTelemetryTable(client) {
+  const result = await client.query(`
     SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'schema_migrations_executed')
   `);
 
-  const tableName = tableExists.rows[0].exists ? "schema_migrations_executed" : "schema_migrations";
-  const column = tableExists.rows[0].exists ? "version" : "filename";
+  return Boolean(result.rows[0]?.exists);
+}
+
+async function recordMigrationTelemetry(client, { file, status, durationMs = null }) {
+  if (!(await hasMigrationTelemetryTable(client))) return;
+
+  const durationValue = durationMs ?? 0;
+  const updateResult = await client.query(
+    `
+    UPDATE schema_migrations_executed
+    SET name = $2,
+        duration_ms = $3,
+        status = $4
+    WHERE version = $1
+    `,
+    [file, file, durationValue, status],
+  );
+
+  if (updateResult.rowCount === 0) {
+    await client.query(
+      `
+      INSERT INTO schema_migrations_executed (version, name, duration_ms, status)
+      VALUES ($1, $2, $3, $4)
+      `,
+      [file, file, durationValue, status],
+    );
+  }
+}
+
+async function getAppliedMigrations(client) {
+  // On vérifie d'abord si la nouvelle table existe, sinon on se rabat sur l'ancienne
+  const tableExists = await hasMigrationTelemetryTable(client);
+
+  const tableName = tableExists ? "schema_migrations_executed" : "schema_migrations";
+  const column = tableExists ? "version" : "filename";
 
   const { rows } = await client.query(`SELECT ${column} as file FROM ${tableName}`);
   return new Set(rows.map((r) => r.file));
@@ -87,22 +119,7 @@ async function applyBaselineSnapshot(client, snapshotPath) {
 async function recordMigrationSnapshot(client, files) {
   for (const file of files) {
     await client.query(`INSERT INTO schema_migrations (filename) VALUES ($1) ON CONFLICT DO NOTHING`, [file]);
-  }
-
-  const hasTelemetry = await client.query(
-    `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'schema_migrations_executed')`,
-  );
-  if (hasTelemetry.rows[0].exists) {
-    for (const file of files) {
-      await client.query(
-        `
-        INSERT INTO schema_migrations_executed (version, name, duration_ms, status)
-        VALUES ($1, $2, 0, 'success')
-        ON CONFLICT (version) DO UPDATE SET status = 'success', duration_ms = 0
-        `,
-        [file, file],
-      );
-    }
+    await recordMigrationTelemetry(client, { file, status: "success", durationMs: 0 });
   }
 }
 
@@ -118,19 +135,8 @@ async function applyMigration(client, { fullPath, file }) {
     await client.query(`INSERT INTO schema_migrations (filename) VALUES ($1) ON CONFLICT DO NOTHING`, [file]);
 
     // Si la table de télémétrie existe (créée par 024), on enregistre le succès
-    const hasTelemetry = await client.query(
-      `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'schema_migrations_executed')`,
-    );
-    if (hasTelemetry.rows[0].exists) {
-      const duration = Math.round(performance.now() - startTime);
-      await client.query(
-        `
-        INSERT INTO schema_migrations_executed (version, name, duration_ms, status)
-        VALUES ($1, $2, $3, 'success') ON CONFLICT (version) DO UPDATE SET status = 'success', duration_ms = $3
-      `,
-        [file, file, duration],
-      );
-    }
+    const duration = Math.round(performance.now() - startTime);
+    await recordMigrationTelemetry(client, { file, status: "success", durationMs: duration });
 
     await client.query(`COMMIT`);
     log(`Migration appliquée: ${file}`);
@@ -144,20 +150,7 @@ async function applyMigration(client, { fullPath, file }) {
 
     if (duplicateMigrationObject) {
       await client.query(`INSERT INTO schema_migrations (filename) VALUES ($1) ON CONFLICT DO NOTHING`, [file]);
-
-      const hasTelemetry = await client.query(
-        `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'schema_migrations_executed')`,
-      );
-      if (hasTelemetry.rows[0].exists) {
-        await client.query(
-          `
-          INSERT INTO schema_migrations_executed (version, name, duration_ms, status)
-          VALUES ($1, $2, 0, 'success')
-          ON CONFLICT (version) DO UPDATE SET status = 'success', duration_ms = 0
-          `,
-          [file, file],
-        );
-      }
+      await recordMigrationTelemetry(client, { file, status: "success", durationMs: 0 });
 
       log(`Migration déjà présente: ${file}`);
       return;
@@ -165,13 +158,7 @@ async function applyMigration(client, { fullPath, file }) {
 
     // En cas d'échec, on tente de logguer l'erreur si la table existe
     try {
-      await client.query(
-        `
-        INSERT INTO schema_migrations_executed (version, name, status)
-        VALUES ($1, $1, 'failed') ON CONFLICT (version) DO UPDATE SET status = 'failed'
-      `,
-        [file],
-      );
+      await recordMigrationTelemetry(client, { file, status: "failed", durationMs: 0 });
     } catch (logErr) {
       /* Table peut-être pas encore créée */
     }
