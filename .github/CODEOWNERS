@@ -1,0 +1,24 @@
+# CODEOWNERS — MADSuite backend
+#
+# Ce fichier prépare l’exigence de review propriétaire dans la branch protection.
+# Le backend contient les surfaces sensibles : auth, multi-tenant, RLS, facturation, jobs, IA et sécurité.
+
+* @bleeband
+
+# Backend critical surfaces
+/server.js @bleeband
+/src/ @bleeband
+/prisma/ @bleeband
+/scripts/ @bleeband
+
+# Security / platform governance
+/src/middlewares/ @bleeband
+/src/routes/ @bleeband
+/src/services/ @bleeband
+/src/jobs/ @bleeband
+/src/migrate/ @bleeband
+
+# CI / GitHub governance
+/.github/ @bleeband
+/package.json @bleeband
+/package-lock.json @bleeband
