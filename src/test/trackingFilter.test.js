@@ -1,4 +1,4 @@
-const { shouldIgnoreActivity, getActivitySignature, isPrivacySensitiveTitle } = require("../../../desktop-agent/src/utils/trackingFilter");
+const { shouldIgnoreActivity, getActivitySignature, isPrivacySensitiveTitle } = require("../utils/trackingFilter");
 
 describe("trackingFilter", () => {
   describe("shouldIgnoreActivity", () => {
