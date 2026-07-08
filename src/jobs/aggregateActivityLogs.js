@@ -2,16 +2,22 @@ const db = require("../../db");
 const logger = require("../config/logger");
 const { DEFAULT_TIMEZONE } = require("../utils/organisationScope");
 
-async function aggregateActivityLogs() {
+async function aggregateActivityLogs(options = {}) {
   const client = await db.connect();
+  const targetOrganisationId = options.organisationId ?? null;
 
   try {
     await client.query("BEGIN");
 
-    const orgResult = await client.query(
-      "SELECT id, COALESCE(timezone, $1) AS timezone FROM organisations",
-      [DEFAULT_TIMEZONE],
-    );
+    const orgResult = targetOrganisationId
+      ? await client.query(
+          "SELECT $2::int AS id, COALESCE((SELECT timezone FROM organisations WHERE id = $2), $1) AS timezone",
+          [DEFAULT_TIMEZONE, targetOrganisationId],
+        )
+      : await client.query(
+          "SELECT id, COALESCE(timezone, $1) AS timezone FROM organisations",
+          [DEFAULT_TIMEZONE],
+        );
 
     const query = `
       WITH updated_logs AS (

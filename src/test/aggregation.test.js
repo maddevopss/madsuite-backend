@@ -19,14 +19,14 @@ describe("Aggregation Activity Logs Integration", () => {
     // 1. Insertion d'un log non agrégé (date passée pour être éligible à l'agrégation)
     const logRes = await db.query(
       `INSERT INTO activity_logs (organisation_id, utilisateur_id, app_name, captured_at, duration_seconds, is_aggregated)
-       VALUES ($1, $2, 'TestAggApp', NOW() - INTERVAL '1 day', 120, false)
+       VALUES ($1, $2, 'TestAggApp', NOW() - INTERVAL '2 days', 120, false)
        RETURNING id`,
       [testOrganisation.id, testUser.id],
     );
     const logId = logRes.rows[0].id;
 
-    // 2. Exécution du job d'agrégation
-    await aggregateActivityLogs();
+    // 2. Exécution du job d'agrégation sur l'organisation du test
+    await aggregateActivityLogs({ organisationId: testOrganisation.id });
 
     // 3. Vérification que le log est maintenant marqué comme agrégé
     const checkLog = await db.query("SELECT is_aggregated FROM activity_logs WHERE id = $1", [logId]);
