@@ -129,6 +129,7 @@ async function applyMigration(client, { fullPath, file }) {
 
   await client.query(`BEGIN`);
   try {
+    log(`Migration en cours: ${file}`);
     await client.query(sql);
 
     // On insère dans les deux tables pour la compatibilité descendante
@@ -163,6 +164,7 @@ async function applyMigration(client, { fullPath, file }) {
       /* Table peut-être pas encore créée */
     }
 
+    e.message = `Migration échouée (${file}): ${e.message}`;
     throw e;
   }
 }
