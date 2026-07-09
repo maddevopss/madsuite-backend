@@ -55,6 +55,22 @@ npm run guard:hygiene
 npm run guard:routes
 npm run guard:organisation-routes
 npm run guard:modules-contract
+npm run guard:module-access-contract
+npm run guard:app-module-mounts
+npm run guard:public-kiosk-modules
+npm run guard:public-portal-contract
+npm run guard:stripe-contract
+npm run guard:activity-ingestion-contract
+npm run guard:ai-contract
+npm run guard:cognitive-contract
+npm run guard:hub-contract
+npm run guard:notifications-contract
+npm run guard:export-contract
+npm run guard:analytics-contract
+npm run guard:calendar-contract
+npm run guard:suggestions-summary-contract
+npm run guard:master-admin-contract
+npm run guard:reports-contract
 npm run test:modules
 npm run test:security -- --runInBand
 ```
@@ -71,7 +87,8 @@ Les guards bloquent notamment :
 - fichiers d’environnement réels, artefacts générés ou informations sensibles évidentes;
 - routes platform montées sans garde super-admin;
 - routes métier organisationnelles sans contexte `requireOrganisation` / RLS;
-- reconstruction inline du contrat API modules dans `src/routes/modules.routes.js`.
+- reconstruction inline du contrat API modules dans `src/routes/modules.routes.js`;
+- régressions des contrats modules, Stripe, activité, IA, Cognitive Engine, hub, notifications, exports, analytics, calendrier, suggestions, master-admin et rapports.
 
 Si un guard tombe rouge, corriger le code ou la politique plutôt que de contourner le guard. Une exception doit être documentée dans `bleeband/SYSTEME_MAD` avant fusion.
 
