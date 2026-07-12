@@ -166,17 +166,17 @@ async function rotateRefreshToken(client, user, sessionId, currentToken, req) {
 
   const storedToken = result.rows[0];
 
-  if (
-    !storedToken ||
-    storedToken.revoked_at ||
-    new Date(storedToken.expires_at).getTime() <= Date.now() ||
-    storedToken.deleted_at ||
-    storedToken.session_active !== true ||
-    Number(storedToken.utilisateur_id) !== Number(user.id) ||
-    Number(storedToken.session_id) !== Number(sessionId)
-  ) {
-    return null;
-  }
+if (
+  !storedToken ||
+  storedToken.revoked_at ||
+  new Date(storedToken.expires_at).getTime() <= Date.now() ||
+  storedToken.deleted_at ||
+  storedToken.session_active !== true ||
+  Number(storedToken.utilisateur_id) !== Number(user.id) ||
+  String(storedToken.session_id) !== String(sessionId)
+) {
+  return null;
+}
 
   const nextRefreshToken = createRefreshToken(user, sessionId);
   const nextExpiresAt = new Date(Date.now() + REFRESH_TOKEN_TTL_MS);
