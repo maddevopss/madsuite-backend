@@ -1,10 +1,7 @@
-name: Backend CI
+name: Backend PR CI
 
 on:
   pull_request:
-    branches:
-      - main
-  push:
     branches:
       - main
   workflow_dispatch:
@@ -102,7 +99,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: backend-test-log
+          name: backend-pr-test-log
           path: artifacts/backend-test.log
           if-no-files-found: ignore
           retention-days: 7
