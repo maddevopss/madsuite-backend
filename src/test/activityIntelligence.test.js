@@ -4,7 +4,7 @@ const jwt = require("jsonwebtoken");
 const app = require("../app");
 const db = require("../../db");
 const { createTestOrganisation, createTestUser, createTestClient, createTestProjet } = require("./helpers/testData");
-
+const { runWithContext } = require("../core/executionContext");
 function makeToken(user) {
   return jwt.sign(
     {
@@ -67,6 +67,7 @@ async function ensureRuleTable() {
     )
   `);
 }
+
 
 describe("Activity Intelligence", () => {
   describe("GET /api/activity-intelligence/insights", () => {
@@ -150,20 +151,34 @@ describe("Activity Intelligence", () => {
       expect(res.body).toHaveProperty("message", "activityLogId requis.");
     });
 
-    test("analyse Code comme Développement", async () => {
-      const organisation = await createTestOrganisation({ nom: `Org AI Code ${Date.now()}` });
-      const user = await createTestUser({ organisation_id: organisation.id });
+test("analyse Code comme Développement", async () => {
+  const organisation = await createTestOrganisation({
+    nom: `Org AI Code ${Date.now()}`,
+  });
 
-      const log = await createActivityLog({
-        userId: user.id,
-        appName: "Visual Studio Code",
-        windowTitle: "MADSuite backend",
-      });
+  const user = await createTestUser({
+    role: "admin",
+    organisation_id: organisation.id,
+  });
 
+  const log = await createActivityLog({
+    userId: user.id,
+    appName: "Visual Studio Code",
+    windowTitle: "MADSuite backend",
+  });
+
+  await runWithContext(
+    {
+      organisation_id: organisation.id,
+      user_id: user.id,
+    },
+    async () => {
       const res = await request(app)
         .post("/api/activity-intelligence/analyze")
         .set("Authorization", `Bearer ${makeToken(user)}`)
-        .send({ activityLogId: log.id });
+        .send({
+          activityLogId: log.id,
+        });
 
       expect(res.statusCode).toBe(200);
       expect(res.body).toMatchObject({
@@ -171,9 +186,22 @@ describe("Activity Intelligence", () => {
         category: "Développement",
       });
 
-      const updated = await db.query("SELECT activity_category FROM activity_logs WHERE id = $1", [log.id]);
+      const updated = await db.query(
+        `
+        SELECT activity_category, confidence_score
+        FROM activity_logs
+        WHERE id = $1
+          AND organisation_id = $2
+        `,
+        [log.id, organisation.id],
+      );
+
+      expect(updated.rows).toHaveLength(1);
       expect(updated.rows[0].activity_category).toBe("Développement");
-    });
+      expect(Number(updated.rows[0].confidence_score)).toBeGreaterThan(0);
+    },
+  );
+});
 
     test("employé ne peut pas analyser une activité d'un autre utilisateur", async () => {
       const organisation = await createTestOrganisation({ nom: `Org AI Cross ${Date.now()}` });
