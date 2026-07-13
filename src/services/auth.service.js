@@ -173,7 +173,7 @@ async function rotateRefreshToken(client, user, sessionId, currentToken, req) {
     storedToken.deleted_at ||
     storedToken.session_active !== true ||
     Number(storedToken.utilisateur_id) !== Number(user.id) ||
-    Number(storedToken.session_id) !== Number(sessionId)
+    String(storedToken.session_id) !== String(sessionId)
   ) {
     return null;
   }
