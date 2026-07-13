@@ -1,7 +1,7 @@
-name: Backend PR Guards
+name: Backend Main Guards
 
 on:
-  pull_request:
+  push:
     branches:
       - main
   workflow_dispatch:
@@ -10,16 +10,16 @@ permissions:
   contents: read
 
 jobs:
-  guards:
-    name: Repository and route guards
+  guards-main:
+    name: Validate merged backend contracts
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm

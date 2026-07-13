@@ -1,7 +1,7 @@
-name: Backend PR CI
+name: Backend Main CI
 
 on:
-  pull_request:
+  push:
     branches:
       - main
   workflow_dispatch:
@@ -10,8 +10,8 @@ permissions:
   contents: read
 
 jobs:
-  validate:
-    name: Guard, lint, syntax, tests and security checks
+  validate-main:
+    name: Validate merged backend
     runs-on: ubuntu-latest
 
     services:
@@ -93,14 +93,14 @@ jobs:
         run: |
           mkdir -p artifacts
           set -o pipefail
-          npm test -- --runInBand 2>&1 | tee artifacts/backend-test.log
+          npm test -- --runInBand 2>&1 | tee artifacts/backend-main-test.log
 
       - name: Upload backend test log
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: backend-pr-test-log
-          path: artifacts/backend-test.log
+          name: backend-main-test-log
+          path: artifacts/backend-main-test.log
           if-no-files-found: ignore
           retention-days: 7
 
