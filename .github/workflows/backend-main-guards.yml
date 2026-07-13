@@ -1,0 +1,91 @@
+name: Backend Main Guards
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  guards-main:
+    name: Validate merged backend contracts
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Gitignore policy guard
+        run: npm run guard:gitignore
+
+      - name: Repository hygiene guard
+        run: npm run guard:hygiene
+
+      - name: Route security guard
+        run: npm run guard:routes
+
+      - name: Organisation route guard
+        run: npm run guard:organisation-routes
+
+      - name: Modules contract guard
+        run: npm run guard:modules-contract
+
+      - name: Module access contract guard
+        run: npm run guard:module-access-contract
+
+      - name: App module mounts guard
+        run: npm run guard:app-module-mounts
+
+      - name: Public kiosk module guard
+        run: npm run guard:public-kiosk-modules
+
+      - name: Public portal contract guard
+        run: npm run guard:public-portal-contract
+
+      - name: Stripe contract guard
+        run: npm run guard:stripe-contract
+
+      - name: Activity ingestion contract guard
+        run: npm run guard:activity-ingestion-contract
+
+      - name: AI contract guard
+        run: npm run guard:ai-contract
+
+      - name: Cognitive contract guard
+        run: npm run guard:cognitive-contract
+
+      - name: Hub contract guard
+        run: npm run guard:hub-contract
+
+      - name: Notifications contract guard
+        run: npm run guard:notifications-contract
+
+      - name: Export contract guard
+        run: npm run guard:export-contract
+
+      - name: Analytics contract guard
+        run: npm run guard:analytics-contract
+
+      - name: Calendar contract guard
+        run: npm run guard:calendar-contract
+
+      - name: Suggestions and day summary contract guard
+        run: npm run guard:suggestions-summary-contract
+
+      - name: Master admin contract guard
+        run: npm run guard:master-admin-contract
+
+      - name: Reports contract guard
+        run: npm run guard:reports-contract
