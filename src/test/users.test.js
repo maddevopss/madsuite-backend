@@ -215,8 +215,39 @@ describe("Users", () => {
     expect(dbUser.rows).toHaveLength(1);
     expect(Number(dbUser.rows[0].organisation_id)).toBe(organisation.id);
 
-    await db.query(`DELETE FROM utilisateurs WHERE id = $1`, [createdUser.id]);
-    await db.query(`DELETE FROM organisations WHERE id = $1`, [organisation.id]);
+const client = await db.connect();
+
+try {
+  await client.query("BEGIN");
+
+  await client.query(
+    `SELECT set_config('app.current_organisation_id', $1, true)`,
+    [String(organisation.id)],
+  );
+
+  const dbUser = await client.query(
+    `
+    SELECT organisation_id
+    FROM utilisateurs
+    WHERE id = $1
+    `,
+    [createdUser.id],
+  );
+
+  expect(dbUser.rows).toHaveLength(1);
+  expect(Number(dbUser.rows[0].organisation_id)).toBe(organisation.id);
+
+  await client.query(`DELETE FROM utilisateurs WHERE id = $1`, [createdUser.id]);
+
+  await client.query("COMMIT");
+} catch (error) {
+  await client.query("ROLLBACK");
+  throw error;
+} finally {
+  client.release();
+}
+
+await db.query(`DELETE FROM organisations WHERE id = $1`, [organisation.id]);
   });
 
   test("PUT /api/users/:id refuse un id invalide", async () => {
