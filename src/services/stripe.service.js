@@ -6,10 +6,22 @@ const analyticsService = require("./analytics.service");
 // Initialisation de Stripe — STRIPE_SECRET_KEY est obligatoire en production.
 // Fail-fast si absent pour éviter d'utiliser une clé invalide silencieusement.
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
-if (!stripeSecretKey) {
-  throw new Error("STRIPE_SECRET_KEY est requis. Vérifiez votre fichier .env.");
+const stripe = stripeSecretKey ? Stripe(stripeSecretKey) : null;
+
+function requireStripe() {
+  if (!stripe) {
+    const error = new Error(
+      "Stripe est désactivé dans cet environnement."
+    );
+
+    error.statusCode = 503;
+    error.code = "STRIPE_NOT_CONFIGURED";
+
+    throw error;
+  }
+
+  return stripe;
 }
-const stripe = Stripe(stripeSecretKey);
 
 /**
  * Résout le plan_type à partir d'une subscription Stripe.
@@ -63,7 +75,7 @@ async function createSubscriptionCheckoutSession(organisationId, userEmail, succ
 
   // Si l'organisation n'a pas encore de client Stripe, on le crée
   if (!customerId) {
-    const customer = await stripe.customers.create({
+    const customer = await requireStripe().customers.create({
       email: userEmail,
       name: organisation.nom,
       metadata: {
@@ -79,7 +91,7 @@ async function createSubscriptionCheckoutSession(organisationId, userEmail, succ
   }
 
   // Création de la session Checkout
-  const session = await stripe.checkout.sessions.create({
+  const session = await requireStripe().checkout.sessions.create({
     customer: customerId,
     payment_method_types: ["card"],
     mode: "subscription",
@@ -117,7 +129,7 @@ async function createAccountLink(organisationId, returnUrl, refreshUrl) {
   let accountId = result.rows[0].stripe_account_id;
 
   if (!accountId) {
-    const account = await stripe.accounts.create({ type: "standard" });
+    const account = await requireStripe().accounts.create({ type: "standard" });
     accountId = account.id;
     await db.query(
       "UPDATE organisations SET stripe_account_id = $1 WHERE id = $2",
@@ -125,7 +137,7 @@ async function createAccountLink(organisationId, returnUrl, refreshUrl) {
     );
   }
 
-  const accountLink = await stripe.accountLinks.create({
+  const accountLink = await requireStripe().accountLinks.create({
     account: accountId,
     refresh_url: refreshUrl,
     return_url: returnUrl,
@@ -143,7 +155,7 @@ async function createInvoiceCheckoutSession(invoice, organisation, successUrl, c
     throw new Error("Cette organisation n'a pas configuré Stripe.");
   }
 
-  const session = await stripe.checkout.sessions.create({
+  const session = await requireStripe().checkout.sessions.create({
     payment_method_types: ["card"],
     mode: "payment",
     line_items: [
@@ -320,5 +332,8 @@ module.exports = {
   createAccountLink,
   createInvoiceCheckoutSession,
   handleWebhook,
-  stripe
+  resolvePlanTypeFromStripeSubscription,
+  requireStripe,
+  isStripeEnabled: () => Boolean(stripe),
+  stripe,
 };
