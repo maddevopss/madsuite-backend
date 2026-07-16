@@ -5,8 +5,6 @@ const { performance } = require("perf_hooks");
 const db = require("../../db");
 const { runOrganisationScopePreflight } = require("./preflightOrganisationScope");
 const { diagnosticDatabaseConnection } = require("./diagnosticDb");
-const { inspectMigrationState } = require("./inspectMigrationState");
-const { repairMissingTables } = require("./repairMissingTables");
 
 function log(message, details) {
   // pas de secrets
@@ -190,6 +188,14 @@ async function assertRuntimeSchema(client) {
     { table: "notifications", column: null, hint: "034_retention_phase3.sql" },
     { table: "outbox_events", column: null, hint: "050_outbox_events.sql" },
     { table: "cron_execution_logs", column: null, hint: "051_cron_execution_logs.sql" },
+
+    // critical columns from outbox_events (052_outbox_harden.sql)
+    { table: "outbox_events", column: "last_error", hint: "052_outbox_harden.sql" },
+    { table: "outbox_events", column: "next_retry_at", hint: "052_outbox_harden.sql" },
+
+    // critical columns from cron_execution_logs (053_cron_observability_hardening.sql, 056_cron_keep_for_debug_flag.sql)
+    { table: "cron_execution_logs", column: "error_summary", hint: "053_cron_observability_hardening.sql" },
+    { table: "cron_execution_logs", column: "keep_for_debug", hint: "056_cron_keep_for_debug_flag.sql" },
   ];
 
   const failures = [];
@@ -361,18 +367,7 @@ async function runMigrations({ backup = false } = {}) {
 
     log(`Migrations terminées. Appliquées: ${appliedCount}, Déjà présentes: ${skippedCount}, Total: ${migrations.length}`);
 
-    // Inspect migration state
-    const state = await inspectMigrationState(client);
-    
-    // Repair if needed
-    if (state.criticalTablesMissing.length > 0) {
-      log(`⚠️  Detected missing critical tables: ${state.criticalTablesMissing.join(", ")}`);
-      log(`🔧 Attempting repair...`);
-      await repairMissingTables(client);
-      log(`✅ Repair completed`);
-    }
-
-    // Validate after repair
+    // Validate schema
     await assertRuntimeSchema(client);
   } finally {
     try {
