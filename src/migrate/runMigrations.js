@@ -4,6 +4,7 @@ const { spawnSync } = require("child_process");
 const { performance } = require("perf_hooks");
 const db = require("../../db");
 const { runOrganisationScopePreflight } = require("./preflightOrganisationScope");
+const { diagnosticDatabaseConnection } = require("./diagnosticDb");
 
 function log(message, details) {
   // pas de secrets
@@ -182,32 +183,65 @@ async function assertRuntimeSchema(client) {
     { table: "activity_logs", column: "is_aggregated", hint: "018_add_is_aggregated_to_activity_logs.sql" },
     { table: "activity_daily_summary", column: "activity_date", hint: "003_seed.sql" },
     { table: "business_audit_logs", column: "created_at", hint: "013_business_audit_logs.sql" },
+
+    // critical tables that must exist (P0 requirement)
+    { table: "notifications", column: null, hint: "034_retention_phase3.sql" },
+    { table: "outbox_events", column: null, hint: "050_outbox_events.sql" },
+    { table: "cron_execution_logs", column: null, hint: "051_cron_execution_logs.sql" },
+
+    // critical columns from outbox_events (052_outbox_harden.sql)
+    { table: "outbox_events", column: "last_error", hint: "052_outbox_harden.sql" },
+    { table: "outbox_events", column: "next_retry_at", hint: "052_outbox_harden.sql" },
+
+    // critical columns from cron_execution_logs (053_cron_observability_hardening.sql, 056_cron_keep_for_debug_flag.sql)
+    { table: "cron_execution_logs", column: "error_summary", hint: "053_cron_observability_hardening.sql" },
+    { table: "cron_execution_logs", column: "keep_for_debug", hint: "056_cron_keep_for_debug_flag.sql" },
   ];
 
   const failures = [];
 
   for (const req of required) {
-    const { rows } = await client.query(
-      `
-      SELECT EXISTS (
-        SELECT 1
-        FROM information_schema.columns
-        WHERE table_schema = current_schema()
-          AND table_name = $1
-          AND column_name = $2
-      ) AS ok
-      `,
-      [req.table, req.column],
-    );
+    if (req.column) {
+      // Check for specific column
+      const { rows } = await client.query(
+        `
+        SELECT EXISTS (
+          SELECT 1
+          FROM information_schema.columns
+          WHERE table_schema = current_schema()
+            AND table_name = $1
+            AND column_name = $2
+        ) AS ok
+        `,
+        [req.table, req.column],
+      );
 
-    if (!rows[0]?.ok) {
-      failures.push(`${req.table}.${req.column} est absente (attendu via ${req.hint}).`);
+      if (!rows[0]?.ok) {
+        failures.push(`${req.table}.${req.column} est absente (attendu via ${req.hint}).`);
+      }
+    } else {
+      // Check for table existence
+      const { rows } = await client.query(
+        `
+        SELECT EXISTS (
+          SELECT 1
+          FROM information_schema.tables
+          WHERE table_schema = current_schema()
+            AND table_name = $1
+        ) AS ok
+        `,
+        [req.table],
+      );
+
+      if (!rows[0]?.ok) {
+        failures.push(`Table ${req.table} est absente (attendu via ${req.hint}).`);
+      }
     }
   }
 
   if (failures.length) {
     throw new Error(
-      "Schéma incomplet: le runtime schema ne correspond pas aux colonnes clés.\n" +
+      "Schéma incomplet: le runtime schema ne correspond pas aux tables/colonnes clés.\n" +
         failures.map((f) => `- ${f}`).join("\n"),
     );
   }
@@ -331,8 +365,10 @@ async function runMigrations({ backup = false } = {}) {
       appliedCount++;
     }
 
-    await assertRuntimeSchema(client);
     log(`Migrations terminées. Appliquées: ${appliedCount}, Déjà présentes: ${skippedCount}, Total: ${migrations.length}`);
+
+    // Validate schema
+    await assertRuntimeSchema(client);
   } finally {
     try {
       if (tableLockAcquired) {
