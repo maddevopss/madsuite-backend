@@ -9,11 +9,13 @@ async function recordBusinessAudit({
   entityId = null,
   details = {},
   req = null,
+  client = db,
+  throwOnError = false,
 }) {
   if (!organisationId || !action || !entityType) return;
 
   try {
-    await db.query(
+    await client.query(
       `
       INSERT INTO business_audit_logs (
         organisation_id,
@@ -47,6 +49,10 @@ async function recordBusinessAudit({
       entityType,
       entityId,
     });
+
+    if (throwOnError) {
+      throw err;
+    }
   }
 }
 
