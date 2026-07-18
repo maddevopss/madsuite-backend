@@ -41,6 +41,7 @@ function paymentSucceededEvent(overrides = {}) {
 describe("StripeReconciliationService — paiement unique et rejeu idempotent P0", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockQuery.mockReset();
     mockConnect.mockResolvedValue({
       query: mockQuery,
       release: mockRelease,
@@ -60,6 +61,8 @@ describe("StripeReconciliationService — paiement unique et rejeu idempotent P0
             org_id: 7,
             invoice_number: "INV-0042",
             status: "sent",
+            total: 125,
+            currency: "cad",
           },
         ],
       }) // SELECT invoice
@@ -83,6 +86,12 @@ describe("StripeReconciliationService — paiement unique et rejeu idempotent P0
       }),
     );
     expect(mockRecordBusinessAudit).toHaveBeenCalledTimes(1);
+    expect(mockRecordBusinessAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        client: expect.objectContaining({ query: mockQuery }),
+        throwOnError: true,
+      }),
+    );
     expect(mockQuery).toHaveBeenCalledWith("COMMIT");
     expect(mockRelease).toHaveBeenCalledTimes(1);
   });
