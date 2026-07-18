@@ -2,6 +2,18 @@ const db = require("../../db");
 const { recordLedgerEntry } = require("./invoice/invoice-ledger.service");
 const { recordBusinessAudit } = require("./auditLog.service");
 
+function extractPaymentDetails(eventType, stripeObject) {
+  const amountInCents = eventType === "invoice.payment_succeeded"
+    ? Number(stripeObject.amount_paid || 0)
+    : Number(stripeObject.amount || 0);
+
+  return {
+    amountInCents,
+    amountPaid: amountInCents / 100,
+    currency: String(stripeObject.currency || "cad").toLowerCase(),
+  };
+}
+
 class StripeReconciliationService {
   async processWebhookEvent(event) {
     const allowedEvents = [
@@ -84,15 +96,30 @@ class StripeReconciliationService {
         return { status: "invoice_not_found" };
       }
 
-      let amountPaid = 0;
-      let currency = "cad";
+      const { amountInCents, amountPaid, currency } = extractPaymentDetails(event.type, stripeObject);
+      const expectedAmountInCents = Math.round(Number(inv.total) * 100);
+      const expectedCurrency = String(inv.currency || "cad").toLowerCase();
 
-      if (event.type === "payment_intent.succeeded" || event.type === "charge.succeeded") {
-        amountPaid = Number(stripeObject.amount || 0) / 100;
-        currency = stripeObject.currency || "cad";
-      } else if (event.type === "invoice.payment_succeeded") {
-        amountPaid = Number(stripeObject.amount_paid || 0) / 100;
-        currency = stripeObject.currency || "cad";
+      if (amountInCents !== expectedAmountInCents) {
+        await txClient.query("ROLLBACK");
+        transactionCompleted = true;
+        return {
+          status: "amount_mismatch",
+          invoiceId,
+          expectedAmountInCents,
+          receivedAmountInCents: amountInCents,
+        };
+      }
+
+      if (currency !== expectedCurrency) {
+        await txClient.query("ROLLBACK");
+        transactionCompleted = true;
+        return {
+          status: "currency_mismatch",
+          invoiceId,
+          expectedCurrency,
+          receivedCurrency: currency,
+        };
       }
 
       const invoiceUpdate = await txClient.query(
@@ -123,7 +150,7 @@ class StripeReconciliationService {
           organisationId: inv.org_id,
           type: "payment_received",
           amount: amountPaid,
-          currency: currency || "cad",
+          currency,
           referenceType: "stripe_webhook",
           referenceId: stripeEventId,
           client: txClient,
@@ -156,8 +183,6 @@ class StripeReconciliationService {
         );
 
         if (adminRes.rowCount > 0) {
-          const adminId = adminRes.rows[0].id;
-
           await txClient.query(
             `
             INSERT INTO notifications (organisation_id, utilisateur_id, type, message)
@@ -165,7 +190,7 @@ class StripeReconciliationService {
             `,
             [
               inv.org_id,
-              adminId,
+              adminRes.rows[0].id,
               "info",
               `La facture #${inv.invoice_number || invoiceId} a été payée avec succès via Stripe.`,
             ],
@@ -176,16 +201,9 @@ class StripeReconciliationService {
       await txClient.query("COMMIT");
       transactionCompleted = true;
 
-      return {
-        status: "success",
-        invoiceId,
-      };
+      return { status: "success", invoiceId };
     } catch (err) {
-      if (
-        txClient &&
-        typeof txClient.query === "function" &&
-        !transactionCompleted
-      ) {
+      if (txClient && typeof txClient.query === "function" && !transactionCompleted) {
         try {
           await txClient.query("ROLLBACK");
         } catch {
