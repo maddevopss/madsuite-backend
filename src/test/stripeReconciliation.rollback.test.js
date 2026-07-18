@@ -35,6 +35,7 @@ function event() {
 describe("StripeReconciliationService — atomicité P0", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockQuery.mockReset();
     mockConnect.mockResolvedValue({ query: mockQuery, release: mockRelease });
   });
 
@@ -42,7 +43,16 @@ describe("StripeReconciliationService — atomicité P0", () => {
     mockQuery
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ rowCount: 1 })
-      .mockResolvedValueOnce({ rows: [{ id: 77, org_id: 5, invoice_number: "INV-0077" }] })
+      .mockResolvedValueOnce({
+        rows: [{
+          id: 77,
+          org_id: 5,
+          organisation_id: 5,
+          invoice_number: "INV-0077",
+          total: 99,
+          currency: "cad",
+        }],
+      })
       .mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 77 }] })
       .mockResolvedValueOnce({ rowCount: 1 })
       .mockResolvedValueOnce({});
@@ -61,7 +71,16 @@ describe("StripeReconciliationService — atomicité P0", () => {
     mockQuery
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ rowCount: 1 })
-      .mockResolvedValueOnce({ rows: [{ id: 77, org_id: 5, invoice_number: "INV-0077" }] })
+      .mockResolvedValueOnce({
+        rows: [{
+          id: 77,
+          org_id: 5,
+          organisation_id: 5,
+          invoice_number: "INV-0077",
+          total: 99,
+          currency: "cad",
+        }],
+      })
       .mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 77 }] })
       .mockResolvedValueOnce({ rowCount: 1 })
       .mockResolvedValueOnce({});
@@ -72,6 +91,12 @@ describe("StripeReconciliationService — atomicité P0", () => {
     await expect(service.processWebhookEvent(event())).rejects.toThrow("audit unavailable");
 
     expect(mockRecordLedgerEntry).toHaveBeenCalledTimes(1);
+    expect(mockRecordBusinessAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        client: expect.objectContaining({ query: mockQuery }),
+        throwOnError: true,
+      }),
+    );
     expect(mockQuery).toHaveBeenCalledWith("ROLLBACK");
     expect(mockQuery).not.toHaveBeenCalledWith("COMMIT");
     expect(mockRelease).toHaveBeenCalledTimes(1);
