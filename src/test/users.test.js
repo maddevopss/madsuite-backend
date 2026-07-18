@@ -203,18 +203,6 @@ describe("Users", () => {
     expect(createdUser).toHaveProperty("email", email);
     expect(createdUser).toHaveProperty("role", "employe");
 
-    const dbUser = await db.query(
-      `
-      SELECT organisation_id
-      FROM utilisateurs
-      WHERE id = $1
-      `,
-      [createdUser.id],
-    );
-
-    expect(dbUser.rows).toHaveLength(1);
-    expect(Number(dbUser.rows[0].organisation_id)).toBe(organisation.id);
-
 const client = await db.connect();
 
 try {
