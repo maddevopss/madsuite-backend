@@ -1,10 +1,12 @@
 const mockQuery = jest.fn();
+const mockDurableQuery = jest.fn();
 const mockRelease = jest.fn();
 const mockConnect = jest.fn();
 const mockRecordLedgerEntry = jest.fn();
 const mockRecordBusinessAudit = jest.fn();
 
 jest.mock("../../db", () => ({
+  query: (...args) => mockDurableQuery(...args),
   pool: {
     connect: (...args) => mockConnect(...args),
   },
@@ -41,6 +43,7 @@ function invoice(overrides = {}) {
     org_id: 7,
     organisation_id: 7,
     invoice_number: "INV-0042",
+    status: "sent",
     total: "125.00",
     currency: "cad",
     ...overrides,
@@ -51,9 +54,10 @@ describe("StripeReconciliationService — validation montant et devise P0", () =
   beforeEach(() => {
     jest.clearAllMocks();
     mockConnect.mockResolvedValue({ query: mockQuery, release: mockRelease });
+    mockDurableQuery.mockResolvedValue({ rowCount: 1, rows: [] });
   });
 
-  test("refuse un montant différent avant tout effet financier", async () => {
+  test("refuse un montant différent et conserve une trace après rollback", async () => {
     mockQuery
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ rowCount: 1 })
@@ -69,12 +73,21 @@ describe("StripeReconciliationService — validation montant et devise P0", () =
       receivedAmountInCents: 12499,
     });
     expect(mockQuery).toHaveBeenLastCalledWith("ROLLBACK");
+    expect(mockDurableQuery).toHaveBeenCalledWith(
+      expect.stringContaining("INSERT INTO system_consistency_logs"),
+      [
+        "stripe_payment_reconciliation",
+        expect.stringContaining('"classification":"AMOUNT_MISMATCH"'),
+      ],
+    );
+    expect(mockDurableQuery.mock.calls[0][1][1]).toContain('"stripe_event_id":"evt_validation_001"');
+    expect(mockDurableQuery.mock.calls[0][1][1]).toContain('"organisation_id":7');
     expect(mockRecordLedgerEntry).not.toHaveBeenCalled();
     expect(mockRecordBusinessAudit).not.toHaveBeenCalled();
     expect(mockRelease).toHaveBeenCalledTimes(1);
   });
 
-  test("refuse une devise différente avant tout effet financier", async () => {
+  test("refuse une devise différente et conserve les valeurs attendue et reçue", async () => {
     mockQuery
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ rowCount: 1 })
@@ -90,6 +103,15 @@ describe("StripeReconciliationService — validation montant et devise P0", () =
       receivedCurrency: "usd",
     });
     expect(mockQuery).toHaveBeenLastCalledWith("ROLLBACK");
+    expect(mockDurableQuery).toHaveBeenCalledWith(
+      expect.stringContaining("INSERT INTO system_consistency_logs"),
+      [
+        "stripe_payment_reconciliation",
+        expect.stringContaining('"classification":"CURRENCY_MISMATCH"'),
+      ],
+    );
+    expect(mockDurableQuery.mock.calls[0][1][1]).toContain('"expected":{"currency":"cad"}');
+    expect(mockDurableQuery.mock.calls[0][1][1]).toContain('"received":{"currency":"usd"}');
     expect(mockRecordLedgerEntry).not.toHaveBeenCalled();
     expect(mockRecordBusinessAudit).not.toHaveBeenCalled();
     expect(mockRelease).toHaveBeenCalledTimes(1);

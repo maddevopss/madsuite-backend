@@ -45,6 +45,36 @@ function extractInvoiceId(stripeObject) {
   return null;
 }
 
+async function recordReconciliationRefusal({
+  classification,
+  stripeEventId,
+  invoiceId,
+  organisationId,
+  expected,
+  received,
+  eventType,
+}) {
+  await db.query(
+    `
+    INSERT INTO system_consistency_logs (invariant_name, status, details)
+    VALUES ($1, 'FAIL', $2::jsonb)
+    `,
+    [
+      "stripe_payment_reconciliation",
+      JSON.stringify({
+        classification,
+        stripe_event_id: stripeEventId,
+        invoice_id: invoiceId,
+        organisation_id: organisationId,
+        expected,
+        received,
+        event_type: eventType,
+        recorded_at: new Date().toISOString(),
+      }),
+    ],
+  );
+}
+
 class StripeReconciliationService {
   async processWebhookEvent(event) {
     const isSuccess = Boolean(event && SUCCESS_EVENTS.has(event.type));
@@ -113,7 +143,6 @@ class StripeReconciliationService {
         return { status: "invoice_not_found" };
       }
 
-      // A late failure is historical information only. It must never regress a paid invoice.
       if (isFailure) {
         await recordBusinessAudit({
           organisationId: inv.org_id,
@@ -142,8 +171,6 @@ class StripeReconciliationService {
         };
       }
 
-      // A distinct success event received after the invoice is already paid is retained
-      // in payment_events, but it cannot create another ledger/audit/notification effect.
       if (inv.status === "paid") {
         await txClient.query("COMMIT");
         transactionCompleted = true;
@@ -157,6 +184,15 @@ class StripeReconciliationService {
       if (amountInCents !== expectedAmountInCents) {
         await txClient.query("ROLLBACK");
         transactionCompleted = true;
+        await recordReconciliationRefusal({
+          classification: "AMOUNT_MISMATCH",
+          stripeEventId,
+          invoiceId,
+          organisationId: inv.org_id,
+          expected: { amount_in_cents: expectedAmountInCents },
+          received: { amount_in_cents: amountInCents },
+          eventType: event.type,
+        });
         return {
           status: "amount_mismatch",
           invoiceId,
@@ -168,6 +204,15 @@ class StripeReconciliationService {
       if (currency !== expectedCurrency) {
         await txClient.query("ROLLBACK");
         transactionCompleted = true;
+        await recordReconciliationRefusal({
+          classification: "CURRENCY_MISMATCH",
+          stripeEventId,
+          invoiceId,
+          organisationId: inv.org_id,
+          expected: { currency: expectedCurrency },
+          received: { currency },
+          eventType: event.type,
+        });
         return {
           status: "currency_mismatch",
           invoiceId,
