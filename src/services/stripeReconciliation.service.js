@@ -2,6 +2,18 @@ const db = require("../../db");
 const { recordLedgerEntry } = require("./invoice/invoice-ledger.service");
 const { recordBusinessAudit } = require("./auditLog.service");
 
+const SUCCESS_EVENTS = new Set([
+  "payment_intent.succeeded",
+  "charge.succeeded",
+  "invoice.payment_succeeded",
+]);
+
+const FAILURE_EVENTS = new Set([
+  "payment_intent.payment_failed",
+  "charge.failed",
+  "invoice.payment_failed",
+]);
+
 function extractPaymentDetails(eventType, stripeObject) {
   const amountInCents = eventType === "invoice.payment_succeeded"
     ? Number(stripeObject.amount_paid || 0)
@@ -14,34 +26,38 @@ function extractPaymentDetails(eventType, stripeObject) {
   };
 }
 
+function extractInvoiceId(stripeObject) {
+  if (stripeObject.metadata?.invoice_id) {
+    return parseInt(stripeObject.metadata.invoice_id, 10);
+  }
+
+  if (stripeObject.metadata?.invoiceId) {
+    return parseInt(stripeObject.metadata.invoiceId, 10);
+  }
+
+  if (
+    stripeObject.client_reference_id &&
+    stripeObject.client_reference_id.startsWith("INV_")
+  ) {
+    return parseInt(stripeObject.client_reference_id.replace("INV_", ""), 10);
+  }
+
+  return null;
+}
+
 class StripeReconciliationService {
   async processWebhookEvent(event) {
-    const allowedEvents = [
-      "payment_intent.succeeded",
-      "charge.succeeded",
-      "invoice.payment_succeeded",
-    ];
+    const isSuccess = Boolean(event && SUCCESS_EVENTS.has(event.type));
+    const isFailure = Boolean(event && FAILURE_EVENTS.has(event.type));
 
-    if (!event || !allowedEvents.includes(event.type)) {
+    if (!isSuccess && !isFailure) {
       return { status: "ignored" };
     }
 
     const stripeEventId = event.id;
     const payload = event;
     const stripeObject = event.data?.object || {};
-    let invoiceId = null;
-
-    if (stripeObject.metadata?.invoice_id) {
-      invoiceId = parseInt(stripeObject.metadata.invoice_id, 10);
-    } else if (stripeObject.metadata?.invoiceId) {
-      invoiceId = parseInt(stripeObject.metadata.invoiceId, 10);
-    } else if (
-      stripeObject.client_reference_id &&
-      stripeObject.client_reference_id.startsWith("INV_")
-    ) {
-      invoiceId = parseInt(stripeObject.client_reference_id.replace("INV_", ""), 10);
-    }
-
+    const invoiceId = extractInvoiceId(stripeObject);
     let txClient;
     let transactionCompleted = false;
 
@@ -84,6 +100,7 @@ class StripeReconciliationService {
         FROM invoices i
         JOIN organisations o ON o.id = i.organisation_id
         WHERE i.id = $1
+        FOR UPDATE
         `,
         [invoiceId],
       );
@@ -94,6 +111,43 @@ class StripeReconciliationService {
         await txClient.query("ROLLBACK");
         transactionCompleted = true;
         return { status: "invoice_not_found" };
+      }
+
+      // A late failure is historical information only. It must never regress a paid invoice.
+      if (isFailure) {
+        await recordBusinessAudit({
+          organisationId: inv.org_id,
+          actorUserId: null,
+          action: inv.status === "paid"
+            ? "payment.failure_received_after_success"
+            : "payment.failed_via_stripe",
+          entityType: "invoice",
+          entityId: invoiceId,
+          details: {
+            stripeEventId,
+            eventType: event.type,
+            invoiceStatus: inv.status,
+          },
+          req: null,
+          client: txClient,
+          throwOnError: true,
+        });
+
+        await txClient.query("COMMIT");
+        transactionCompleted = true;
+
+        return {
+          status: inv.status === "paid" ? "stale_failure" : "payment_failed",
+          invoiceId,
+        };
+      }
+
+      // A distinct success event received after the invoice is already paid is retained
+      // in payment_events, but it cannot create another ledger/audit/notification effect.
+      if (inv.status === "paid") {
+        await txClient.query("COMMIT");
+        transactionCompleted = true;
+        return { status: "already_paid", invoiceId };
       }
 
       const { amountInCents, amountPaid, currency } = extractPaymentDetails(event.type, stripeObject);
@@ -134,70 +188,74 @@ class StripeReconciliationService {
         [invoiceId],
       );
 
-      if (invoiceUpdate.rowCount > 0) {
-        await txClient.query(
-          `
-          UPDATE time_entries
-          SET is_billed = TRUE,
-              updated_at = CURRENT_TIMESTAMP
-          WHERE invoice_id = $1
-            AND organisation_id = $2
-          `,
-          [invoiceId, inv.org_id],
-        );
+      if (invoiceUpdate.rowCount === 0) {
+        await txClient.query("COMMIT");
+        transactionCompleted = true;
+        return { status: "state_not_payable", invoiceId };
+      }
 
-        await recordLedgerEntry({
-          organisationId: inv.org_id,
-          type: "payment_received",
+      await txClient.query(
+        `
+        UPDATE time_entries
+        SET is_billed = TRUE,
+            updated_at = CURRENT_TIMESTAMP
+        WHERE invoice_id = $1
+          AND organisation_id = $2
+        `,
+        [invoiceId, inv.org_id],
+      );
+
+      await recordLedgerEntry({
+        organisationId: inv.org_id,
+        type: "payment_received",
+        amount: amountPaid,
+        currency,
+        referenceType: "stripe_webhook",
+        referenceId: stripeEventId,
+        client: txClient,
+      });
+
+      await recordBusinessAudit({
+        organisationId: inv.org_id,
+        actorUserId: null,
+        action: "invoice.paid_via_stripe_reconciliation",
+        entityType: "invoice",
+        entityId: invoiceId,
+        details: {
+          stripeEventId,
           amount: amountPaid,
           currency,
-          referenceType: "stripe_webhook",
-          referenceId: stripeEventId,
-          client: txClient,
-        });
+          eventType: event.type,
+        },
+        req: null,
+        client: txClient,
+        throwOnError: true,
+      });
 
-        await recordBusinessAudit({
-          organisationId: inv.org_id,
-          actorUserId: null,
-          action: "invoice.paid_via_stripe_reconciliation",
-          entityType: "invoice",
-          entityId: invoiceId,
-          details: {
-            stripeEventId,
-            amount: amountPaid,
-            currency,
-            eventType: event.type,
-          },
-          req: null,
-          client: txClient,
-          throwOnError: true,
-        });
+      const adminRes = await txClient.query(
+        `
+        SELECT id
+        FROM utilisateurs
+        WHERE organisation_id = $1
+          AND role = 'admin'
+        LIMIT 1
+        `,
+        [inv.org_id],
+      );
 
-        const adminRes = await txClient.query(
+      if (adminRes.rowCount > 0) {
+        await txClient.query(
           `
-          SELECT id
-          FROM utilisateurs
-          WHERE organisation_id = $1
-            AND role = 'admin'
-          LIMIT 1
+          INSERT INTO notifications (organisation_id, utilisateur_id, type, message)
+          VALUES ($1, $2, $3, $4)
           `,
-          [inv.org_id],
+          [
+            inv.org_id,
+            adminRes.rows[0].id,
+            "info",
+            `La facture #${inv.invoice_number || invoiceId} a été payée avec succès via Stripe.`,
+          ],
         );
-
-        if (adminRes.rowCount > 0) {
-          await txClient.query(
-            `
-            INSERT INTO notifications (organisation_id, utilisateur_id, type, message)
-            VALUES ($1, $2, $3, $4)
-            `,
-            [
-              inv.org_id,
-              adminRes.rows[0].id,
-              "info",
-              `La facture #${inv.invoice_number || invoiceId} a été payée avec succès via Stripe.`,
-            ],
-          );
-        }
       }
 
       await txClient.query("COMMIT");
@@ -209,7 +267,7 @@ class StripeReconciliationService {
         try {
           await txClient.query("ROLLBACK");
         } catch {
-          // On conserve l'erreur originale.
+          // Preserve the original error.
         }
       }
 
