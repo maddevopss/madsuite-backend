@@ -169,6 +169,8 @@ class StripeReconciliationService {
             eventType: event.type,
           },
           req: null,
+          client: txClient,
+          throwOnError: true,
         });
 
         const adminRes = await txClient.query(

@@ -82,6 +82,8 @@ describe("stripeReconciliation.service.js", () => {
             organisation_id: 1,
             invoice_number: "INV-99",
             status: "sent",
+            total: 500,
+            currency: "cad",
           },
         ],
       })
@@ -126,6 +128,8 @@ describe("stripeReconciliation.service.js", () => {
         action: "invoice.paid_via_stripe_reconciliation",
         entityType: "invoice",
         entityId: 99,
+        client: db.__txClient,
+        throwOnError: true,
       }),
     );
 
