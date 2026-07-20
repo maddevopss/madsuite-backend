@@ -3,49 +3,92 @@ const db = require("../../db");
 const dbStore = require("../utils/dbStore");
 
 function releaseClientOnce({ req, res, client }) {
-  let released = false;
-  let responseFinished = false;
+  let finalizationPromise = null;
+  let responseEndScheduled = false;
+  const originalEnd = res.end.bind(res);
 
-  async function cleanup(origin) {
-    if (released) return;
-    released = true;
-
-    const shouldCommit = responseFinished && res.statusCode < 400;
-
-    try {
-      if (shouldCommit) {
-        await client.query("COMMIT");
-      } else {
-        await client.query("ROLLBACK");
-      }
-    } catch (err) {
-      // La réponse est déjà terminée dans la majorité des cas; on journalise sans relancer.
-      // eslint-disable-next-line no-console
-      console.error("RLS context cleanup failed", {
-        origin,
-        path: req.originalUrl,
-        statusCode: res.statusCode,
-        error: err.message,
-      });
-    } finally {
-      client.release();
-    }
+  function logCleanupFailure(origin, err) {
+    // eslint-disable-next-line no-console
+    console.error("RLS context cleanup failed", {
+      origin,
+      path: req.originalUrl,
+      statusCode: res.statusCode,
+      error: err.message,
+    });
   }
 
-  res.once("finish", () => {
-    responseFinished = true;
-    void cleanup("finish");
-  });
+  function finalize({ commit, origin }) {
+    if (finalizationPromise) return finalizationPromise;
 
+    finalizationPromise = (async () => {
+      try {
+        await client.query(commit ? "COMMIT" : "ROLLBACK");
+      } catch (err) {
+        if (commit) {
+          try {
+            await client.query("ROLLBACK");
+          } catch {
+            // La connexion sera libérée même si le rollback de secours échoue.
+          }
+        }
+        throw err;
+      } finally {
+        client.release();
+      }
+    })();
+
+    finalizationPromise.catch((err) => logCleanupFailure(origin, err));
+    return finalizationPromise;
+  }
+
+  // Une réponse de succès ne doit jamais être visible avant que sa transaction
+  // soit réellement commitée. Sinon une requête immédiatement suivante peut
+  // observer un état ancien malgré le 2xx déjà reçu par le client.
+  res.end = function endAfterTransaction(chunk, encoding, callback) {
+    if (responseEndScheduled) return res;
+    responseEndScheduled = true;
+
+    const shouldCommit = res.statusCode < 400;
+
+    void finalize({ commit: shouldCommit, origin: "before-end" })
+      .then(() => {
+        originalEnd(chunk, encoding, callback);
+      })
+      .catch(() => {
+        if (!res.headersSent) {
+          res.statusCode = 500;
+          res.setHeader("Content-Type", "application/json; charset=utf-8");
+          const payload = JSON.stringify(
+            ApiResponse.error("TRANSACTION_FINALIZATION_FAILED", {
+              message: "La transaction n'a pas pu être finalisée.",
+            }),
+          );
+          originalEnd(payload, "utf8", callback);
+          return;
+        }
+
+        originalEnd(chunk, encoding, callback);
+      });
+
+    return res;
+  };
+
+  // Si la connexion HTTP disparaît avant res.end(), aucune donnée partielle ne
+  // doit survivre. Les événements normaux après res.end() réutilisent la même
+  // promesse et ne peuvent donc pas libérer deux fois la connexion.
   res.once("close", () => {
-    void cleanup(responseFinished ? "close-after-finish" : "close-before-finish");
+    if (!responseEndScheduled) {
+      void finalize({ commit: false, origin: "close-before-end" });
+    }
   });
 
   res.once("error", () => {
-    void cleanup("error");
+    if (!responseEndScheduled) {
+      void finalize({ commit: false, origin: "response-error" });
+    }
   });
 
-  return cleanup;
+  return finalize;
 }
 
 // Middleware pour vérifier qu'un utilisateur est associé à une organisation
