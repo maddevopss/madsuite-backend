@@ -17,7 +17,9 @@ function createMockResponse() {
   });
   res.end = jest.fn((payload) => {
     res.headersSent = true;
-    res.body = payload ?? res.body;
+    if (res.body === undefined && payload !== undefined) {
+      res.body = payload;
+    }
     res.emit("finish");
     return res;
   });
@@ -30,8 +32,9 @@ function createMockResponse() {
   return res;
 }
 
-function tick() {
-  return new Promise((resolve) => setImmediate(resolve));
+function waitForFinish(res) {
+  if (res.headersSent) return Promise.resolve();
+  return new Promise((resolve) => res.once("finish", resolve));
 }
 
 describe("requireOrganisation RLS context", () => {
@@ -74,8 +77,9 @@ describe("requireOrganisation RLS context", () => {
     expect(nextErr).toBeNull();
     expect(req.organisationId).toBe(4242);
 
+    const finished = waitForFinish(res);
     res.end();
-    await tick();
+    await finished;
 
     expect(res.headersSent).toBe(true);
   });
@@ -91,10 +95,10 @@ describe("requireOrganisation RLS context", () => {
     const next = jest.fn();
 
     await requireOrganisation(req, res, next);
-    await tick();
 
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(403);
     expect(res.body?.code).toBe("ORGANISATION_REQUIRED");
+    expect(res.headersSent).toBe(true);
   });
 });
