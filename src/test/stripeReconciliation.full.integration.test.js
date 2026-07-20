@@ -5,6 +5,7 @@ const {
   createTestUser,
   createTestClient,
 } = require("./helpers/testData");
+const { deleteLedgerEntriesForTest } = require("./helpers/ledgerTestCleanup");
 
 jest.setTimeout(30000);
 
@@ -109,10 +110,6 @@ describe("Réconciliation financière complète — PostgreSQL réel", () => {
         [organisation.id],
       );
       await client.query(
-        "DELETE FROM ledger_entries WHERE organisation_id = $1",
-        [organisation.id],
-      );
-      await client.query(
         "DELETE FROM payment_events WHERE stripe_event_id = $1",
         [stripeEventId],
       );
@@ -121,6 +118,7 @@ describe("Réconciliation financière complète — PostgreSQL réel", () => {
       await client.query("DELETE FROM clients WHERE id = $1", [customer.id]);
     });
 
+    await deleteLedgerEntriesForTest(organisation.id);
     await db.query("DELETE FROM organisations WHERE id = $1", [organisation.id]);
   });
 

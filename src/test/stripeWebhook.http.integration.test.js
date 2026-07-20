@@ -8,6 +8,7 @@ const {
   createTestUser,
   createTestClient,
 } = require("./helpers/testData");
+const { deleteLedgerEntriesForTest } = require("./helpers/ledgerTestCleanup");
 
 const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
@@ -169,7 +170,7 @@ describe("Stripe webhook HTTP signé — preuve financière P0", () => {
 
     await db.query("DELETE FROM notifications WHERE organisation_id = $1", [organisation.id]);
     await db.query("DELETE FROM business_audit_logs WHERE organisation_id = $1", [organisation.id]);
-    await db.query("DELETE FROM ledger_entries WHERE organisation_id = $1", [organisation.id]);
+    await deleteLedgerEntriesForTest(organisation.id);
     await db.query("DELETE FROM payment_events WHERE stripe_event_id = ANY($1::text[])", [
       [eventId, rejectedEventId],
     ]);
