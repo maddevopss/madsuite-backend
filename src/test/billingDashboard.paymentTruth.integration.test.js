@@ -2,6 +2,7 @@ const db = require("../../db");
 const stripeReconciliationService = require("../services/stripeReconciliation.service");
 const { getBillingDashboard } = require("../services/billingDashboard.service");
 const { createTestOrganisation, createTestUser, createTestClient } = require("./helpers/testData");
+const { deleteLedgerEntriesForTest } = require("./helpers/ledgerTestCleanup");
 
 jest.setTimeout(45000);
 
@@ -77,7 +78,7 @@ describe("Dashboard facturation — vérité après paiement P0", () => {
     } finally {
       await db.query("DELETE FROM notifications WHERE organisation_id = $1", [organisation.id]);
       await db.query("DELETE FROM business_audit_logs WHERE organisation_id = $1", [organisation.id]);
-      await db.query("DELETE FROM ledger_entries WHERE organisation_id = $1", [organisation.id]);
+      await deleteLedgerEntriesForTest(organisation.id);
       await db.query("DELETE FROM payment_events WHERE stripe_event_id = $1", [eventId]);
       await db.query("DELETE FROM invoices WHERE id = $1", [invoice.id]);
       await db.query("DELETE FROM utilisateurs WHERE id = $1", [admin.id]);
