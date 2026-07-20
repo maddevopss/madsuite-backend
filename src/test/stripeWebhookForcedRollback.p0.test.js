@@ -66,6 +66,7 @@ describe("P0 — rollback forcé après réception d'un webhook Stripe", () => {
     const connectSpy = jest.spyOn(db.pool, "connect").mockImplementation(async () => {
       const txClient = await originalConnect();
       const originalQuery = txClient.query.bind(txClient);
+      const originalRelease = txClient.release.bind(txClient);
 
       txClient.query = async (text, params) => {
         const sql = typeof text === "string" ? text : text?.text || "";
@@ -76,6 +77,12 @@ describe("P0 — rollback forcé après réception d'un webhook Stripe", () => {
         }
 
         return originalQuery(text, params);
+      };
+
+      txClient.release = (...args) => {
+        txClient.query = originalQuery;
+        txClient.release = originalRelease;
+        return originalRelease(...args);
       };
 
       return txClient;
