@@ -34,10 +34,9 @@ async function createInvoice({ organisationId, clientId, invoiceNumber, status =
         due_date,
         subtotal,
         tax_total,
-        total,
-        currency
+        total
       )
-      VALUES ($1, $2, $3, $4, CURRENT_DATE, CURRENT_DATE + INTERVAL '15 days', 125, 0, 125, 'cad')
+      VALUES ($1, $2, $3, $4, CURRENT_DATE, CURRENT_DATE + INTERVAL '15 days', 125, 0, 125)
       RETURNING *
     `,
     [organisationId, clientId, invoiceNumber, status],
