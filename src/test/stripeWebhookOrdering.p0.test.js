@@ -85,36 +85,6 @@ async function readFinancialState(invoiceId) {
 }
 
 describe("P0 — webhooks Stripe reçus hors ordre", () => {
-  const organisationIds = [];
-  const clientIds = [];
-  const invoiceIds = [];
-
-  afterAll(async () => {
-    if (invoiceIds.length) {
-      await db.query("DELETE FROM notifications WHERE organisation_id = ANY($1)", [organisationIds]);
-      await db.query(
-        "DELETE FROM business_audit_logs WHERE entity_type = 'invoice' AND entity_id = ANY($1)",
-        [invoiceIds],
-      );
-      await db.query(
-        `DELETE FROM ledger_entries
-         WHERE reference_type = 'stripe_webhook'
-           AND reference_id IN (
-             SELECT stripe_event_id FROM payment_events WHERE invoice_id = ANY($1)
-           )`,
-        [invoiceIds],
-      );
-      await db.query("DELETE FROM payment_events WHERE invoice_id = ANY($1)", [invoiceIds]);
-      await db.query("DELETE FROM invoices WHERE id = ANY($1)", [invoiceIds]);
-    }
-    if (clientIds.length) {
-      await db.query("DELETE FROM clients WHERE id = ANY($1)", [clientIds]);
-    }
-    if (organisationIds.length) {
-      await db.query("DELETE FROM organisations WHERE id = ANY($1)", [organisationIds]);
-    }
-  });
-
   async function fixture(label) {
     const suffix = `${Date.now()}-${Math.random()}`;
     const organisation = await createTestOrganisation({ nom: `Org ${label} ${suffix}` });
@@ -128,10 +98,8 @@ describe("P0 — webhooks Stripe reçus hors ordre", () => {
       invoiceNumber: `INV-${label}-${suffix}`,
     });
 
-    organisationIds.push(organisation.id);
-    clientIds.push(client.id);
-    invoiceIds.push(invoice.id);
-
+    // Ces données restent volontairement dans la base éphémère du test.
+    // Le ledger est append-only et ne doit jamais être supprimé pour faciliter un nettoyage.
     return { organisation, client, invoice };
   }
 
