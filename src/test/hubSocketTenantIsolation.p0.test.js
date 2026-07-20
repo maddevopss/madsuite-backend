@@ -215,7 +215,9 @@ describe("P0 — isolation Socket.IO entre organisations", () => {
     ).rejects.toThrow("Authentication error: Token invalide ou expiré");
 
     const noOrganisation = await namespace.connect(
-      new FakeSocket(namespace, { token: makeToken({ id: 999 }) }),
+      new FakeSocket(namespace, {
+        token: makeToken({ id: 999, organisation_id: null }),
+      }),
     );
 
     expect(noOrganisation.disconnected).toBe(true);
