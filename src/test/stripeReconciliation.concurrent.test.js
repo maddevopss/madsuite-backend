@@ -1,6 +1,7 @@
 const db = require("../../db");
 const service = require("../services/stripeReconciliation.service");
 const { createTestOrganisation, createTestUser, createTestClient } = require("./helpers/testData");
+const { deleteLedgerEntriesForTest } = require("./helpers/ledgerTestCleanup");
 
 jest.setTimeout(45000);
 
@@ -66,7 +67,7 @@ describe("Stripe — rejeu concurrent P0", () => {
     } finally {
       await db.query("DELETE FROM notifications WHERE organisation_id = $1", [organisation.id]);
       await db.query("DELETE FROM business_audit_logs WHERE organisation_id = $1", [organisation.id]);
-      await db.query("DELETE FROM ledger_entries WHERE organisation_id = $1", [organisation.id]);
+      await deleteLedgerEntriesForTest(organisation.id);
       await db.query("DELETE FROM payment_events WHERE stripe_event_id = $1", [eventId]);
       await db.query("DELETE FROM invoices WHERE id = $1", [invoice.id]);
       await db.query("DELETE FROM utilisateurs WHERE id = $1", [admin.id]);
