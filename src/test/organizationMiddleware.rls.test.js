@@ -5,19 +5,36 @@ const { requireOrganisation } = require("../middleware/organization.middleware")
 function createMockResponse() {
   const res = new EventEmitter();
   res.statusCode = 200;
+  res.headersSent = false;
+  res.headers = {};
   res.status = jest.fn((code) => {
     res.statusCode = code;
     return res;
   });
+  res.setHeader = jest.fn((name, value) => {
+    res.headers[name.toLowerCase()] = value;
+    return res;
+  });
+  res.end = jest.fn((payload) => {
+    res.headersSent = true;
+    if (res.body === undefined && payload !== undefined) {
+      res.body = payload;
+    }
+    res.emit("finish");
+    return res;
+  });
   res.json = jest.fn((payload) => {
     res.body = payload;
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    res.end(JSON.stringify(payload));
     return res;
   });
   return res;
 }
 
-function tick() {
-  return new Promise((resolve) => setImmediate(resolve));
+function waitForFinish(res) {
+  if (res.headersSent) return Promise.resolve();
+  return new Promise((resolve) => res.once("finish", resolve));
 }
 
 describe("requireOrganisation RLS context", () => {
@@ -60,8 +77,11 @@ describe("requireOrganisation RLS context", () => {
     expect(nextErr).toBeNull();
     expect(req.organisationId).toBe(4242);
 
-    res.emit("finish");
-    await tick();
+    const finished = waitForFinish(res);
+    res.end();
+    await finished;
+
+    expect(res.headersSent).toBe(true);
   });
 
   test("rejects authenticated users without organisation context", async () => {
@@ -79,5 +99,6 @@ describe("requireOrganisation RLS context", () => {
     expect(next).not.toHaveBeenCalled();
     expect(res.status).toHaveBeenCalledWith(403);
     expect(res.body?.code).toBe("ORGANISATION_REQUIRED");
+    expect(res.headersSent).toBe(true);
   });
 });
