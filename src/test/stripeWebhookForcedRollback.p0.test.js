@@ -60,14 +60,36 @@ describe("P0 — rollback forcé après réception d'un webhook Stripe", () => {
     });
     const event = makeSuccessEvent(invoice.id);
     const injectedError = new Error("MADPROOF_FORCED_FAILURE_AFTER_LEDGER");
+    const originalConnect = db.pool.connect.bind(db.pool);
+    let auditFailureReached = false;
 
-    await expect(
-      stripeReconciliationService.processWebhookEvent(event, {
-        afterLedgerEntry: async () => {
+    const connectSpy = jest.spyOn(db.pool, "connect").mockImplementation(async () => {
+      const txClient = await originalConnect();
+      const originalQuery = txClient.query.bind(txClient);
+
+      txClient.query = async (text, params) => {
+        const sql = typeof text === "string" ? text : text?.text || "";
+
+        if (/INSERT\s+INTO\s+business_audit_logs/i.test(sql)) {
+          auditFailureReached = true;
           throw injectedError;
-        },
-      }),
-    ).rejects.toThrow(injectedError.message);
+        }
+
+        return originalQuery(text, params);
+      };
+
+      return txClient;
+    });
+
+    try {
+      await expect(
+        stripeReconciliationService.processWebhookEvent(event),
+      ).rejects.toThrow(injectedError.message);
+    } finally {
+      connectSpy.mockRestore();
+    }
+
+    expect(auditFailureReached).toBe(true);
 
     const [invoiceState, paymentEvents, ledgerEntries, auditLogs, notifications] = await Promise.all([
       db.query("SELECT status FROM invoices WHERE id = $1", [invoice.id]),
