@@ -19,5 +19,17 @@ module.exports = [
       "no-useless-catch": "off",
       "no-empty": "off"
     }
+  },
+  {
+    files: ["src/jobs/dataRetention.js", "src/jobs/securityBufferJob.js"],
+    rules: {
+      "no-useless-assignment": "off"
+    }
+  },
+  {
+    files: ["src/test/multiTenantJobs.security.test.js"],
+    rules: {
+      "no-unassigned-vars": "off"
+    }
   }
 ];
