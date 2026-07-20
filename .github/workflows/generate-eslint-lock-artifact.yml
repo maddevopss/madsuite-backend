@@ -6,7 +6,7 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   generate-lockfile:
@@ -16,6 +16,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha }}
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - uses: actions/setup-node@v7
         with:
@@ -25,10 +26,13 @@ jobs:
       - name: Add explicit ESLint flat-config dependencies
         run: npm install --save-dev --package-lock-only --ignore-scripts @eslint/js@^10.0.1 globals@^17.7.0
 
-      - name: Upload generated package files
-        uses: actions/upload-artifact@v7
-        with:
-          name: eslint-package-files
-          path: |
-            package.json
-            package-lock.json
+      - name: Commit generated package files and remove workflow
+        run: |
+          rm .github/workflows/generate-eslint-lock-artifact.yml
+          mkdir -p .github
+          printf 'generated\n' > .github/.eslint-lock-generated
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json .github/workflows/generate-eslint-lock-artifact.yml .github/.eslint-lock-generated
+          git commit -m "fix(lint): add explicit ESLint flat-config dependencies"
+          git push origin HEAD:dependabot/npm_and_yarn/eslint-10.7.0
