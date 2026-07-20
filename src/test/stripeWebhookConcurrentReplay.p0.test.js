@@ -121,7 +121,7 @@ describe("P0 — rejeu concurrent massif d'un webhook Stripe", () => {
       },
     ]);
 
-    expect(ledgerEntries).toHaveLength(1);
+    expect(ledgerEntries.rows).toHaveLength(1);
     expect(ledgerEntries.rows[0]).toMatchObject({
       type: "payment_received",
       currency: "cad",
@@ -129,7 +129,7 @@ describe("P0 — rejeu concurrent massif d'un webhook Stripe", () => {
     });
     expect(Number(ledgerEntries.rows[0].amount)).toBe(125);
 
-    expect(auditLogs).toHaveLength(1);
+    expect(auditLogs.rows).toHaveLength(1);
     expect(auditLogs.rows[0].details).toMatchObject({
       stripeEventId: event.id,
       amount: 125,
@@ -137,7 +137,7 @@ describe("P0 — rejeu concurrent massif d'un webhook Stripe", () => {
       eventType: event.type,
     });
 
-    expect(notifications).toHaveLength(1);
+    expect(notifications.rows).toHaveLength(1);
     expect(notifications.rows[0]).toMatchObject({
       utilisateur_id: admin.id,
       type: "info",
