@@ -25,7 +25,7 @@ jobs:
         image: postgres:16
         env:
           POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: change_me
+          POSTGRES_HOST_AUTH_METHOD: trust
           POSTGRES_DB: postgres
         ports:
           - 5432:5432
@@ -41,23 +41,22 @@ jobs:
       DB_HOST: localhost
       DB_PORT: 5432
       DB_USER: postgres
-      DB_PASSWORD: change_me
       DB_NAME: madsuite_backup_source_test
       TEST_DB_NAME: madsuite_backup_source_test
       MIGRATION_TEST_DB_NAME: madsuite_backup_source_test
-      DATABASE_URL: postgresql://postgres:change_me@localhost:5432/madsuite_backup_source_test
-      TEST_DATABASE_URL: postgresql://postgres:change_me@localhost:5432/madsuite_backup_source_test
-      SOURCE_DATABASE_URL: postgresql://postgres:change_me@localhost:5432/madsuite_backup_source_test
-      TARGET_DATABASE_URL: postgresql://postgres:change_me@localhost:5432/madsuite_backup_target_test
-      POSTGRES_ADMIN_URL: postgresql://postgres:change_me@localhost:5432/postgres
+      DATABASE_URL: postgresql://postgres@localhost:5432/madsuite_backup_source_test
+      TEST_DATABASE_URL: postgresql://postgres@localhost:5432/madsuite_backup_source_test
+      SOURCE_DATABASE_URL: postgresql://postgres@localhost:5432/madsuite_backup_source_test
+      TARGET_DATABASE_URL: postgresql://postgres@localhost:5432/madsuite_backup_target_test
+      POSTGRES_ADMIN_URL: postgresql://postgres@localhost:5432/postgres
       MADPROOF_ALLOW_DESTRUCTIVE_RESTORE: "YES"
       ENABLE_DB_BACKUP: "0"
       SKIP_MIGRATIONS: "0"
-      JWT_SECRET: test-secret-madsuite-backup-restore-proof
+      JWT_SECRET: test-only-backup-restore-proof-key
       REDIS_DISABLED: "true"
       SCHEDULERS_ENABLED: "false"
-      STRIPE_SECRET_KEY: stripe-test-key-placeholder
-      STRIPE_WEBHOOK_SECRET: stripe-webhook-placeholder
+      STRIPE_SECRET_KEY: test-only-placeholder
+      STRIPE_WEBHOOK_SECRET: test-only-placeholder
 
     steps:
       - name: Checkout
@@ -130,19 +129,30 @@ jobs:
       - name: Verify restored tenant markers
         run: |
           psql "$TARGET_DATABASE_URL" -v ON_ERROR_STOP=1 -qAt <<'SQL'
-          SELECT CASE
-            WHEN COUNT(*) = 2 THEN 'PASS'
-            ELSE CAST(1 / 0 AS text)
-          END
-          FROM organisations
-          WHERE nom IN ('MADPROOF Backup Org A', 'MADPROOF Backup Org B');
+          DO $$
+          DECLARE
+            organisation_count integer;
+            client_count integer;
+          BEGIN
+            SELECT COUNT(*)
+            INTO organisation_count
+            FROM organisations
+            WHERE nom IN ('MADPROOF Backup Org A', 'MADPROOF Backup Org B');
 
-          SELECT CASE
-            WHEN COUNT(*) = 2 THEN 'PASS'
-            ELSE CAST(1 / 0 AS text)
+            IF organisation_count <> 2 THEN
+              RAISE EXCEPTION 'Expected 2 restored organisations, found %', organisation_count;
+            END IF;
+
+            SELECT COUNT(*)
+            INTO client_count
+            FROM clients
+            WHERE nom IN ('Client Backup A', 'Client Backup B');
+
+            IF client_count <> 2 THEN
+              RAISE EXCEPTION 'Expected 2 restored clients, found %', client_count;
+            END IF;
           END
-          FROM clients
-          WHERE nom IN ('Client Backup A', 'Client Backup B');
+          $$;
           SQL
 
       - name: Verify RLS and append-only ledger survived restore
