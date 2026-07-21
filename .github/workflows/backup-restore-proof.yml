@@ -43,7 +43,10 @@ jobs:
       DB_USER: postgres
       DB_PASSWORD: change_me
       DB_NAME: madsuite_backup_source
+      TEST_DB_NAME: madsuite_backup_source
+      MIGRATION_TEST_DB_NAME: madsuite_backup_source
       DATABASE_URL: postgresql://postgres:change_me@localhost:5432/madsuite_backup_source
+      TEST_DATABASE_URL: postgresql://postgres:change_me@localhost:5432/madsuite_backup_source
       SOURCE_DATABASE_URL: postgresql://postgres:change_me@localhost:5432/madsuite_backup_source
       TARGET_DATABASE_URL: postgresql://postgres:change_me@localhost:5432/madsuite_backup_target
       POSTGRES_ADMIN_URL: postgresql://postgres:change_me@localhost:5432/postgres
