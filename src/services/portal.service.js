@@ -3,8 +3,16 @@ const { getInvoiceById } = require("./invoice/invoice.service");
 const estimateService = require("./estimate/estimate.service");
 const { recordBusinessAudit } = require("./auditLog.service");
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isValidPublicToken(token) {
+  return typeof token === "string" && UUID_PATTERN.test(token);
+}
+
 class PortalService {
   async getDocumentByToken(token) {
+    if (!isValidPublicToken(token)) return null;
+
     // Check invoices
     const invoiceRes = await db.query(
       `SELECT id, organisation_id FROM invoices WHERE public_token = $1 AND deleted_at IS NULL`,
@@ -57,6 +65,10 @@ class PortalService {
   async handleEstimateAction(token, action, signatureData, clientIp) {
     if (!["accepted", "rejected"].includes(action)) {
       throw new Error("Action invalide");
+    }
+
+    if (!isValidPublicToken(token)) {
+      throw new Error("Document introuvable");
     }
 
     const estimateRes = await db.query(
