@@ -14,6 +14,29 @@ async function cleanup(organisationIds) {
   await db.query("DELETE FROM organisations WHERE id = ANY($1)", [organisationIds]);
 }
 
+async function createRestrictedRole(connection, roleName) {
+  const quotedRole = quoteIdentifier(roleName);
+  await connection.query(
+    `CREATE ROLE ${quotedRole} NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS`,
+  );
+  await connection.query(`GRANT USAGE ON SCHEMA public TO ${quotedRole}`);
+  await connection.query(`GRANT SELECT ON clients TO ${quotedRole}`);
+}
+
+async function queryAsRestrictedRole(connection, roleName, organisationId, clientId) {
+  await connection.query(`SET LOCAL ROLE ${quoteIdentifier(roleName)}`);
+  await connection.query(
+    "SELECT set_config('app.current_organisation_id', $1, true)",
+    [String(organisationId)],
+  );
+  const result = await connection.query(
+    "SELECT id, organisation_id FROM clients WHERE id = $1",
+    [clientId],
+  );
+  await connection.query("RESET ROLE");
+  return result;
+}
+
 describe("P0 — mutation contrôlée d'une politique RLS", () => {
   let organisationA;
   let organisationB;
@@ -35,17 +58,17 @@ describe("P0 — mutation contrôlée d'une politique RLS", () => {
 
   test("la preuve devient rouge si les politiques de clients sont retirées", async () => {
     const connection = await db.pool.connect();
+    const roleName = `madproof_rls_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
 
     try {
       await connection.query("BEGIN");
-      await connection.query(
-        "SELECT set_config('app.current_organisation_id', $1, true)",
-        [String(organisationA.id)],
-      );
+      await createRestrictedRole(connection, roleName);
 
-      const baseline = await connection.query(
-        "SELECT id, organisation_id FROM clients WHERE id = $1",
-        [clientB.id],
+      const baseline = await queryAsRestrictedRole(
+        connection,
+        roleName,
+        organisationA.id,
+        clientB.id,
       );
       expect(baseline.rows).toHaveLength(0);
 
@@ -64,9 +87,11 @@ describe("P0 — mutation contrôlée d'une politique RLS", () => {
         );
       }
 
-      const exposedWithoutPolicies = await connection.query(
-        "SELECT id, organisation_id FROM clients WHERE id = $1",
-        [clientB.id],
+      const exposedWithoutPolicies = await queryAsRestrictedRole(
+        connection,
+        roleName,
+        organisationA.id,
+        clientB.id,
       );
       expect(exposedWithoutPolicies.rows).toEqual([
         {
@@ -78,14 +103,13 @@ describe("P0 — mutation contrôlée d'une politique RLS", () => {
       await connection.query("ROLLBACK");
 
       await connection.query("BEGIN");
-      await connection.query(
-        "SELECT set_config('app.current_organisation_id', $1, true)",
-        [String(organisationA.id)],
-      );
+      await createRestrictedRole(connection, roleName);
 
-      const restored = await connection.query(
-        "SELECT id, organisation_id FROM clients WHERE id = $1",
-        [clientB.id],
+      const restored = await queryAsRestrictedRole(
+        connection,
+        roleName,
+        organisationA.id,
+        clientB.id,
       );
       expect(restored.rows).toHaveLength(0);
 
@@ -100,6 +124,7 @@ describe("P0 — mutation contrôlée d'une politique RLS", () => {
       await connection.query("ROLLBACK");
     } finally {
       try {
+        await connection.query("RESET ROLE");
         await connection.query("ROLLBACK");
       } catch {
         // aucune transaction active
