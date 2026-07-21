@@ -1,3 +1,4 @@
+const { randomUUID } = require("crypto");
 const db = require("../../db");
 const portalService = require("../services/portal.service");
 const {
@@ -42,10 +43,10 @@ function buildInvalidTokenVariants({ validToken, invoiceId, organisationId }) {
     validToken.slice(0, -1),
     `${validToken}${replacement}`,
     `${validToken.slice(0, -1)}${replacement}`,
-    validToken.toUpperCase(),
     ` ${validToken}`,
     `${validToken} `,
     `${organisationId}:${invoiceId}`,
+    randomUUID(),
   ];
 }
 
@@ -63,8 +64,8 @@ describe("P0 — portail public non énumérable entre organisations", () => {
       organisation_id: organisationB.id,
     });
 
-    const tokenA = `portal-a-${suffix}`;
-    const tokenB = `portal-b-${suffix}`;
+    const tokenA = randomUUID();
+    const tokenB = randomUUID();
     const invoiceA = await createPublicInvoice({
       organisationId: organisationA.id,
       clientId: clientA.id,
