@@ -37,6 +37,17 @@ async function queryAsRestrictedRole(connection, roleName, organisationId, clien
   return result;
 }
 
+async function readRlsState(connection) {
+  const result = await connection.query(
+    `SELECT c.relrowsecurity, c.relforcerowsecurity
+     FROM pg_class c
+     JOIN pg_namespace n ON n.oid = c.relnamespace
+     WHERE n.nspname = current_schema()
+       AND c.relname = 'clients'`,
+  );
+  return result.rows[0];
+}
+
 describe("P0 — mutation contrôlée d'une politique RLS", () => {
   let organisationA;
   let organisationB;
@@ -56,7 +67,7 @@ describe("P0 — mutation contrôlée d'une politique RLS", () => {
     await cleanup([organisationA.id, organisationB.id]);
   });
 
-  test("la preuve devient rouge si les politiques de clients sont retirées", async () => {
+  test("la preuve devient rouge si la RLS de clients est désactivée", async () => {
     const connection = await db.pool.connect();
     const roleName = `madproof_rls_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
 
@@ -64,13 +75,8 @@ describe("P0 — mutation contrôlée d'une politique RLS", () => {
       await connection.query("BEGIN");
       await createRestrictedRole(connection, roleName);
 
-      const baseline = await queryAsRestrictedRole(
-        connection,
-        roleName,
-        organisationA.id,
-        clientB.id,
-      );
-      expect(baseline.rows).toHaveLength(0);
+      const initialRlsState = await readRlsState(connection);
+      expect(initialRlsState).toMatchObject({ relrowsecurity: true });
 
       const policies = await connection.query(
         `SELECT policyname
@@ -81,19 +87,26 @@ describe("P0 — mutation contrôlée d'une politique RLS", () => {
       );
       expect(policies.rows.length).toBeGreaterThan(0);
 
-      for (const { policyname } of policies.rows) {
-        await connection.query(
-          `DROP POLICY ${quoteIdentifier(policyname)} ON clients`,
-        );
-      }
-
-      const exposedWithoutPolicies = await queryAsRestrictedRole(
+      const baseline = await queryAsRestrictedRole(
         connection,
         roleName,
         organisationA.id,
         clientB.id,
       );
-      expect(exposedWithoutPolicies.rows).toEqual([
+      expect(baseline.rows).toHaveLength(0);
+
+      await connection.query("ALTER TABLE clients DISABLE ROW LEVEL SECURITY");
+
+      const disabledRlsState = await readRlsState(connection);
+      expect(disabledRlsState).toMatchObject({ relrowsecurity: false });
+
+      const exposedWithoutRls = await queryAsRestrictedRole(
+        connection,
+        roleName,
+        organisationA.id,
+        clientB.id,
+      );
+      expect(exposedWithoutRls.rows).toEqual([
         {
           id: clientB.id,
           organisation_id: organisationB.id,
@@ -105,6 +118,18 @@ describe("P0 — mutation contrôlée d'une politique RLS", () => {
       await connection.query("BEGIN");
       await createRestrictedRole(connection, roleName);
 
+      const restoredRlsState = await readRlsState(connection);
+      expect(restoredRlsState).toEqual(initialRlsState);
+
+      const restoredPolicies = await connection.query(
+        `SELECT policyname
+         FROM pg_policies
+         WHERE schemaname = current_schema()
+           AND tablename = 'clients'
+         ORDER BY policyname`,
+      );
+      expect(restoredPolicies.rows).toEqual(policies.rows);
+
       const restored = await queryAsRestrictedRole(
         connection,
         roleName,
@@ -112,14 +137,6 @@ describe("P0 — mutation contrôlée d'une politique RLS", () => {
         clientB.id,
       );
       expect(restored.rows).toHaveLength(0);
-
-      const restoredPolicies = await connection.query(
-        `SELECT policyname
-         FROM pg_policies
-         WHERE schemaname = current_schema()
-           AND tablename = 'clients'`,
-      );
-      expect(restoredPolicies.rows).toHaveLength(policies.rows.length);
 
       await connection.query("ROLLBACK");
     } finally {
