@@ -20,6 +20,10 @@ function Invoke-PsqlScalar([string]$DatabaseUrl, [string]$Sql) {
   return ($value | Out-String).Trim()
 }
 
+function Test-TableExists([string]$DatabaseUrl, [string]$TableName) {
+  return (Invoke-PsqlScalar $DatabaseUrl "SELECT to_regclass('public.$TableName') IS NOT NULL;") -eq "t"
+}
+
 function Get-DatabaseMetrics([string]$DatabaseUrl) {
   $tables = @(
     "organisations",
@@ -34,29 +38,30 @@ function Get-DatabaseMetrics([string]$DatabaseUrl) {
   $metrics = [ordered]@{}
 
   foreach ($table in $tables) {
-    $exists = Invoke-PsqlScalar $DatabaseUrl "SELECT to_regclass('public.$table') IS NOT NULL;"
-    if ($exists -eq "t") {
+    if (Test-TableExists $DatabaseUrl $table) {
       $metrics[$table] = [int64](Invoke-PsqlScalar $DatabaseUrl "SELECT COUNT(*) FROM public.$table;")
     } else {
       $metrics[$table] = "ABSENT"
     }
   }
 
-  $metrics["migration_rows"] = [int64](Invoke-PsqlScalar $DatabaseUrl @"
-SELECT COALESCE(SUM(row_count), 0)
-FROM (
-  SELECT CASE
-    WHEN to_regclass('public.schema_migrations') IS NOT NULL THEN (SELECT COUNT(*) FROM public.schema_migrations)
-    ELSE 0
-  END AS row_count
-  UNION ALL
-  SELECT CASE
-    WHEN to_regclass('public._prisma_migrations') IS NOT NULL THEN (SELECT COUNT(*) FROM public._prisma_migrations)
-    ELSE 0
-  END AS row_count
-) AS migrations;
-"@)
+  $migrationRows = [int64]0
+  $migrationTables = @("schema_migrations", "_prisma_migrations")
+  $presentMigrationTables = @()
 
+  foreach ($migrationTable in $migrationTables) {
+    if (Test-TableExists $DatabaseUrl $migrationTable) {
+      $presentMigrationTables += $migrationTable
+      $migrationRows += [int64](Invoke-PsqlScalar $DatabaseUrl "SELECT COUNT(*) FROM public.$migrationTable;")
+    }
+  }
+
+  $metrics["migration_rows"] = $migrationRows
+  $metrics["migration_tables"] = if ($presentMigrationTables.Count -gt 0) {
+    $presentMigrationTables -join ","
+  } else {
+    "NONE"
+  }
   $metrics["rls_policies"] = [int64](Invoke-PsqlScalar $DatabaseUrl "SELECT COUNT(*) FROM pg_policies WHERE schemaname = 'public';")
   $metrics["rls_enabled_tables"] = [int64](Invoke-PsqlScalar $DatabaseUrl "SELECT COUNT(*) FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = 'public' AND c.relrowsecurity;")
   $metrics["constraints"] = [int64](Invoke-PsqlScalar $DatabaseUrl "SELECT COUNT(*) FROM pg_constraint c JOIN pg_namespace n ON n.oid = c.connamespace WHERE n.nspname = 'public';")
@@ -136,6 +141,9 @@ foreach ($key in $sourceMetrics.Keys) {
 
 & psql $TargetDatabaseUrl -v ON_ERROR_STOP=1 -P pager=off -c "SELECT schemaname, tablename, policyname, permissive, roles, cmd, qual, with_check FROM pg_policies WHERE schemaname = 'public' ORDER BY tablename, policyname;" |
   Set-Content -Path $policiesPath -Encoding UTF8
+if ($LASTEXITCODE -ne 0) {
+  throw "Collecte des politiques RLS échouée."
+}
 
 Write-Host "[6/6] Production du résumé"
 $summary = @(
@@ -169,6 +177,13 @@ if ([int64]$targetMetrics["rls_policies"] -le 0) {
   $summary += "reason=no_rls_policy"
   $summary | Set-Content -Path $summaryPath -Encoding UTF8
   throw "Aucune politique RLS trouvée après restauration."
+}
+
+if ([int64]$targetMetrics["rls_enabled_tables"] -le 0) {
+  $summary += "status=FAILED"
+  $summary += "reason=no_rls_enabled_table"
+  $summary | Set-Content -Path $summaryPath -Encoding UTF8
+  throw "Aucune table avec RLS active trouvée après restauration."
 }
 
 $summary += "status=PASSED"
