@@ -52,7 +52,7 @@ jobs:
       MADPROOF_ALLOW_DESTRUCTIVE_RESTORE: "YES"
       ENABLE_DB_BACKUP: "0"
       SKIP_MIGRATIONS: "0"
-      JWT_SECRET: test-only-backup-restore-proof-key
+      JWT_SECRET: MadProof-Backup-2026!
       REDIS_DISABLED: "true"
       SCHEDULERS_ENABLED: "false"
       STRIPE_SECRET_KEY: test-only-placeholder
