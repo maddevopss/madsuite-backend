@@ -1,0 +1,189 @@
+name: Backup Restore P0 Proof
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/backup-restore-proof.yml"
+      - "scripts/prove-backup-restore.ps1"
+      - "src/migrate/**"
+      - "migrations/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  prove-backup-restore:
+    name: Prove PostgreSQL backup and restore
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: change_me
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      NODE_ENV: test
+      CI: true
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: change_me
+      DB_NAME: madsuite_backup_source
+      DATABASE_URL: postgresql://postgres:change_me@localhost:5432/madsuite_backup_source
+      SOURCE_DATABASE_URL: postgresql://postgres:change_me@localhost:5432/madsuite_backup_source
+      TARGET_DATABASE_URL: postgresql://postgres:change_me@localhost:5432/madsuite_backup_target
+      POSTGRES_ADMIN_URL: postgresql://postgres:change_me@localhost:5432/postgres
+      MADPROOF_ALLOW_DESTRUCTIVE_RESTORE: "YES"
+      ENABLE_DB_BACKUP: "0"
+      SKIP_MIGRATIONS: "0"
+      JWT_SECRET: test-secret-madsuite-backup-restore-proof
+      REDIS_DISABLED: "true"
+      SCHEDULERS_ENABLED: "false"
+      STRIPE_SECRET_KEY: stripe-test-key-placeholder
+      STRIPE_WEBHOOK_SECRET: stripe-webhook-placeholder
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Create isolated source and target databases
+        run: |
+          psql "$POSTGRES_ADMIN_URL" -v ON_ERROR_STOP=1 <<'SQL'
+          DROP DATABASE IF EXISTS madsuite_backup_source WITH (FORCE);
+          DROP DATABASE IF EXISTS madsuite_backup_target WITH (FORCE);
+          CREATE DATABASE madsuite_backup_source;
+          CREATE DATABASE madsuite_backup_target;
+          SQL
+
+      - name: Apply real migrations to source
+        run: npm run db:migrate
+
+      - name: Seed representative multi-tenant data
+        run: |
+          node <<'NODE'
+          const db = require('./db');
+          const {
+            createTestOrganisation,
+            createTestUser,
+            createTestClient,
+            createTestProjet,
+          } = require('./src/test/helpers/testData');
+
+          async function main() {
+            for (const label of ['A', 'B']) {
+              const organisation = await createTestOrganisation({ nom: `MADPROOF Backup Org ${label}` });
+              await createTestUser({
+                nom: `Admin ${label}`,
+                email: `backup-${label.toLowerCase()}@madproof.test`,
+                organisation_id: organisation.id,
+              });
+              const client = await createTestClient({
+                nom: `Client Backup ${label}`,
+                organisation_id: organisation.id,
+              });
+              await createTestProjet(client.id, {
+                nom: `Projet Backup ${label}`,
+                organisation_id: organisation.id,
+              });
+            }
+          }
+
+          main()
+            .then(() => db.end())
+            .catch(async (error) => {
+              console.error(error);
+              await db.end();
+              process.exit(1);
+            });
+          NODE
+
+      - name: Execute destructive restore proof on disposable target
+        shell: pwsh
+        run: ./scripts/prove-backup-restore.ps1
+
+      - name: Verify restored tenant markers
+        run: |
+          psql "$TARGET_DATABASE_URL" -v ON_ERROR_STOP=1 -qAt <<'SQL'
+          SELECT CASE
+            WHEN COUNT(*) = 2 THEN 'PASS'
+            ELSE CAST(1 / 0 AS text)
+          END
+          FROM organisations
+          WHERE nom IN ('MADPROOF Backup Org A', 'MADPROOF Backup Org B');
+
+          SELECT CASE
+            WHEN COUNT(*) = 2 THEN 'PASS'
+            ELSE CAST(1 / 0 AS text)
+          END
+          FROM clients
+          WHERE nom IN ('Client Backup A', 'Client Backup B');
+          SQL
+
+      - name: Verify RLS and append-only ledger survived restore
+        run: |
+          psql "$TARGET_DATABASE_URL" -v ON_ERROR_STOP=1 -qAt <<'SQL'
+          DO $$
+          BEGIN
+            IF NOT EXISTS (
+              SELECT 1
+              FROM pg_class c
+              JOIN pg_namespace n ON n.oid = c.relnamespace
+              WHERE n.nspname = 'public'
+                AND c.relname = 'clients'
+                AND c.relrowsecurity
+            ) THEN
+              RAISE EXCEPTION 'RLS is not enabled on clients after restore';
+            END IF;
+
+            IF NOT EXISTS (
+              SELECT 1
+              FROM pg_policies
+              WHERE schemaname = 'public'
+                AND tablename = 'clients'
+            ) THEN
+              RAISE EXCEPTION 'No clients RLS policy found after restore';
+            END IF;
+
+            IF NOT EXISTS (
+              SELECT 1
+              FROM pg_trigger
+              WHERE tgrelid = 'public.ledger_entries'::regclass
+                AND NOT tgisinternal
+            ) THEN
+              RAISE EXCEPTION 'Ledger append-only trigger missing after restore';
+            END IF;
+          END
+          $$;
+          SQL
+
+      - name: Upload MADPROOF backup restore evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: madproof-backup-restore-evidence
+          path: artifacts/backup-restore/
+          if-no-files-found: error
+          retention-days: 14
