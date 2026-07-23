@@ -23,13 +23,32 @@ async function processSecurityBuffer() {
     await client.query("BEGIN");
 
     const result = await client.query(`
-      SELECT sib.utilisateur_id, u.email, u.nom, 
-             json_agg(json_build_object('type', sib.type, 'details', sib.details)) as incidents
-      FROM security_incidents_buffer sib
-      JOIN utilisateurs u ON u.id = sib.utilisateur_id
-      WHERE sib.notified_at IS NULL
-      GROUP BY sib.utilisateur_id, u.email, u.nom
-      FOR UPDATE SKIP LOCKED
+      WITH locked_incidents AS (
+        SELECT
+          sib.id,
+          sib.utilisateur_id,
+          sib.type,
+          sib.details
+        FROM security_incidents_buffer sib
+        WHERE sib.notified_at IS NULL
+        ORDER BY sib.id
+        FOR UPDATE OF sib SKIP LOCKED
+      )
+      SELECT
+        li.utilisateur_id,
+        u.email,
+        u.nom,
+        array_agg(li.id ORDER BY li.id) AS incident_ids,
+        json_agg(
+          json_build_object(
+            'type', li.type,
+            'details', li.details
+          )
+          ORDER BY li.id
+        ) AS incidents
+      FROM locked_incidents li
+      JOIN utilisateurs u ON u.id = li.utilisateur_id
+      GROUP BY li.utilisateur_id, u.email, u.nom
     `);
 
     if (result.rowCount === 0) {
@@ -60,9 +79,13 @@ async function processSecurityBuffer() {
         });
       }
 
-      await client.query("UPDATE security_incidents_buffer SET notified_at = NOW() WHERE utilisateur_id = $1 AND notified_at IS NULL", [
-        row.utilisateur_id,
-      ]);
+      await client.query(
+        `UPDATE security_incidents_buffer
+        SET notified_at = NOW()
+        WHERE id = ANY($1)
+          AND notified_at IS NULL`,
+        [row.incident_ids],
+      );
 
       await client.query(
         `INSERT INTO business_audit_logs (organisation_id, action, entity_type, entity_id, details)
