@@ -5,6 +5,7 @@ const { performance } = require("perf_hooks");
 const db = require("../../db");
 const { runOrganisationScopePreflight } = require("./preflightOrganisationScope");
 const { diagnosticDatabaseConnection } = require("./diagnosticDb");
+const { detectDuplicateMigrations } = require("./detectDuplicateMigrations");
 
 function log(message, details) {
   // pas de secrets
@@ -289,6 +290,9 @@ function maybeBackupDatabase() {
 }
 
 async function runMigrations({ backup = false } = {}) {
+  // Detect duplicate migrations at startup
+  detectDuplicateMigrations();
+
   const client = await db.pool.connect();
   let tableLockAcquired = false;
   const runnerId = process.env.HOSTNAME || "local-runner";
