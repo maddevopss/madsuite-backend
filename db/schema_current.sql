@@ -41,8 +41,8 @@ CREATE TABLE IF NOT EXISTS utilisateurs (
   organisation_id INTEGER REFERENCES organisations(id) ON DELETE SET NULL,
   role_org VARCHAR(30) DEFAULT 'user',
 
-  CONSTRAINT chk_role
-    CHECK (role IN ('admin', 'employe')),
+   CONSTRAINT chk_role
+     CHECK (role IN ('admin', 'manager', 'employe')),
 
   CONSTRAINT uq_utilisateurs_id_org
     UNIQUE (id, organisation_id)
