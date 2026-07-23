@@ -19,7 +19,7 @@ const updateClientSchema = z.object({
   contact_name: z.string().trim().max(255).optional().nullable().or(z.literal('')),
   adresse: z.string().trim().optional().nullable().or(z.literal('')),
   notes: z.string().trim().optional().nullable().or(z.literal('')),
-  hourly_rate_defaut: z.number().min(0).optional(),
+  hourly_rate_defaut: z.number().min(0, "Le taux doit être positif").max(10000).optional().nullable(),
 });
 
 module.exports = {
