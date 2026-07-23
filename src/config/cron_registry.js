@@ -14,11 +14,13 @@ module.exports = {
   // Analytics & Activity
   activityAggregationTask: { frequencyHours: 1, criticality: 'MEDIUM' },
   metricsAggregationJob: { frequencyHours: 24, criticality: 'MEDIUM' },
+  metricsSnapshotTask: { frequencyHours: 24, criticality: 'MEDIUM' },
   cognitiveAggregatorTask: { frequencyHours: 24, criticality: 'MEDIUM' },
   
   // System & Security
   securityBufferTask: { frequencyHours: 1, criticality: 'HIGH' }, // runs every 10 min, so 1h max expected
   longRunningTimersTask: { frequencyHours: 1, criticality: 'LOW' }, // runs every 15 min, 1h max expected
+  checkStaleJobsTask: { frequencyHours: 1, criticality: 'MEDIUM' }, // runs every 30 min
   
   // Email & Communication
   emailFollowupTask: { frequencyHours: 24, criticality: 'MEDIUM' },
@@ -30,5 +32,6 @@ module.exports = {
   cronCleanupTask: { frequencyHours: 24, criticality: 'LOW' },
 
   // System
-  systemConsistencyTask: { frequencyHours: 24, criticality: 'HIGH' }
+  systemConsistencyTask: { frequencyHours: 24, criticality: 'HIGH' },
+  systemReconciliationTask: { frequencyHours: 24, criticality: 'HIGH' }
 };
