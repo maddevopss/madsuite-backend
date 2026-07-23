@@ -6,16 +6,22 @@ const CacheService = require("../services/cache.service");
 
 router.post("/cache/invalidate", auth, requireAdmin, (req, res) => {
   const { pattern } = req.body;
+  const organisationId = req.user?.organisation_id;
 
   if (!pattern) {
     return res.status(400).json({ error: "pattern required" });
   }
 
-  CacheService.invalidate(pattern);
+  if (!organisationId) {
+    return res.status(403).json({ error: "organisation context required" });
+  }
+
+  // Invalidate only cache entries for this organisation
+  CacheService.invalidate(pattern, organisationId);
 
   res.json({
     success: true,
-    message: `Cache entries matching '${pattern}' invalidated`,
+    message: `Cache entries matching '${pattern}' invalidated for organisation ${organisationId}`,
   });
 });
 

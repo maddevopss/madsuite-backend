@@ -7,9 +7,10 @@ const cache = new NodeCache({
 });
 
 class CacheService {
-  // Generate cache key from params
-  static getCacheKey(type, params) {
-    const key = `${type}:${JSON.stringify(params)}`;
+  // Generate cache key from params, with optional organisation isolation
+  static getCacheKey(type, params, organisationId = null) {
+    const prefix = organisationId ? `org:${organisationId}:` : "";
+    const key = `${prefix}${type}:${JSON.stringify(params)}`;
     return key.slice(0, 255); // Max key length
   }
 
@@ -29,15 +30,28 @@ class CacheService {
     cache.set(key, value, ttlSeconds);
   }
 
-  // Invalidate on data change
-  static invalidate(pattern) {
+  // Invalidate on data change, optionally scoped to an organisation
+  static invalidate(pattern, organisationId = null) {
     const keys = cache.keys();
-    keys.filter((k) => k.includes(pattern)).forEach((k) => cache.del(k));
+    const prefix = organisationId ? `org:${organisationId}:` : "";
+    const fullPattern = prefix + pattern;
+    
+    keys
+      .filter((k) => k.includes(fullPattern))
+      .forEach((k) => {
+        logger.debug(`[CACHE INVALIDATE] ${k}`);
+        cache.del(k);
+      });
   }
 
-  // Clear all
+  // Clear all (use with caution, typically only for testing)
   static flush() {
     cache.flushAll();
+  }
+
+  // Get all keys (for debugging/monitoring)
+  static getAllKeys() {
+    return cache.keys();
   }
 }
 
