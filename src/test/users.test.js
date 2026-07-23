@@ -178,65 +178,149 @@ describe("Users", () => {
     await db.query(`DELETE FROM organisations WHERE id = $1`, [organisation.id]);
   });
 
-  test("POST /api/users crée un utilisateur valide dans la même organisation", async () => {
-    const organisation = await createTestOrganisation({
-      nom: `Org Users Create ${Date.now()}`,
-    });
+   test("POST /api/users crée un utilisateur valide dans la même organisation", async () => {
+     const organisation = await createTestOrganisation({
+       nom: `Org Users Create ${Date.now()}`,
+     });
 
-    const token = makeToken({
-      role: "admin",
-      organisation_id: organisation.id,
-    });
+     const token = makeToken({
+       role: "admin",
+       organisation_id: organisation.id,
+     });
 
-    const email = `creation-${Date.now()}@example.com`;
+     const email = `creation-${Date.now()}@example.com`;
 
-    const res = await request(app).post("/api/users").set("Authorization", `Bearer ${token}`).send({
-      nom: "User Création Test",
-      email,
-      mot_de_passe: "Password123!",
-      role: "employe",
-    });
+     const res = await request(app).post("/api/users").set("Authorization", `Bearer ${token}`).send({
+       nom: "User Création Test",
+       email,
+       mot_de_passe: "Password123!",
+       role: "employe",
+     });
 
-    expect(res.statusCode).toBe(201);
-    const createdUser = res.body.data ?? res.body;
-    expect(createdUser).toHaveProperty("id");
-    expect(createdUser).toHaveProperty("email", email);
-    expect(createdUser).toHaveProperty("role", "employe");
+     expect(res.statusCode).toBe(201);
+     const createdUser = res.body.data ?? res.body;
+     expect(createdUser).toHaveProperty("id");
+     expect(createdUser).toHaveProperty("email", email);
+     expect(createdUser).toHaveProperty("role", "employe");
 
 const client = await db.connect();
 
 try {
-  await client.query("BEGIN");
+   await client.query("BEGIN");
 
-  await client.query(
-    `SELECT set_config('app.current_organisation_id', $1, true)`,
-    [String(organisation.id)],
-  );
+   await client.query(
+     `SELECT set_config('app.current_organisation_id', $1, true)`,
+     [String(organisation.id)],
+   );
 
-  const dbUser = await client.query(
-    `
-    SELECT organisation_id
-    FROM utilisateurs
-    WHERE id = $1
-    `,
-    [createdUser.id],
-  );
+   const dbUser = await client.query(
+     `
+     SELECT organisation_id
+     FROM utilisateurs
+     WHERE id = $1
+     `,
+     [createdUser.id],
+   );
 
-  expect(dbUser.rows).toHaveLength(1);
-  expect(Number(dbUser.rows[0].organisation_id)).toBe(organisation.id);
+   expect(dbUser.rows).toHaveLength(1);
+   expect(Number(dbUser.rows[0].organisation_id)).toBe(organisation.id);
 
-  await client.query(`DELETE FROM utilisateurs WHERE id = $1`, [createdUser.id]);
+   await client.query(`DELETE FROM utilisateurs WHERE id = $1`, [createdUser.id]);
 
-  await client.query("COMMIT");
+   await client.query("COMMIT");
 } catch (error) {
-  await client.query("ROLLBACK");
-  throw error;
+   await client.query("ROLLBACK");
+   throw error;
 } finally {
-  client.release();
+   client.release();
 }
 
 await db.query(`DELETE FROM organisations WHERE id = $1`, [organisation.id]);
-  });
+   });
+
+   test("POST /api/users crée un utilisateur manager avec succès", async () => {
+     const organisation = await createTestOrganisation({
+       nom: `Org Users Manager ${Date.now()}`,
+     });
+
+     const token = makeToken({
+       role: "admin",
+       organisation_id: organisation.id,
+     });
+
+     const email = `manager-${Date.now()}@example.com`;
+
+     const res = await request(app).post("/api/users").set("Authorization", `Bearer ${token}`).send({
+       nom: "User Manager Test",
+       email,
+       mot_de_passe: "Password123!",
+       role: "manager",
+     });
+
+     expect(res.statusCode).toBe(201);
+     const createdUser = res.body.data ?? res.body;
+     expect(createdUser).toHaveProperty("id");
+     expect(createdUser).toHaveProperty("email", email);
+     expect(createdUser).toHaveProperty("role", "manager");
+
+     const client = await db.connect();
+
+     try {
+       await client.query("BEGIN");
+
+       await client.query(
+         `SELECT set_config('app.current_organisation_id', $1, true)`,
+         [String(organisation.id)],
+       );
+
+       const dbUser = await client.query(
+         `
+         SELECT organisation_id, role
+         FROM utilisateurs
+         WHERE id = $1
+         `,
+         [createdUser.id],
+       );
+
+       expect(dbUser.rows).toHaveLength(1);
+       expect(Number(dbUser.rows[0].organisation_id)).toBe(organisation.id);
+       expect(dbUser.rows[0].role).toBe("manager");
+
+       await client.query(`DELETE FROM utilisateurs WHERE id = $1`, [createdUser.id]);
+
+       await client.query("COMMIT");
+     } catch (error) {
+       await client.query("ROLLBACK");
+       throw error;
+     } finally {
+       client.release();
+     }
+
+     await db.query(`DELETE FROM organisations WHERE id = $1`, [organisation.id]);
+   });
+
+   test("POST /api/users refuse un rôle invalide", async () => {
+     const organisation = await createTestOrganisation({
+       nom: `Org Users Invalid Role ${Date.now()}`,
+     });
+
+     const token = makeToken({
+       role: "admin",
+       organisation_id: organisation.id,
+     });
+
+     const res = await request(app).post("/api/users").set("Authorization", `Bearer ${token}`).send({
+       nom: "User Invalid Role",
+       email: `invalid-role-${Date.now()}@example.com`,
+       mot_de_passe: "Password123!",
+       role: "superadmin",
+     });
+
+     expect(res.statusCode).toBe(400);
+     expect(res.body.fieldErrors || res.body.message).toBeDefined();
+
+     await db.query(`DELETE FROM organisations WHERE id = $1`, [organisation.id]);
+   });
 
   test("PUT /api/users/:id refuse un id invalide", async () => {
     const organisation = await createTestOrganisation({
