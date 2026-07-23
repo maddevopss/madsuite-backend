@@ -1,4 +1,4 @@
-const { v4: uuidv4 } = require("uuid");
+const { randomUUID } = require("node:crypto");
 const logger = require("../config/logger");
 
 /**
@@ -7,7 +7,7 @@ const logger = require("../config/logger");
  */
 function requestIdMiddleware(req, res, next) {
   // Check if forwarded from upstream (nginx, LB, etc)
-  const requestId = req.headers["x-request-id"] || req.headers["x-correlation-id"] || uuidv4();
+  const requestId = req.headers["x-request-id"] || req.headers["x-correlation-id"] || randomUUID();
 
   req.id = requestId;
   req.startTime = Date.now();
