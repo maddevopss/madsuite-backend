@@ -5,12 +5,14 @@ const ApiResponse = require("../utils/apiResponse");
 const { getOrganisationId } = require("../utils/organisationScope");
 const { handleServiceError } = require("../utils/routeError");
 const reminderService = require("../services/payment-reminder.service");
+const reminderPreviewService = require("../services/payment-reminder-preview.service");
 
 const router = express.Router();
 
 const invoiceParamSchema = z.object({ id: z.coerce.number().int().positive() });
 const settingsSchema = z.object({ automatic_enabled: z.boolean() });
-const sendSchema = z.object({ stage: z.coerce.number().int().refine((value) => [3, 7, 14].includes(value)) });
+const stageSchema = z.coerce.number().int().refine((value) => [3, 7, 14].includes(value));
+const sendSchema = z.object({ stage: stageSchema });
 
 function requireAdmin(req, res) {
   if (req.user?.role !== "admin") {
@@ -67,6 +69,30 @@ router.get("/history", async (req, res, next) => {
       invoiceId,
     });
     return res.status(200).json(ApiResponse.success("PAYMENT_REMINDER_HISTORY", history));
+  } catch (error) {
+    return handleServiceError(error, res, next);
+  }
+});
+
+router.get("/invoices/:id/preview", async (req, res, next) => {
+  try {
+    const params = invoiceParamSchema.safeParse(req.params);
+    const stage = stageSchema.safeParse(req.query.stage);
+    if (!params.success || !stage.success) {
+      return res.status(400).json(ApiResponse.error("VALIDATION_ERROR", {
+        errors: { params: params.error?.flatten(), stage: stage.error?.flatten() },
+      }));
+    }
+
+    const preview = await reminderPreviewService.previewReminder({
+      invoiceId: params.data.id,
+      organisationId: getOrganisationId(req),
+      stage: stage.data,
+    });
+    if (!preview) {
+      return res.status(404).json(ApiResponse.error("NOT_FOUND", { message: "Facture introuvable" }));
+    }
+    return res.status(200).json(ApiResponse.success("PAYMENT_REMINDER_PREVIEW", preview));
   } catch (error) {
     return handleServiceError(error, res, next);
   }
