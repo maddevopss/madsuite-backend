@@ -37,8 +37,12 @@ function buildApp() {
   app.use(express.json());
   app.use("/leads", leadsRouter);
   app.use((error, req, res, next) => {
+    void req;
     void next;
-    return res.status(error.statusCode || 500).json({ code: error.code, message: error.message });
+    return res.status(error.statusCode || 500).json({
+      code: error.code,
+      message: error.message,
+    });
   });
   return app;
 }
@@ -100,12 +104,13 @@ describe("customer growth lead conversion route", () => {
       .send({ idempotency_key: " lead-4-conversion " });
 
     expect(response.status).toBe(201);
+    expect(convertLeadToClient).toHaveBeenCalledTimes(1);
     expect(convertLeadToClient).toHaveBeenCalledWith({
       leadId: 4,
       organisationId: 77,
       idempotencyKey: "lead-4-conversion",
     });
-    expect(response.body.data).toMatchObject({
+    expect(response.body).toMatchObject({
       lead: { id: 4 },
       client: { id: 22 },
       idempotent: false,
@@ -125,7 +130,11 @@ describe("customer growth lead conversion route", () => {
       .send({ idempotency_key: "lead-4-conversion" });
 
     expect(response.status).toBe(200);
-    expect(response.body.data.idempotent).toBe(true);
+    expect(response.body).toMatchObject({
+      lead: { id: 4 },
+      client: { id: 22 },
+      idempotent: true,
+    });
   });
 
   test("retourne 404 lorsque le prospect n'existe pas", async () => {
@@ -142,6 +151,9 @@ describe("customer growth lead conversion route", () => {
       organisationId: 77,
       idempotencyKey: "lead-44-conversion",
     });
+    expect(response.body).toMatchObject({
+      message: "Prospect introuvable.",
+    });
   });
 
   test("propage un conflit métier du service", async () => {
@@ -157,5 +169,6 @@ describe("customer growth lead conversion route", () => {
 
     expect(response.status).toBe(409);
     expect(response.body.message).toContain("prospect qualifié");
+    expect(response.body.code).toBe("LEAD_NOT_QUALIFIED");
   });
 });
