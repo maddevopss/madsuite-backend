@@ -14,7 +14,23 @@ function moneyFromCents(value) {
   return (Number(value || 0) / 100).toFixed(2);
 }
 
+async function lockInvoice({ invoiceId, organisationId, client }) {
+  const result = await client.query(
+    `SELECT id
+     FROM invoices
+     WHERE id = $1 AND organisation_id = $2 AND deleted_at IS NULL
+     FOR UPDATE`,
+    [invoiceId, organisationValue(organisationId)],
+  );
+  return Boolean(result.rows[0]);
+}
+
 async function loadInvoiceBalance({ invoiceId, organisationId, client = db, lock = false }) {
+  if (lock) {
+    const found = await lockInvoice({ invoiceId, organisationId, client });
+    if (!found) return null;
+  }
+
   const result = await client.query(
     `SELECT i.id, i.invoice_number, i.status, i.total, i.finalized_at,
             COALESCE(SUM(p.amount), 0)::numeric(14,2) AS paid_total
@@ -24,8 +40,7 @@ async function loadInvoiceBalance({ invoiceId, organisationId, client = db, lock
      WHERE i.id = $1
        AND i.organisation_id = $2
        AND i.deleted_at IS NULL
-     GROUP BY i.id
-     ${lock ? "FOR UPDATE OF i" : ""}`,
+     GROUP BY i.id`,
     [invoiceId, organisationValue(organisationId)],
   );
 
@@ -179,7 +194,7 @@ async function recordInvoicePayment({
       );
     }
 
-    const summary = await loadInvoiceBalance({ invoiceId, organisationId, client, lock: false });
+    const summary = await loadInvoiceBalance({ invoiceId, organisationId, client });
     await client.query("COMMIT");
     return { duplicate: false, payment, summary };
   } catch (error) {
