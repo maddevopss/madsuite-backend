@@ -82,9 +82,13 @@ async function getBillingDashboard({ organisationId, userId, role }) {
   const topClients = buildTimeEntryQuery(["te.is_billed = FALSE", "te.invoice_id IS NULL"]);
   const topProjects = buildTimeEntryQuery(["te.is_billed = FALSE", "te.invoice_id IS NULL"]);
   const recentInvoices = buildInvoiceQuery([]);
-  const overdueInvoices = buildInvoiceQuery(["i.status != 'paid'", "i.due_date IS NOT NULL", `i.due_date < ${localToday}`]);
+  const overdueInvoices = buildInvoiceQuery([
+    "i.status = 'sent'",
+    "i.due_date IS NOT NULL",
+    `i.due_date < ${localToday}`,
+  ]);
   const dueSoonInvoices = buildInvoiceQuery([
-    "i.status != 'paid'",
+    "i.status = 'sent'",
     "i.due_date IS NOT NULL",
     `i.due_date >= ${localToday}`,
     `i.due_date <= (${localToday} + INTERVAL '7 days')`,
@@ -112,6 +116,7 @@ async function getBillingDashboard({ organisationId, userId, role }) {
     topProjectsResult,
     recentInvoicesResult,
     overdueInvoicesResult,
+    overdueSummaryResult,
     dueSoonInvoicesResult,
     invoiceStatusResult,
     outstandingResult,
@@ -227,6 +232,17 @@ async function getBillingDashboard({ organisationId, userId, role }) {
     db.query(
       `
       SELECT
+        COUNT(*) AS overdue_count,
+        COALESCE(SUM(i.total), 0) AS overdue_total
+      FROM invoices i
+      JOIN clients c ON c.id = i.client_id
+      ${makeWhere(overdueInvoices.conditions)}
+      `,
+      overdueInvoices.params,
+    ),
+    db.query(
+      `
+      SELECT
         i.id,
         i.invoice_number,
         i.status,
@@ -325,8 +341,8 @@ async function getBillingDashboard({ organisationId, userId, role }) {
     outstanding_total: Number(outstandingResult.rows[0]?.outstanding_total || 0),
     unbilled_hours: Number(unbilledResult.rows[0]?.unbilled_hours || 0),
     billed_hours: Number(billedResult.rows[0]?.billed_hours || 0),
-    overdue_count: overdueInvoicesResult.rows.length,
-    overdue_total: overdueInvoicesResult.rows.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0),
+    overdue_count: Number(overdueSummaryResult.rows[0]?.overdue_count || 0),
+    overdue_total: Number(overdueSummaryResult.rows[0]?.overdue_total || 0),
     due_soon_count: dueSoonInvoicesResult.rows.length,
     due_soon_total: dueSoonInvoicesResult.rows.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0),
     invoice_status: invoiceStatus,
