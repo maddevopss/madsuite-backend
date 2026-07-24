@@ -92,6 +92,11 @@ async function getBillingDashboard({ organisationId, userId, role }) {
   const monthInvoices = buildInvoiceQuery([]);
   monthInvoices.conditions.push(`i.created_at >= ${monthStart}`);
   monthInvoices.conditions.push(`i.created_at < ${nextMonthStart}`);
+  const outstandingInvoices = buildInvoiceQuery(["i.status = 'sent'"]);
+  const financialTopClients = buildInvoiceQuery(["i.status IN ('sent', 'paid')"]);
+  const monthlyRevenue = buildInvoiceQuery(["i.status = 'paid'"]);
+  monthlyRevenue.conditions.push(`i.issue_date >= (${monthStart} - INTERVAL '5 months')`);
+  monthlyRevenue.conditions.push(`i.issue_date < ${nextMonthStart}`);
 
   const amountExpression = `
     (EXTRACT(EPOCH FROM (te.end_time - te.start_time)) / 3600)
@@ -109,6 +114,9 @@ async function getBillingDashboard({ organisationId, userId, role }) {
     overdueInvoicesResult,
     dueSoonInvoicesResult,
     invoiceStatusResult,
+    outstandingResult,
+    financialTopClientsResult,
+    monthlyRevenueResult,
   ] = await Promise.all([
     db.query(
       `
@@ -247,6 +255,57 @@ async function getBillingDashboard({ organisationId, userId, role }) {
       `,
       recentInvoices.params,
     ),
+    db.query(
+      `
+      SELECT COALESCE(SUM(i.total), 0) AS outstanding_total
+      FROM invoices i
+      JOIN clients c ON c.id = i.client_id
+      ${makeWhere(outstandingInvoices.conditions)}
+      `,
+      outstandingInvoices.params,
+    ),
+    db.query(
+      `
+      SELECT
+        c.id AS client_id,
+        c.nom AS client_nom,
+        COALESCE(SUM(i.total), 0) AS total_invoiced,
+        COALESCE(SUM(CASE WHEN i.status = 'paid' THEN i.total ELSE 0 END), 0) AS total_paid
+      FROM invoices i
+      JOIN clients c ON c.id = i.client_id
+      ${makeWhere(financialTopClients.conditions)}
+      GROUP BY c.id, c.nom
+      ORDER BY total_invoiced DESC, c.id ASC
+      LIMIT 5
+      `,
+      financialTopClients.params,
+    ),
+    db.query(
+      `
+      WITH months AS (
+        SELECT generate_series(
+          date_trunc('month', NOW() AT TIME ZONE '${timezone}') - INTERVAL '5 months',
+          date_trunc('month', NOW() AT TIME ZONE '${timezone}'),
+          INTERVAL '1 month'
+        )::date AS month
+      ), paid AS (
+        SELECT
+          date_trunc('month', i.issue_date)::date AS month,
+          COALESCE(SUM(i.total), 0) AS total_paid
+        FROM invoices i
+        JOIN clients c ON c.id = i.client_id
+        ${makeWhere(monthlyRevenue.conditions)}
+        GROUP BY date_trunc('month', i.issue_date)::date
+      )
+      SELECT
+        TO_CHAR(months.month, 'YYYY-MM') AS month,
+        COALESCE(paid.total_paid, 0) AS total_paid
+      FROM months
+      LEFT JOIN paid ON paid.month = months.month
+      ORDER BY months.month ASC
+      `,
+      monthlyRevenue.params,
+    ),
   ]);
 
   const invoiceStatus = Object.fromEntries(
@@ -263,6 +322,7 @@ async function getBillingDashboard({ organisationId, userId, role }) {
     total_to_invoice: Number(unbilledResult.rows[0]?.total_to_invoice || 0),
     total_invoiced_this_month: Number(monthInvoicesResult.rows[0]?.total_invoiced_this_month || 0),
     total_paid_this_month: Number(monthInvoicesResult.rows[0]?.total_paid_this_month || 0),
+    outstanding_total: Number(outstandingResult.rows[0]?.outstanding_total || 0),
     unbilled_hours: Number(unbilledResult.rows[0]?.unbilled_hours || 0),
     billed_hours: Number(billedResult.rows[0]?.billed_hours || 0),
     overdue_count: overdueInvoicesResult.rows.length,
@@ -270,6 +330,18 @@ async function getBillingDashboard({ organisationId, userId, role }) {
     due_soon_count: dueSoonInvoicesResult.rows.length,
     due_soon_total: dueSoonInvoicesResult.rows.reduce((sum, invoice) => sum + Number(invoice.total || 0), 0),
     invoice_status: invoiceStatus,
+    top_clients: financialTopClientsResult.rows.map((row) => ({
+      client_id: row.client_id,
+      client_nom: row.client_nom,
+      total_invoiced: Number(row.total_invoiced || 0),
+      total_paid: Number(row.total_paid || 0),
+    })),
+    monthly_revenue: monthlyRevenueResult.rows.map((row) => ({
+      month: row.month,
+      total_paid: Number(row.total_paid || 0),
+    })),
+    currency: "CAD",
+    calculated_at: new Date().toISOString(),
     top_clients_to_bill: mapBillableGroupRows(topClientsResult.rows, "client_id", "client_nom"),
     top_projects_to_bill: mapBillableGroupRows(topProjectsResult.rows, "projet_id", "projet_nom"),
     recent_invoices: recentInvoicesResult.rows,
