@@ -1,13 +1,14 @@
-const { randomUUID } = require("crypto");
+const { randomBytes, randomUUID } = require("crypto");
 const db = require("../../db");
 const portalService = require("../services/portal.service");
+const { hashPublicToken } = require("../services/invoice/invoice-public-link.service");
 const {
   createTestOrganisation,
   createTestClient,
 } = require("./helpers/testData");
 
 async function createPublicInvoice({ organisationId, clientId, invoiceNumber, publicToken }) {
-  const result = await db.query(
+  const invoiceResult = await db.query(
     `
       INSERT INTO invoices (
         organisation_id,
@@ -19,15 +20,35 @@ async function createPublicInvoice({ organisationId, clientId, invoiceNumber, pu
         subtotal,
         tax_total,
         total,
-        public_token
+        finalized_at,
+        snapshot
       )
-      VALUES ($1, $2, $3, 'sent', CURRENT_DATE, CURRENT_DATE + INTERVAL '15 days', 100, 0, 100, $4)
+      VALUES (
+        $1, $2, $3, 'finalized', CURRENT_DATE,
+        CURRENT_DATE + INTERVAL '15 days', 100, 0, 100,
+        NOW(),
+        '{"subtotal":100,"tax_total":0,"total":100,"items":[]}'::jsonb
+      )
       RETURNING *
     `,
-    [organisationId, clientId, invoiceNumber, publicToken],
+    [organisationId, clientId, invoiceNumber],
   );
 
-  return result.rows[0];
+  const invoice = invoiceResult.rows[0];
+  await db.query(
+    `
+      INSERT INTO invoice_public_links (
+        organisation_id,
+        invoice_id,
+        token_hash,
+        expires_at
+      )
+      VALUES ($1, $2, $3, NOW() + INTERVAL '30 days')
+    `,
+    [organisationId, invoice.id, hashPublicToken(publicToken)],
+  );
+
+  return invoice;
 }
 
 function buildInvalidTokenVariants({ validToken, invoiceId, organisationId }) {
@@ -51,7 +72,7 @@ function buildInvalidTokenVariants({ validToken, invoiceId, organisationId }) {
 }
 
 describe("P0 — portail public non énumérable entre organisations", () => {
-  test("seul le jeton public exact révèle son propre document", async () => {
+  test("seul le jeton public exact révèle son propre document sans identifiants internes", async () => {
     const suffix = `${Date.now()}-${Math.random()}`;
     const organisationA = await createTestOrganisation({ nom: `Org portail A ${suffix}` });
     const organisationB = await createTestOrganisation({ nom: `Org portail B ${suffix}` });
@@ -64,8 +85,8 @@ describe("P0 — portail public non énumérable entre organisations", () => {
       organisation_id: organisationB.id,
     });
 
-    const tokenA = randomUUID();
-    const tokenB = randomUUID();
+    const tokenA = randomBytes(32).toString("base64url");
+    const tokenB = randomBytes(32).toString("base64url");
     const invoiceA = await createPublicInvoice({
       organisationId: organisationA.id,
       clientId: clientA.id,
@@ -84,28 +105,33 @@ describe("P0 — portail public non énumérable entre organisations", () => {
 
     expect(documentA).toMatchObject({
       type: "invoice",
-      organisationId: organisationA.id,
       organisationName: organisationA.nom,
     });
     expect(documentA.document).toMatchObject({
-      id: invoiceA.id,
       invoice_number: invoiceA.invoice_number,
-      organisation_id: organisationA.id,
+      client: { name: clientA.nom },
     });
 
     expect(documentB).toMatchObject({
       type: "invoice",
-      organisationId: organisationB.id,
       organisationName: organisationB.nom,
     });
     expect(documentB.document).toMatchObject({
-      id: invoiceB.id,
       invoice_number: invoiceB.invoice_number,
-      organisation_id: organisationB.id,
+      client: { name: clientB.nom },
     });
 
     expect(documentA.document.invoice_number).not.toBe(invoiceB.invoice_number);
     expect(documentB.document.invoice_number).not.toBe(invoiceA.invoice_number);
+
+    const serializedA = JSON.stringify(documentA);
+    const serializedB = JSON.stringify(documentB);
+    for (const serialized of [serializedA, serializedB]) {
+      expect(serialized).not.toContain("organisation_id");
+      expect(serialized).not.toContain("client_id");
+      expect(serialized).not.toContain("time_entry_id");
+      expect(serialized).not.toContain("token_hash");
+    }
 
     const invalidTokens = [
       ...buildInvalidTokenVariants({
