@@ -9,17 +9,14 @@ const estimateService = require("../services/estimate/estimate.service");
 const { recordBusinessAudit } = require("../services/auditLog.service");
 
 const router = express.Router();
-
 router.use(requireOrganisation);
 
 const dateStringSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date invalide");
-
 const estimateItemSchema = z.object({
   description: z.string().min(1).max(1000),
   quantity: z.coerce.number().min(0),
   unit_rate: z.coerce.number().min(0),
 });
-
 const createEstimateSchema = z.object({
   client_id: z.coerce.number().int().positive(),
   items: z.array(estimateItemSchema).min(1),
@@ -28,22 +25,20 @@ const createEstimateSchema = z.object({
   issue_date: dateStringSchema.optional(),
   valid_until: dateStringSchema.optional(),
 });
-
 const updateEstimateSchema = z.object({
   status: z.enum(["draft", "sent", "accepted", "rejected", "invoiced"]).optional(),
   issue_date: dateStringSchema.optional().nullable(),
   valid_until: dateStringSchema.optional().nullable(),
   notes: z.string().max(5000).optional().nullable(),
 });
-
 const listEstimatesQuerySchema = z.object({
   status: z.enum(["draft", "sent", "accepted", "rejected", "invoiced"]).optional(),
   client_id: z.coerce.number().int().positive().optional(),
 });
-
-const idParamSchema = z.object({
-  id: z.coerce.number().int().positive(),
+const convertEstimateSchema = z.object({
+  idempotency_key: z.string().trim().min(8).max(200),
 });
+const idParamSchema = z.object({ id: z.coerce.number().int().positive() });
 
 function parseEstimateId(req, res) {
   const parsed = idParamSchema.safeParse(req.params);
@@ -65,20 +60,17 @@ function assertEstimateMutationRole(req, res) {
 router.get("/", async (req, res, next) => {
   try {
     const parsed = listEstimatesQuerySchema.safeParse(req.query);
-
     if (!parsed.success) {
       return res.status(400).json(ApiResponse.error("VALIDATION_ERROR", {
         message: "Parametres invalides",
         errors: parsed.error.flatten(),
       }));
     }
-
     const estimates = await estimateService.listEstimates({
       organisationId: getOrganisationId(req),
       status: parsed.data.status,
       clientId: parsed.data.client_id,
     });
-
     return res.status(200).json(ApiResponse.success("ESTIMATE_LISTED", estimates));
   } catch (err) {
     return handleServiceError(err, res, next);
@@ -88,16 +80,13 @@ router.get("/", async (req, res, next) => {
 router.post("/", async (req, res, next) => {
   try {
     if (!assertEstimateMutationRole(req, res)) return;
-
     const parsed = createEstimateSchema.safeParse(req.body);
-
     if (!parsed.success) {
       return res.status(400).json(ApiResponse.error("VALIDATION_ERROR", {
         message: "Donnees invalides",
         errors: parsed.error.flatten(),
       }));
     }
-
     const estimate = await estimateService.createEstimate({
       clientId: parsed.data.client_id,
       items: parsed.data.items,
@@ -105,22 +94,17 @@ router.post("/", async (req, res, next) => {
       validUntil: parsed.data.valid_until,
       notes: parsed.data.notes,
       taxRate: parsed.data.tax_rate,
-      organisationId: getOrganisationId(req)
+      organisationId: getOrganisationId(req),
     });
-
     await recordBusinessAudit({
       organisationId: getOrganisationId(req),
       actorUserId: req.user?.id ?? null,
       action: "estimate.created",
       entityType: "estimate",
       entityId: estimate.id,
-      details: {
-        clientId: parsed.data.client_id,
-        itemCount: parsed.data.items.length,
-      },
+      details: { clientId: parsed.data.client_id, itemCount: parsed.data.items.length },
       req,
     });
-
     return res.status(201).json(ApiResponse.success("ESTIMATE_CREATED", estimate));
   } catch (err) {
     return handleServiceError(err, res, next);
@@ -131,16 +115,10 @@ router.get("/:id", async (req, res, next) => {
   try {
     const estimateId = parseEstimateId(req, res);
     if (!estimateId) return;
-
-    const estimate = await estimateService.getEstimateById(
-      estimateId,
-      getOrganisationId(req)
-    );
-
+    const estimate = await estimateService.getEstimateById(estimateId, getOrganisationId(req));
     if (!estimate) {
       return res.status(404).json(ApiResponse.error("NOT_FOUND", { message: "Soumission introuvable." }));
     }
-
     return res.status(200).json(ApiResponse.success("ESTIMATE_RETRIEVED", estimate));
   } catch (err) {
     return handleServiceError(err, res, next);
@@ -150,10 +128,8 @@ router.get("/:id", async (req, res, next) => {
 router.patch("/:id", async (req, res, next) => {
   try {
     if (!assertEstimateMutationRole(req, res)) return;
-
     const estimateId = parseEstimateId(req, res);
     if (!estimateId) return;
-
     const parsed = updateEstimateSchema.safeParse(req.body);
     if (!parsed.success) {
       return res.status(400).json(ApiResponse.error("VALIDATION_ERROR", {
@@ -161,29 +137,19 @@ router.patch("/:id", async (req, res, next) => {
         errors: parsed.error.flatten(),
       }));
     }
-
-    const estimate = await estimateService.updateEstimate(
-      estimateId,
-      getOrganisationId(req),
-      parsed.data
-    );
-
+    const estimate = await estimateService.updateEstimate(estimateId, getOrganisationId(req), parsed.data);
     if (!estimate) {
       return res.status(404).json(ApiResponse.error("NOT_FOUND", { message: "Soumission introuvable." }));
     }
-
     await recordBusinessAudit({
       organisationId: getOrganisationId(req),
       actorUserId: req.user?.id ?? null,
       action: "estimate.updated",
       entityType: "estimate",
       entityId: estimate.id,
-      details: {
-        status: parsed.data.status ?? null,
-      },
+      details: { status: parsed.data.status ?? null },
       req,
     });
-
     return res.status(200).json(ApiResponse.success("ESTIMATE_UPDATED", estimate));
   } catch (err) {
     return handleServiceError(err, res, next);
@@ -193,19 +159,15 @@ router.patch("/:id", async (req, res, next) => {
 router.delete("/:id", async (req, res, next) => {
   try {
     if (!assertEstimateMutationRole(req, res)) return;
-
     const estimateId = parseEstimateId(req, res);
     if (!estimateId) return;
-
     const deleted = await estimateService.deleteEstimate({
       estimateId,
       organisationId: getOrganisationId(req),
     });
-
     if (!deleted) {
       return res.status(404).json(ApiResponse.error("NOT_FOUND", { message: "Soumission introuvable." }));
     }
-
     await recordBusinessAudit({
       organisationId: getOrganisationId(req),
       actorUserId: req.user?.id ?? null,
@@ -215,10 +177,7 @@ router.delete("/:id", async (req, res, next) => {
       details: {},
       req,
     });
-
-    return res.status(200).json(ApiResponse.success("ESTIMATE_DELETED", {
-      deletedId: deleted.id,
-    }));
+    return res.status(200).json(ApiResponse.success("ESTIMATE_DELETED", { deletedId: deleted.id }));
   } catch (err) {
     return handleServiceError(err, res, next);
   }
@@ -227,30 +186,43 @@ router.delete("/:id", async (req, res, next) => {
 router.post("/:id/convert", async (req, res, next) => {
   try {
     if (!assertEstimateMutationRole(req, res)) return;
-
     const estimateId = parseEstimateId(req, res);
     if (!estimateId) return;
 
-    const invoice = await estimateService.convertToInvoice({
+    const parsed = convertEstimateSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json(ApiResponse.error("VALIDATION_ERROR", {
+        message: "Une clé d'idempotence valide est requise.",
+        errors: parsed.error.flatten(),
+      }));
+    }
+
+    const result = await estimateService.convertToInvoice({
       estimateId,
       organisationId: getOrganisationId(req),
       billedBy: req.user?.id ?? null,
+      idempotencyKey: parsed.data.idempotency_key,
     });
 
-    await recordBusinessAudit({
-      organisationId: getOrganisationId(req),
-      actorUserId: req.user?.id ?? null,
-      action: "estimate.converted",
-      entityType: "estimate",
-      entityId: estimateId,
-      details: {
-        invoiceId: invoice.id,
-        invoiceNumber: invoice.invoice_number,
-      },
-      req,
-    });
+    if (!result.replayed) {
+      await recordBusinessAudit({
+        organisationId: getOrganisationId(req),
+        actorUserId: req.user?.id ?? null,
+        action: "estimate.converted",
+        entityType: "estimate",
+        entityId: estimateId,
+        details: {
+          invoiceId: result.invoice.id,
+          invoiceNumber: result.invoice.invoice_number,
+          idempotencyKey: parsed.data.idempotency_key,
+        },
+        req,
+      });
+    }
 
-    return res.status(201).json(ApiResponse.success("ESTIMATE_CONVERTED", invoice));
+    return res.status(result.replayed ? 200 : 201).json(
+      ApiResponse.success(result.replayed ? "ESTIMATE_CONVERSION_REPLAYED" : "ESTIMATE_CONVERTED", result.invoice),
+    );
   } catch (err) {
     return handleServiceError(err, res, next);
   }
@@ -259,28 +231,22 @@ router.post("/:id/convert", async (req, res, next) => {
 router.post("/:id/convert-project", async (req, res, next) => {
   try {
     if (!assertEstimateMutationRole(req, res)) return;
-
     const estimateId = parseEstimateId(req, res);
     if (!estimateId) return;
-
     const project = await estimateService.convertToProject({
       estimateId,
       organisationId: getOrganisationId(req),
       userId: req.user?.id ?? null,
     });
-
     await recordBusinessAudit({
       organisationId: getOrganisationId(req),
       actorUserId: req.user?.id ?? null,
       action: "estimate.converted_to_project",
       entityType: "estimate",
       entityId: estimateId,
-      details: {
-        projectId: project.id,
-      },
+      details: { projectId: project.id },
       req,
     });
-
     return res.status(201).json(ApiResponse.success("ESTIMATE_CONVERTED_TO_PROJECT", project));
   } catch (err) {
     return handleServiceError(err, res, next);
@@ -291,18 +257,14 @@ router.get("/:id/pdf", async (req, res, next) => {
   try {
     const estimateId = parseEstimateId(req, res);
     if (!estimateId) return;
-
     const pdfData = await estimateService.generateEstimatePdf({
       estimateId,
       organisationId: getOrganisationId(req),
     });
-
     if (!pdfData) {
       return res.status(404).json(ApiResponse.error("NOT_FOUND", { message: "Soumission introuvable." }));
     }
-
     const filename = `soumission_${pdfData.estimate.estimate_number}.pdf`;
-
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     return res.status(200).send(pdfData.buffer);
