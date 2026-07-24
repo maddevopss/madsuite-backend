@@ -32,6 +32,10 @@ const updateLeadSchema = createLeadSchema.partial().extend({
   message: "Aucune mise à jour de prospect fournie.",
 });
 
+const convertLeadSchema = z.object({
+  idempotency_key: z.string().trim().min(1).max(128),
+}).strict();
+
 function parseOrThrow(schema, value) {
   const result = schema.safeParse(value);
   if (result.success) return result.data;
@@ -44,6 +48,7 @@ function parseOrThrow(schema, value) {
 }
 
 module.exports = {
+  convertLeadSchema,
   createLeadSchema,
   leadIdSchema,
   leadStatuses,
