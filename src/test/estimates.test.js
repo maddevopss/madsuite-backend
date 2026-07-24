@@ -128,7 +128,9 @@ describe("Estimates", () => {
     expect(getRes.statusCode).toBe(404);
   });
 
-  test("POST /api/estimates/:id/convert convertit une soumission en facture", async () => {
+  test("POST /api/estimates/:id/convert convertit et rejoue sans doublon", async () => {
+    const idempotencyKey = `estimate-convert-test-${Date.now()}`;
+
     // 1. Create an estimate
     const createRes = await request(app)
       .post("/api/estimates")
@@ -142,7 +144,8 @@ describe("Estimates", () => {
     // 2. Try to convert (should fail because not accepted)
     const convertFailRes = await request(app)
       .post(`/api/estimates/${estimateId}/convert`)
-      .set("Authorization", `Bearer ${adminToken}`);
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ idempotency_key: idempotencyKey });
     expect(convertFailRes.statusCode).toBe(400);
 
     // 3. Accept it
@@ -154,15 +157,31 @@ describe("Estimates", () => {
     // 4. Convert it
     const convertRes = await request(app)
       .post(`/api/estimates/${estimateId}/convert`)
-      .set("Authorization", `Bearer ${adminToken}`);
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ idempotency_key: idempotencyKey });
     expect(convertRes.statusCode).toBe(201);
     expect(convertRes.body.estimate_id).toBe(estimateId);
     expect(convertRes.body.status).toBe("draft");
 
-    // 5. Check estimate is invoiced
+    // 5. Replay the exact command
+    const replayRes = await request(app)
+      .post(`/api/estimates/${estimateId}/convert`)
+      .set("Authorization", `Bearer ${adminToken}`)
+      .send({ idempotency_key: idempotencyKey });
+    expect(replayRes.statusCode).toBe(200);
+    expect(replayRes.body.id).toBe(convertRes.body.id);
+    expect(replayRes.body.invoice_number).toBe(convertRes.body.invoice_number);
+
+    // 6. Check estimate is invoiced and only one invoice exists
     const getRes = await request(app)
       .get(`/api/estimates/${estimateId}`)
       .set("Authorization", `Bearer ${adminToken}`);
     expect(getRes.body.status).toBe("invoiced");
+
+    const invoiceCount = await db.query(
+      "SELECT COUNT(*)::int AS count FROM invoices WHERE organisation_id = $1 AND estimate_id = $2",
+      [org.id, estimateId],
+    );
+    expect(invoiceCount.rows[0].count).toBe(1);
   });
 });
