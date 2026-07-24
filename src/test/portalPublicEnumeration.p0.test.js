@@ -24,7 +24,7 @@ async function createPublicInvoice({ organisationId, clientId, invoiceNumber, pu
         snapshot
       )
       VALUES (
-        $1, $2, $3, 'finalized', CURRENT_DATE,
+        $1, $2, $3, 'sent', CURRENT_DATE,
         CURRENT_DATE + INTERVAL '15 days', 100, 0, 100,
         NOW(),
         '{"subtotal":100,"tax_total":0,"total":100,"items":[]}'::jsonb
