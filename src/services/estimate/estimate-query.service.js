@@ -12,14 +12,13 @@ async function listEstimates({ organisationId, status, clientId }) {
     WHERE e.organisation_id = $1 AND e.deleted_at IS NULL
   `;
   const values = [organisationValue(organisationId)];
-  let counter = 2;
 
   if (status) {
-    query += ` AND e.status = $${counter++}`;
+    query += ` AND e.status = $${values.length + 1}`;
     values.push(status);
   }
   if (clientId) {
-    query += ` AND e.client_id = $${counter++}`;
+    query += ` AND e.client_id = $${values.length + 1}`;
     values.push(clientId);
   }
 
