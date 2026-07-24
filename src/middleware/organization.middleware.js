@@ -8,7 +8,6 @@ function releaseClientOnce({ req, res, client }) {
   const originalEnd = res.end.bind(res);
 
   function logCleanupFailure(origin, err) {
-    // eslint-disable-next-line no-console
     console.error("RLS context cleanup failed", {
       origin,
       path: req.originalUrl,

@@ -97,22 +97,21 @@ async function updateEstimate(estimateId, organisationId, data) {
 
   const updates = [];
   const values = [estimateId, organisationValue(organisationId)];
-  let counter = 3;
 
   if (status !== undefined) {
-    updates.push(`status = $${counter++}`);
+    updates.push(`status = $${values.length + 1}`);
     values.push(status);
   }
   if (issue_date !== undefined) {
-    updates.push(`issue_date = $${counter++}`);
+    updates.push(`issue_date = $${values.length + 1}`);
     values.push(issue_date);
   }
   if (valid_until !== undefined) {
-    updates.push(`valid_until = $${counter++}`);
+    updates.push(`valid_until = $${values.length + 1}`);
     values.push(valid_until);
   }
   if (notes !== undefined) {
-    updates.push(`notes = $${counter++}`);
+    updates.push(`notes = $${values.length + 1}`);
     values.push(notes);
   }
 

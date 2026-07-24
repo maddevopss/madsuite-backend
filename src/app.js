@@ -55,13 +55,14 @@ const systemRoutes = require("./routes/system.routes");
 const organisationsRoutes = require("./routes/organisations.routes");
 const masterAdminRoutes = require("./routes/master-admin.routes");
 const { requireModule } = require("./middleware/requireModule");
-let compression = null;
 
-try {
-  compression = require("compression");
-} catch {
-  compression = () => (req, res, next) => next();
-}
+const compression = (() => {
+  try {
+    return require("compression");
+  } catch {
+    return () => (req, res, next) => next();
+  }
+})();
 
 const app = express();
 

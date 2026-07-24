@@ -64,7 +64,6 @@ async function updateInvoice({ invoiceId, organisationId, data, req, txClient = 
   if (data.version !== undefined) {
     conditions.push(`version = $${paramIdx}`);
     params.push(data.version);
-    paramIdx++;
   }
 
   const isExternalTx = !!txClient;
