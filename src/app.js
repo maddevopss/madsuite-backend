@@ -56,6 +56,7 @@ const organisationsRoutes = require("./routes/organisations.routes");
 const masterAdminRoutes = require("./routes/master-admin.routes");
 const customerGrowthLeadsRoutes = require("./routes/customerGrowth/leads.routes");
 const customerGrowthOpportunitiesRoutes = require("./routes/customerGrowth/opportunities.routes");
+const customerGrowthActivitiesRoutes = require("./routes/customerGrowth/activities.routes");
 const { requireModule } = require("./middleware/requireModule");
 
 const compression = (() => {
@@ -172,6 +173,7 @@ app.use("/api/timesheet", auth, timesheetRoutes);
 app.use("/api/clients", auth, clientsRoutes);
 app.use("/api/customer-growth/leads", auth, customerGrowthLeadsRoutes);
 app.use("/api/customer-growth/opportunities", auth, customerGrowthOpportunitiesRoutes);
+app.use("/api/customer-growth/activities", auth, customerGrowthActivitiesRoutes);
 app.use("/api/dashboard", auth, dashboardRoutes);
 app.use("/api/projets", auth, projetsRoutes);
 app.use("/api/users", auth, usersRoutes);
