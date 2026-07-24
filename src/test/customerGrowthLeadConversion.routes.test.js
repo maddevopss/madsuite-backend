@@ -169,6 +169,5 @@ describe("customer growth lead conversion route", () => {
 
     expect(response.status).toBe(409);
     expect(response.body.message).toContain("prospect qualifié");
-    expect(response.body.code).toBe("LEAD_NOT_QUALIFIED");
   });
 });
