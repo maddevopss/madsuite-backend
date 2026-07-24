@@ -4,7 +4,13 @@ const MAX_RECEIPT_SIZE = 5 * 1024 * 1024;
 const ALLOWED_MIME_TYPES = new Set(["application/pdf", "image/jpeg", "image/png"]);
 
 function sanitizeFilename(value) {
-  const cleaned = String(value || "preuve-achat")
+  let decoded = String(value || "preuve-achat");
+  try {
+    decoded = decodeURIComponent(decoded);
+  } catch {
+    // Conserver la valeur d'origine si l'en-tête n'était pas encodé.
+  }
+  const cleaned = decoded
     .replace(/[\r\n]/g, "")
     .replace(/[\\/]/g, "-")
     .replace(/[^\p{L}\p{N}._ -]/gu, "_")
@@ -13,6 +19,11 @@ function sanitizeFilename(value) {
 }
 
 function validateReceipt({ content, mimeType, filename }) {
+  if (!ALLOWED_MIME_TYPES.has(mimeType)) {
+    const error = new Error("Format de preuve d'achat non permis.");
+    error.statusCode = 415;
+    throw error;
+  }
   if (!Buffer.isBuffer(content) || content.length === 0) {
     const error = new Error("La preuve d'achat est vide.");
     error.statusCode = 400;
@@ -21,11 +32,6 @@ function validateReceipt({ content, mimeType, filename }) {
   if (content.length > MAX_RECEIPT_SIZE) {
     const error = new Error("La preuve d'achat dépasse la limite de 5 Mo.");
     error.statusCode = 413;
-    throw error;
-  }
-  if (!ALLOWED_MIME_TYPES.has(mimeType)) {
-    const error = new Error("Format de preuve d'achat non permis.");
-    error.statusCode = 415;
     throw error;
   }
   return { filename: sanitizeFilename(filename), mimeType, sizeBytes: content.length };
