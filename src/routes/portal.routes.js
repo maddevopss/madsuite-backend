@@ -119,7 +119,7 @@ router.post("/:token/checkout", async (req, res) => {
       return res.status(400).json({ message: "Cette facture est déjà payée." });
     }
 
-    if (!["finalized", "sent"].includes(context.invoice.status)) {
+    if (context.invoice.status !== "finalized") {
       return res.status(400).json({ message: "La facture doit être finalisée avant de pouvoir être payée." });
     }
 
