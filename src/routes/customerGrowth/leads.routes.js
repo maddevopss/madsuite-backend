@@ -74,13 +74,13 @@ router.post("/:id/convert", requireRole("admin"), async (req, res, next) => {
       return res.status(404).json(ApiResponse.error("NOT_FOUND", { message: "Prospect introuvable." }));
     }
 
-    return res.status(conversion.idempotent ? 200 : 201).json(
-      ApiResponse.success("LEAD_CONVERTED", {
-        lead: conversion.lead,
-        client: conversion.client,
-        idempotent: conversion.idempotent,
-      }),
-    );
+    const response = ApiResponse.success("LEAD_CONVERTED", {
+      lead: conversion.lead,
+      client: conversion.client,
+      idempotent: conversion.idempotent,
+    });
+
+    return res.status(conversion.idempotent ? 200 : 201).json(response.toJSON());
   } catch (error) {
     return handleServiceError(error, res, next);
   }
