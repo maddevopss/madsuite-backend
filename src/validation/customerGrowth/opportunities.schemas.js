@@ -39,6 +39,14 @@ const updateOpportunitySchema = opportunityFieldsSchema.partial().extend({
   message: "Aucune mise à jour d'opportunité fournie.",
 });
 
+const convertOpportunityToEstimateSchema = z.object({
+  idempotency_key: z.string().trim().min(1).max(128),
+  issue_date: nullableDate,
+  valid_until: nullableDate,
+  tax_rate: z.coerce.number().min(0).max(100).default(0),
+  notes: nullableText(5000),
+}).strict();
+
 function parseOrThrow(schema, value) {
   const result = schema.safeParse(value);
   if (result.success) return result.data;
@@ -51,6 +59,7 @@ function parseOrThrow(schema, value) {
 }
 
 module.exports = {
+  convertOpportunityToEstimateSchema,
   createOpportunitySchema,
   listOpportunitiesQuerySchema,
   opportunityIdSchema,

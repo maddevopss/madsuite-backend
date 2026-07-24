@@ -5,7 +5,9 @@ const { getOrganisationId } = require("../../utils/organisationScope");
 const { handleServiceError } = require("../../utils/routeError");
 const ApiResponse = require("../../utils/apiResponse");
 const opportunitiesService = require("../../services/customerGrowth/opportunities.service");
+const { convertOpportunityToEstimate } = require("../../services/customerGrowth/opportunityEstimateConversion.service");
 const {
+  convertOpportunityToEstimateSchema,
   createOpportunitySchema,
   listOpportunitiesQuerySchema,
   opportunityIdSchema,
@@ -26,6 +28,31 @@ router.get("/", async (req, res, next) => {
       offset: query.offset,
     });
     return res.json(ApiResponse.success("OPPORTUNITIES_LISTED", { opportunities }));
+  } catch (error) {
+    return handleServiceError(error, res, next);
+  }
+});
+
+router.post("/:id/estimate", requireRole("admin"), async (req, res, next) => {
+  try {
+    const opportunityId = parseOrThrow(opportunityIdSchema, req.params.id);
+    const data = parseOrThrow(convertOpportunityToEstimateSchema, req.body);
+    const conversion = await convertOpportunityToEstimate({
+      opportunityId,
+      organisationId: getOrganisationId(req),
+      idempotencyKey: data.idempotency_key,
+      issueDate: data.issue_date,
+      validUntil: data.valid_until,
+      taxRate: data.tax_rate,
+      notes: data.notes,
+    });
+
+    if (!conversion) {
+      return res.status(404).json(ApiResponse.error("NOT_FOUND", { message: "Opportunité introuvable." }));
+    }
+
+    const response = ApiResponse.success("OPPORTUNITY_ESTIMATE_CREATED", conversion);
+    return res.status(conversion.idempotent ? 200 : 201).json(response.toJSON());
   } catch (error) {
     return handleServiceError(error, res, next);
   }
