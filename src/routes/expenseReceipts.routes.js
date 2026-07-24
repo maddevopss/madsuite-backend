@@ -1,5 +1,6 @@
 const express = require("express");
 const ApiResponse = require("../utils/apiResponse");
+const { defaultLimiter } = require("../config/rateLimiters");
 const { requireOrganisation } = require("../middleware/organization.middleware");
 const { getOrganisationId } = require("../utils/organisationScope");
 const receiptService = require("../services/expenseReceipts.service");
@@ -10,7 +11,7 @@ const rawReceipt = express.raw({
   limit: "5mb",
 });
 
-router.use(requireOrganisation);
+router.use(defaultLimiter, requireOrganisation);
 
 router.put("/:id/receipt", rawReceipt, async (req, res, next) => {
   try {
