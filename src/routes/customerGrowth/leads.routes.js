@@ -5,7 +5,9 @@ const { getOrganisationId } = require("../../utils/organisationScope");
 const { handleServiceError } = require("../../utils/routeError");
 const ApiResponse = require("../../utils/apiResponse");
 const leadsService = require("../../services/customerGrowth/leads.service");
+const { convertLeadToClient } = require("../../services/customerGrowth/leadConversion.service");
 const {
+  convertLeadSchema,
   createLeadSchema,
   leadIdSchema,
   listLeadsQuerySchema,
@@ -53,6 +55,32 @@ router.post("/", requireRole("admin"), async (req, res, next) => {
       actorUserId: req.user?.id,
     });
     return res.status(201).json(ApiResponse.success("LEAD_CREATED", { lead }));
+  } catch (error) {
+    return handleServiceError(error, res, next);
+  }
+});
+
+router.post("/:id/convert", requireRole("admin"), async (req, res, next) => {
+  try {
+    const leadId = parseOrThrow(leadIdSchema, req.params.id);
+    const data = parseOrThrow(convertLeadSchema, req.body);
+    const conversion = await convertLeadToClient({
+      leadId,
+      organisationId: getOrganisationId(req),
+      idempotencyKey: data.idempotency_key,
+    });
+
+    if (!conversion) {
+      return res.status(404).json(ApiResponse.error("NOT_FOUND", { message: "Prospect introuvable." }));
+    }
+
+    const response = ApiResponse.success("LEAD_CONVERTED", {
+      lead: conversion.lead,
+      client: conversion.client,
+      idempotent: conversion.idempotent,
+    });
+
+    return res.status(conversion.idempotent ? 200 : 201).json(response.toJSON());
   } catch (error) {
     return handleServiceError(error, res, next);
   }
