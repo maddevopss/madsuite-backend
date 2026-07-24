@@ -21,11 +21,19 @@ if (routes && !routes.includes("requireModuleForOrg")) {
   violations.push("portal.routes.js must use requireModuleForOrg for public module checks.");
 }
 
-if (routes && !routes.includes("ensurePortalModule(res, data.organisationId, \"payments\")")) {
+const paymentsModuleChecks = [
+  'ensurePortalModule(res, data.organisationId, "payments")',
+  'ensurePortalModule(res, context.organisationId, "payments")',
+];
+if (routes && !paymentsModuleChecks.some((check) => routes.includes(check))) {
   violations.push("POST /:token/checkout must require the payments module before creating Stripe checkout.");
 }
 
-if (routes && !routes.includes("data.document.status !== \"finalized\"")) {
+const finalizedStatusChecks = [
+  'data.document.status !== "finalized"',
+  'context.invoice.status !== "finalized"',
+];
+if (routes && !finalizedStatusChecks.some((check) => routes.includes(check))) {
   violations.push("POST /:token/checkout must require finalized invoices before payment.");
 }
 
@@ -33,8 +41,10 @@ if (routes && !routes.includes("MODULE_NOT_AVAILABLE")) {
   violations.push("portal module denial must use MODULE_NOT_AVAILABLE.");
 }
 
+// Les soumissions historiques continuent d'utiliser public_token; les factures V1
+// sont résolues par empreinte via le service de liens publics sécurisé.
 if (service && !service.includes("public_token = $1")) {
-  violations.push("portal.service.js must resolve documents by public_token.");
+  violations.push("portal.service.js must resolve estimate documents by public_token.");
 }
 
 if (service && !service.includes("organisation_id")) {

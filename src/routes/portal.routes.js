@@ -1,13 +1,16 @@
 const express = require("express");
+
 const router = express.Router();
+const auth = require("../middleware/auth");
 const portalService = require("../services/portal.service");
-const { generateInvoicePdf } = require("../services/invoice/invoice.service");
-const { requireModuleForOrg } = require("../middleware/requireModule");
+const invoicePublicLinksRoutes = require("./invoicePublicLinks.routes");
+const { generateInvoicePdfBuffer } = require("../services/pdf/invoice-pdf.service");
+const { requireModule, requireModuleForOrg } = require("../middleware/requireModule");
 const db = require("../../db");
 const logger = require("../config/logger");
 
 async function hasOrgModule(organisationId, moduleKey) {
-  return await requireModuleForOrg(moduleKey, organisationId)();
+  return requireModuleForOrg(moduleKey, organisationId)();
 }
 
 async function ensurePortalModule(res, organisationId, moduleKey) {
@@ -23,17 +26,45 @@ async function ensurePortalModule(res, organisationId, moduleKey) {
   return false;
 }
 
+function setPrivatePortalHeaders(res) {
+  res.setHeader("Cache-Control", "private, no-store, max-age=0");
+  res.setHeader("Pragma", "no-cache");
+  res.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive");
+}
+
+function safePdfFilename(invoiceNumber) {
+  const normalized = String(invoiceNumber || "facture")
+    .normalize("NFKD")
+    .replace(/[^A-Za-z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 80);
+  return `${normalized || "facture"}.pdf`;
+}
+
+// Gestion authentifiée des liens publics.
+router.use(
+  "/manage/invoices",
+  auth,
+  requireModule("invoices"),
+  invoicePublicLinksRoutes,
+);
+
+router.use((req, res, next) => {
+  setPrivatePortalHeaders(res);
+  next();
+});
+
 router.get("/:token", async (req, res) => {
   try {
     const data = await portalService.getDocumentByToken(req.params.token);
     if (!data) {
       return res.status(404).json({ message: "Lien expiré ou invalide." });
     }
-    res.json(data);
+    return res.status(200).json(data);
   } catch (error) {
-    // P2-3 fix: Utiliser logger structuré au lieu de console.error
-    logger.error("Erreur GET portal", { error: error.message, token: req.params.token });
-    res.status(500).json({ message: "Erreur serveur" });
+    logger.error("Erreur GET portal", { error: error.message });
+    return res.status(500).json({ message: "Erreur serveur" });
   }
 });
 
@@ -41,84 +72,81 @@ router.post("/:token/action", async (req, res) => {
   try {
     const { action, signature_data } = req.body;
     const clientIp = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
-    const result = await portalService.handleEstimateAction(req.params.token, action, signature_data, clientIp);
-    res.json({ success: true, document: result });
+    const result = await portalService.handleEstimateAction(
+      req.params.token,
+      action,
+      signature_data,
+      clientIp,
+    );
+    return res.json({ success: true, document: result });
   } catch (error) {
-    // P2-3 fix: Utiliser logger structuré au lieu de console.error
-    logger.error("Erreur POST portal action", { error: error.message, token: req.params.token });
-    res.status(error.statusCode || 400).json({ message: error.message });
+    logger.error("Erreur POST portal action", { error: error.message });
+    return res.status(error.statusCode || 400).json({ message: error.message });
   }
 });
 
 router.get("/:token/pdf", async (req, res) => {
   try {
-    const data = await portalService.getDocumentByToken(req.params.token);
-    if (!data) {
+    const context = await portalService.getInvoiceContextByToken(req.params.token);
+    if (!context) {
       return res.status(404).json({ message: "Lien expiré ou invalide." });
     }
 
-    if (data.type === "invoice") {
-      const { buffer, invoice } = await generateInvoicePdf({
-        invoiceId: data.document.id,
-        organisationId: data.organisationId,
-      });
-      res.setHeader("Content-Type", "application/pdf");
-      res.setHeader("Content-Disposition", `inline; filename="${invoice.invoice_number}.pdf"`);
-      return res.send(buffer);
-    } else {
-      return res.status(404).json({ message: "PDF indisponible pour ce type de document." });
-    }
+    const buffer = await generateInvoicePdfBuffer(context.invoice, context.organisationId);
+    const filename = safePdfFilename(context.invoice.invoice_number);
+
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.setHeader("Content-Length", String(buffer.length));
+    return res.status(200).send(buffer);
   } catch (error) {
-    // P2-3 fix: Utiliser logger structuré au lieu de console.error
-    logger.error("Erreur GET portal PDF", { error: error.message, token: req.params.token });
-    res.status(500).json({ message: "Erreur lors de la génération du PDF" });
+    logger.error("Erreur GET portal PDF", { error: error.message });
+    return res.status(500).json({ message: "Erreur lors de la génération du PDF" });
   }
 });
 
 router.post("/:token/checkout", async (req, res) => {
   try {
-    const data = await portalService.getDocumentByToken(req.params.token);
+    const context = await portalService.getInvoiceContextByToken(req.params.token);
 
-    if (!data || data.type !== "invoice") {
+    if (!context) {
       return res.status(400).json({ message: "Facture introuvable ou invalide pour le paiement." });
     }
 
-    if (!(await ensurePortalModule(res, data.organisationId, "payments"))) return;
+    if (!(await ensurePortalModule(res, context.organisationId, "payments"))) return;
 
-    if (data.document.status === "paid") {
+    if (context.invoice.status === "paid") {
       return res.status(400).json({ message: "Cette facture est déjà payée." });
     }
 
-    if (data.document.status !== "finalized") {
+    if (context.invoice.status !== "finalized") {
       return res.status(400).json({ message: "La facture doit être finalisée avant de pouvoir être payée." });
     }
 
     const orgRes = await db.query(
       "SELECT stripe_account_id FROM organisations WHERE id = $1",
-      [data.organisationId],
+      [context.organisationId],
     );
 
     if (!orgRes.rows[0]?.stripe_account_id) {
       return res.status(400).json({ message: "Le paiement en ligne n'est pas configuré pour ce compte." });
     }
 
-    // Générer les URLs de succès/annulation côté serveur (évite manipulation client)
     const baseUrl = process.env.FRONTEND_URL || `${req.protocol}://${req.get("host")}`;
     const successUrl = `${baseUrl}/portal/${req.params.token}?payment=success`;
     const cancelUrl = `${baseUrl}/portal/${req.params.token}?payment=cancelled`;
 
     const sessionUrl = await require("../services/stripe.service").createInvoiceCheckoutSession(
-      data.document,
+      context.invoice,
       orgRes.rows[0],
       successUrl,
       cancelUrl,
     );
 
-    res.json({ success: true, url: sessionUrl });
+    return res.json({ success: true, url: sessionUrl });
   } catch (error) {
-    // P2-3 fix: Utiliser logger structuré au lieu de console.error
-    logger.error("Erreur POST portal checkout", { error: error.message, token: req.params.token });
-    res.status(500).json({ message: error.message });
+    logger.error("Erreur POST portal checkout", { error: error.message });
+    return res.status(500).json({ message: "Impossible de préparer le paiement." });
   }
 });
 
