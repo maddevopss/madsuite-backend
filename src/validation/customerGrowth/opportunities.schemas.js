@@ -16,7 +16,7 @@ const listOpportunitiesQuerySchema = z.object({
   offset: z.coerce.number().int().min(0).default(0),
 }).strict();
 
-const createOpportunitySchema = z.object({
+const opportunityFieldsSchema = z.object({
   lead_id: nullablePositiveInt,
   client_id: nullablePositiveInt,
   owner_user_id: nullablePositiveInt,
@@ -25,11 +25,13 @@ const createOpportunitySchema = z.object({
   estimated_value: nullableMoney,
   probability: nullableProbability,
   expected_close_date: nullableDate,
-}).strict().refine((value) => value.lead_id || value.client_id, {
+}).strict();
+
+const createOpportunitySchema = opportunityFieldsSchema.refine((value) => value.lead_id || value.client_id, {
   message: "Un prospect ou un client est requis.",
 });
 
-const updateOpportunitySchema = createOpportunitySchema.partial().extend({
+const updateOpportunitySchema = opportunityFieldsSchema.partial().extend({
   status: z.enum(opportunityStatuses).optional(),
   lost_reason: nullableText(2000),
   abandoned_reason: nullableText(2000),
