@@ -39,6 +39,7 @@ const estimatesRoutes = require("./routes/estimates.routes");
 const quotesRoutes = require("./routes/quotes.routes");
 const organisationRoutes = require("./routes/organisation");
 const expensesRoutes = require("./routes/expenses.routes");
+const expenseReceiptsRoutes = require("./routes/expenseReceipts.routes");
 const stripeRoutes = require("./routes/stripe.routes");
 const portalRoutes = require("./routes/portal.routes");
 const punchRoutes = require("./routes/punch.routes");
@@ -90,8 +91,9 @@ app.use(compression());
 app.use(cookieParser());
 app.use(corsOptions);
 
-// Routes Stripe doivent être avant express.json() pour le webhook
+// Routes Stripe et preuves d'achat binaires avant express.json().
 app.use("/api/stripe", stripeRoutes);
+app.use("/api/expenses", auth, requireModule("expenses"), expenseReceiptsRoutes);
 const swaggerDocument = yaml.load(path.join(__dirname, "../swagger.yaml"));
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
