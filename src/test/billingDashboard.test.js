@@ -179,6 +179,25 @@ describe("billingDashboard.routes", () => {
     expect(res.body.total_invoiced_this_month).toBeLessThan(1000);
 
     expect(res.body.total_paid_this_month).toBeGreaterThanOrEqual(75);
+    expect(res.body.outstanding_total).toBeGreaterThanOrEqual(290);
+    expect(res.body.outstanding_total).toBeLessThan(999);
+    expect(res.body.overdue_count).toBeGreaterThanOrEqual(1);
+    expect(res.body.overdue_total).toBeGreaterThanOrEqual(90);
+
+    expect(res.body.currency).toBe("CAD");
+    expect(Number.isNaN(Date.parse(res.body.calculated_at))).toBe(false);
+
+    expect(res.body.top_clients[0]).toMatchObject({
+      client_id: client.id,
+      client_nom: client.nom,
+      total_invoiced: 365,
+      total_paid: 75,
+    });
+    expect(res.body.top_clients.some((entry) => entry.client_id === otherClient.id)).toBe(false);
+
+    expect(res.body.monthly_revenue).toHaveLength(6);
+    expect(res.body.monthly_revenue.at(-1).total_paid).toBeGreaterThanOrEqual(75);
+    expect(res.body.monthly_revenue.every((entry) => /^\d{4}-\d{2}$/.test(entry.month))).toBe(true);
 
     expect(res.body.top_clients_to_bill[0]).toMatchObject({
       client_id: client.id,
