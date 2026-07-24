@@ -6,6 +6,7 @@ const { getOrganisationId } = require("../utils/organisationScope");
 const { handleServiceError } = require("../utils/routeError");
 const ApiResponse = require("../utils/apiResponse");
 const invoiceService = require("../services/invoice/invoice.service");
+const timeBillingService = require("../services/invoice/time-billing.service");
 const stripeService = require("../services/stripe.service");
 const { getOrganisationSettings } = require("../services/organisation.service");
 const router = express.Router();
@@ -41,6 +42,14 @@ const listInvoicesQuerySchema = z.object({
 
 const unbilledEntriesQuerySchema = z.object({
   client_id: z.coerce.number().int().positive(),
+});
+
+const timeBillingPreviewQuerySchema = z.object({
+  client_id: z.coerce.number().int().positive(),
+  project_id: z.coerce.number().int().positive().optional(),
+  from: dateStringSchema.optional(),
+  to: dateStringSchema.optional(),
+  tax_rate: z.coerce.number().min(0).max(100).optional().default(0),
 });
 
 const idParamSchema = z.object({
@@ -90,6 +99,31 @@ router.get("/", async (req, res, next) => {
     });
 
     return res.status(200).json(ApiResponse.success("INVOICE_LISTED", invoices));
+  } catch (err) {
+    return handleServiceError(err, res, next);
+  }
+});
+
+router.get("/time-billing-preview", async (req, res, next) => {
+  try {
+    const parsed = timeBillingPreviewQuerySchema.safeParse(req.query);
+    if (!parsed.success) {
+      return res.status(400).json(ApiResponse.error("VALIDATION_ERROR", {
+        message: "Parametres invalides",
+        errors: parsed.error.flatten(),
+      }));
+    }
+
+    const preview = await timeBillingService.getTimeBillingPreview({
+      organisationId: getOrganisationId(req),
+      clientId: parsed.data.client_id,
+      projectId: parsed.data.project_id,
+      from: parsed.data.from,
+      to: parsed.data.to,
+      taxRate: parsed.data.tax_rate,
+    });
+
+    return res.status(200).json(ApiResponse.success("TIME_BILLING_PREVIEW", preview));
   } catch (err) {
     return handleServiceError(err, res, next);
   }
@@ -336,13 +370,13 @@ router.post("/:id/send", async (req, res, next) => {
 
 const recurringSchema = z.object({
   frequency: z.enum(["weekly", "monthly", "yearly"]),
-  next_issue_date: dateStringSchema
+  next_issue_date: dateStringSchema,
 });
 
 router.post("/:id/recurring", async (req, res, next) => {
   try {
     if (!assertInvoiceMutationRole(req, res)) return;
-    
+
     const invoiceId = parseInvoiceId(req, res);
     if (!invoiceId) return;
 
@@ -359,7 +393,7 @@ router.post("/:id/recurring", async (req, res, next) => {
       organisationId: getOrganisationId(req),
       frequency: parsed.data.frequency,
       nextIssueDate: parsed.data.next_issue_date,
-      req
+      req,
     });
 
     return res.status(201).json(ApiResponse.success("RECURRING_INVOICE_CREATED", result));
@@ -370,31 +404,43 @@ router.post("/:id/recurring", async (req, res, next) => {
 
 router.post("/:id/checkout", async (req, res, next) => {
   try {
-    // Both admin and client portal might call this, but here it's behind requireOrganisation
-    // Typically, the client portal has its own route. This one is for the app user.
     const invoiceId = parseInvoiceId(req, res);
     if (!invoiceId) return;
 
-    const organisationId = getOrganisationId(req);
-    const invoice = await invoiceService.getInvoiceById({ invoiceId, organisationId });
-    if (!invoice) {
-      return res.status(404).json(ApiResponse.error("NOT_FOUND", { message: "Facture introuvable." }));
-    }
+    const settings = await getOrganisationSettings(getOrganisationId(req));
+    const frontendUrl = process.env.FRONTEND_URL || `${req.protocol}://${req.get("host")}`;
 
-    const organisation = await getOrganisationSettings(organisationId);
-    
-    const baseUrl = process.env.FRONTEND_URL || `${req.protocol}://${req.get("host")}`;
-    const successUrl = `${baseUrl}/invoices?payment=success&invoice_id=${invoiceId}`;
-    const cancelUrl = `${baseUrl}/invoices?payment=cancelled&invoice_id=${invoiceId}`;
+    const checkout = await stripeService.createInvoiceCheckoutSession({
+      invoiceId,
+      organisationId: getOrganisationId(req),
+      successUrl: `${frontendUrl}/invoices?payment=success`,
+      cancelUrl: `${frontendUrl}/invoices?payment=cancelled`,
+      stripeAccountId: settings?.stripe_account_id || null,
+    });
 
-    const sessionUrl = await stripeService.createInvoiceCheckoutSession(
-      invoice,
-      organisation,
-      successUrl,
-      cancelUrl
-    );
+    return res.status(200).json(ApiResponse.success("INVOICE_CHECKOUT_CREATED", checkout));
+  } catch (err) {
+    return handleServiceError(err, res, next);
+  }
+});
 
-    return res.status(200).json(ApiResponse.success("CHECKOUT_SESSION_CREATED", { url: sessionUrl }));
+router.post("/:id/payment-link", async (req, res, next) => {
+  try {
+    const invoiceId = parseInvoiceId(req, res);
+    if (!invoiceId) return;
+
+    const settings = await getOrganisationSettings(getOrganisationId(req));
+    const frontendUrl = process.env.FRONTEND_URL || `${req.protocol}://${req.get("host")}`;
+
+    const checkout = await stripeService.createInvoiceCheckoutSession({
+      invoiceId,
+      organisationId: getOrganisationId(req),
+      successUrl: `${frontendUrl}/portal/payment-success`,
+      cancelUrl: `${frontendUrl}/portal/payment-cancelled`,
+      stripeAccountId: settings?.stripe_account_id || null,
+    });
+
+    return res.status(200).json(ApiResponse.success("INVOICE_PAYMENT_LINK_CREATED", checkout));
   } catch (err) {
     return handleServiceError(err, res, next);
   }
