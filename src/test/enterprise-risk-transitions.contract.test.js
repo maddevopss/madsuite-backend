@@ -20,8 +20,8 @@ describe('enterprise risk explicit transitions', () => {
     expect(source.match(/FOR UPDATE/g)).toHaveLength(3);
   });
 
-  test('does not write transition routes through the pool directly', () => {
-    const transitionSection = source.slice(source.indexOf("router.post('/controls/:id/transition'"));
-    expect(transitionSection).not.toContain('db.pool.query');
+  test('does not persist writes through the shared pool', () => {
+    expect(source).not.toMatch(/db\.pool\.query\(`(?:INSERT|UPDATE|DELETE)/);
+    expect(source.match(/client\.query\(`UPDATE enterprise_risk_(?:controls|treatments|reviews)/g)).toHaveLength(3);
   });
 });
