@@ -36,6 +36,7 @@ const billingAssistantRoutes = require("./routes/billingAssistant.routes");
 const invoicesRoutes = require("./routes/invoices.routes");
 const billingDashboardRoutes = require("./routes/billingDashboard.routes");
 const paymentRemindersRoutes = require("./routes/paymentReminders.routes");
+const invoicePaymentsRoutes = require("./routes/invoicePayments.routes");
 const estimatesRoutes = require("./routes/estimates.routes");
 const quotesRoutes = require("./routes/quotes.routes");
 const organisationRoutes = require("./routes/organisation");
@@ -190,6 +191,7 @@ app.use("/api/billing-assistant", auth, requireModule("billing_assistant"), bill
 app.use("/api/invoices", auth, requireModule("invoices"), invoicesRoutes);
 app.use("/api/billing", auth, requireModule("invoices"), billingDashboardRoutes);
 app.use("/api/payment-reminders", auth, requireModule("invoices"), paymentRemindersRoutes);
+app.use("/api/invoice-payments", auth, requireModule("invoices"), invoicePaymentsRoutes);
 app.use("/api/revenue", auth, requireModule("invoices"), revenueRoutes);
 app.use("/api/estimates", auth, requireModule("estimates"), estimatesRoutes);
 app.use("/api/quotes", auth, requireModule("quotes"), quotesRoutes);
