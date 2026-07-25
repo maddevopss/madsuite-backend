@@ -36,23 +36,22 @@ const MODULES = {
   // --- Modules internes / MADPROOF strict ---
   cognitive_engine: { label: "Moteur cognitif", plan: "internal", price: 0, matrix_status: "madproof_strict" },
   desktop_agent:    { label: "Agent desktop",   plan: "internal", price: 0, matrix_status: "consent_required" },
+  accounting:           { label: "Comptabilité",         plan: "internal", price: 0, matrix_status: "foundation_alpha" },
+  suppliers:            { label: "Fournisseurs",         plan: "internal", price: 0, matrix_status: "foundation_alpha" },
+  inventory:            { label: "Inventaire",           plan: "internal", price: 0, matrix_status: "foundation_alpha" },
+  payroll:              { label: "Paie",                 plan: "internal", price: 0, matrix_status: "ruleset_required" },
+  decision_dashboard:   { label: "Pilotage décisionnel", plan: "internal", price: 0, matrix_status: "foundation_alpha" },
+  cognitive_continuity: { label: "Continuité cognitive", plan: "internal", price: 0, matrix_status: "madproof_strict" },
 };
 
 const INTERNAL_PLAN_TYPES = new Set(["admin", "internal", "master_admin", "platform_admin"]);
 const ADDON_ELIGIBLE_PLANS = new Set(["enterprise", "admin", "internal", "master_admin", "platform_admin"]);
 
-// Les modules "free" sont toujours autorisés
-const FREE_MODULES = Object.keys(MODULES).filter(k => MODULES[k].plan === "free");
-const PRO_MODULES = Object.keys(MODULES).filter(k => MODULES[k].plan === "pro");
-const ADDON_MODULES = Object.keys(MODULES).filter(k => MODULES[k].plan === "addon");
-const INTERNAL_MODULES = Object.keys(MODULES).filter(k => MODULES[k].plan === "internal");
+const FREE_MODULES = Object.keys(MODULES).filter((key) => MODULES[key].plan === "free");
+const PRO_MODULES = Object.keys(MODULES).filter((key) => MODULES[key].plan === "pro");
+const ADDON_MODULES = Object.keys(MODULES).filter((key) => MODULES[key].plan === "addon");
+const INTERNAL_MODULES = Object.keys(MODULES).filter((key) => MODULES[key].plan === "internal");
 
-/**
- * Vérifie si un module est autorisé pour un plan donné.
- * @param {string} moduleKey - Ex: "invoices"
- * @param {string} planType - "free", "trial", "solo", "pro", "enterprise", "admin", "internal"
- * @returns {boolean}
- */
 function isModuleIncludedInPlan(moduleKey, planType) {
   const mod = MODULES[moduleKey];
   if (!mod) return false;
@@ -65,7 +64,6 @@ function isModuleIncludedInPlan(moduleKey, planType) {
   if (mod.plan === "addon" && ADDON_ELIGIBLE_PLANS.has(normalizedPlan)) return true;
   if (mod.plan === "internal" && INTERNAL_PLAN_TYPES.has(normalizedPlan)) return true;
 
-  // Les add-ons ne sont jamais inclus dans un plan — ils doivent être activés explicitement
   return false;
 }
 
