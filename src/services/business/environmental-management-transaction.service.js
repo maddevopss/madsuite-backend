@@ -1,66 +1,64 @@
 const { registerPolicy } = require("./transaction-engine.service");
 
-const required = (value) => value !== undefined && value !== null && value !== "";
+const hasText = (value) => typeof value === "string" && value.trim().length > 0;
 const hasItems = (value) => Array.isArray(value) && value.length > 0;
-const notFuture = (value) => !value || new Date(value).getTime() <= Date.now();
+const requireKey = (value) => hasText(value) && value.trim().length >= 8
+  ? null
+  : { allowed: false, statusCode: 400, code: "environment.idempotency_required" };
 
-const policies = [
-  {
-    name: "environment.permit.register@1",
-    validate: ({ permitType, permitNumber, issuingAuthority, issuedAt, expiresAt, proofRefs }) => {
-      if (![permitType, permitNumber, issuingAuthority, issuedAt, expiresAt].every(required)) return "ENVIRONMENT_PERMIT_INCOMPLETE";
-      if (new Date(expiresAt) < new Date(issuedAt)) return "ENVIRONMENT_PERMIT_PERIOD_INVALID";
-      if (!hasItems(proofRefs)) return "ENVIRONMENT_PERMIT_PROOF_REQUIRED";
-      return null;
-    },
-  },
-  {
-    name: "environment.incident.report@1",
-    validate: ({ siteId, occurredAt, incidentType, severity, description, responsibleUserId, proofRefs }) => {
-      if (![siteId, occurredAt, incidentType, severity, description, responsibleUserId].every(required)) return "ENVIRONMENT_INCIDENT_INCOMPLETE";
-      if (!notFuture(occurredAt)) return "ENVIRONMENT_INCIDENT_FUTURE_DATE";
-      if (!hasItems(proofRefs)) return "ENVIRONMENT_INCIDENT_PROOF_REQUIRED";
-      return null;
-    },
-  },
-  {
-    name: "environment.inspection.complete@1",
-    validate: ({ inspectedAt, inspectorUserId, scope, findings, proofRefs }) => {
-      if (![inspectedAt, inspectorUserId].every(required) || !hasItems(scope)) return "ENVIRONMENT_INSPECTION_INCOMPLETE";
-      if (!notFuture(inspectedAt)) return "ENVIRONMENT_INSPECTION_FUTURE_DATE";
-      if (!Array.isArray(findings) || !hasItems(proofRefs)) return "ENVIRONMENT_INSPECTION_PROOF_REQUIRED";
-      return null;
-    },
-  },
-  {
-    name: "environment.corrective_action.close@1",
-    validate: ({ actionId, closedBy, closureEvidence }) => {
-      if (![actionId, closedBy].every(required)) return "ENVIRONMENT_ACTION_CLOSURE_INCOMPLETE";
-      if (!hasItems(closureEvidence)) return "ENVIRONMENT_ACTION_CLOSURE_PROOF_REQUIRED";
-      return null;
-    },
-  },
-  {
-    name: "environment.metric.record@1",
-    validate: ({ metricType, periodStart, periodEnd, value, unit, methodology, sourceRefs }) => {
-      if (![metricType, periodStart, periodEnd, value, unit, methodology].every(required)) return "ENVIRONMENT_METRIC_INCOMPLETE";
-      if (new Date(periodEnd) < new Date(periodStart)) return "ENVIRONMENT_METRIC_PERIOD_INVALID";
-      if (!hasItems(sourceRefs)) return "ENVIRONMENT_METRIC_SOURCE_REQUIRED";
-      return null;
-    },
-  },
-  {
-    name: "environment.report.publish@1",
-    validate: ({ periodStart, periodEnd, summary, indicators, risks, proofRefs, preparedBy, approvedBy }) => {
-      if (![periodStart, periodEnd, summary, preparedBy, approvedBy].every(required)) return "ENVIRONMENT_REPORT_INCOMPLETE";
-      if (new Date(periodEnd) < new Date(periodStart)) return "ENVIRONMENT_REPORT_PERIOD_INVALID";
-      if (preparedBy === approvedBy) return "ENVIRONMENT_REPORT_SELF_APPROVAL";
-      if (!indicators || !Array.isArray(risks) || !hasItems(proofRefs)) return "ENVIRONMENT_REPORT_PROOF_REQUIRED";
-      return null;
-    },
-  },
-];
+registerPolicy("environment.permit.register", "1", ({ input, idempotencyKey }) => {
+  const keyError = requireKey(idempotencyKey); if (keyError) return keyError;
+  if (!hasText(input?.permitType) || !hasText(input?.permitNumber) || !hasText(input?.issuingAuthority) || !input?.issuedAt || !input?.expiresAt) return { allowed: false, statusCode: 400, code: "environment.permit_fields_required" };
+  if (new Date(input.expiresAt) < new Date(input.issuedAt)) return { allowed: false, statusCode: 409, code: "environment.permit_period_invalid" };
+  if (!hasItems(input?.proofRefs)) return { allowed: false, statusCode: 409, code: "environment.permit_proof_required" };
+  return { allowed: true, code: "environment.permit_register_allowed" };
+});
 
-for (const policy of policies) registerPolicy(policy.name, policy.validate);
+registerPolicy("environment.incident.report", "1", ({ input, idempotencyKey }) => {
+  const keyError = requireKey(idempotencyKey); if (keyError) return keyError;
+  if (!input?.siteId || !input?.occurredAt || !hasText(input?.incidentType) || !hasText(input?.severity) || !hasText(input?.description) || !input?.responsibleUserId) return { allowed: false, statusCode: 400, code: "environment.incident_fields_required" };
+  if (new Date(input.occurredAt) > new Date()) return { allowed: false, statusCode: 409, code: "environment.incident_future_date" };
+  if (!hasItems(input?.proofRefs)) return { allowed: false, statusCode: 409, code: "environment.incident_proof_required" };
+  return { allowed: true, code: "environment.incident_report_allowed" };
+});
 
-module.exports = { policies };
+registerPolicy("environment.inspection.complete", "1", ({ input, idempotencyKey }) => {
+  const keyError = requireKey(idempotencyKey); if (keyError) return keyError;
+  if (!input?.siteId || !input?.inspectedAt || !input?.inspectorUserId || !hasItems(input?.scope)) return { allowed: false, statusCode: 400, code: "environment.inspection_fields_required" };
+  if (new Date(input.inspectedAt) > new Date()) return { allowed: false, statusCode: 409, code: "environment.inspection_future_date" };
+  if (!Array.isArray(input?.findings) || !hasItems(input?.proofRefs)) return { allowed: false, statusCode: 409, code: "environment.inspection_proof_required" };
+  return { allowed: true, code: "environment.inspection_complete_allowed" };
+});
+
+registerPolicy("environment.corrective_action.close", "1", ({ input, idempotencyKey }) => {
+  const keyError = requireKey(idempotencyKey); if (keyError) return keyError;
+  if (!input?.actionId || !input?.closedBy) return { allowed: false, statusCode: 400, code: "environment.action_closure_fields_required" };
+  if (!hasItems(input?.closureEvidence)) return { allowed: false, statusCode: 409, code: "environment.action_closure_proof_required" };
+  return { allowed: true, code: "environment.action_close_allowed" };
+});
+
+registerPolicy("environment.metric.record", "1", ({ input, idempotencyKey }) => {
+  const keyError = requireKey(idempotencyKey); if (keyError) return keyError;
+  if (!hasText(input?.metricType) || !input?.periodStart || !input?.periodEnd || input?.value === undefined || !hasText(input?.unit) || !hasText(input?.methodology)) return { allowed: false, statusCode: 400, code: "environment.metric_fields_required" };
+  if (new Date(input.periodEnd) < new Date(input.periodStart)) return { allowed: false, statusCode: 409, code: "environment.metric_period_invalid" };
+  if (!hasItems(input?.sourceRefs)) return { allowed: false, statusCode: 409, code: "environment.metric_source_required" };
+  return { allowed: true, code: "environment.metric_record_allowed" };
+});
+
+registerPolicy("environment.report.publish", "1", ({ input, idempotencyKey }) => {
+  const keyError = requireKey(idempotencyKey); if (keyError) return keyError;
+  if (!input?.periodStart || !input?.periodEnd || !hasText(input?.summary) || !input?.preparedBy || !input?.approvedBy) return { allowed: false, statusCode: 400, code: "environment.report_fields_required" };
+  if (new Date(input.periodEnd) < new Date(input.periodStart)) return { allowed: false, statusCode: 409, code: "environment.report_period_invalid" };
+  if (input.preparedBy === input.approvedBy) return { allowed: false, statusCode: 409, code: "environment.report_independent_approval_required" };
+  if (!input?.indicators || !Array.isArray(input?.risks) || !hasItems(input?.proofRefs)) return { allowed: false, statusCode: 409, code: "environment.report_proof_required" };
+  return { allowed: true, code: "environment.report_publish_allowed" };
+});
+
+module.exports = {
+  PERMIT_REGISTER_POLICY: "environment.permit.register@1",
+  INCIDENT_REPORT_POLICY: "environment.incident.report@1",
+  INSPECTION_COMPLETE_POLICY: "environment.inspection.complete@1",
+  ACTION_CLOSE_POLICY: "environment.corrective_action.close@1",
+  METRIC_RECORD_POLICY: "environment.metric.record@1",
+  REPORT_PUBLISH_POLICY: "environment.report.publish@1",
+};
