@@ -57,6 +57,7 @@ const inventoryRoutes = require("./routes/business/inventory.routes");
 const payrollRoutes = require("./routes/business/payroll.routes");
 const hrRoutes = require("./routes/business/hr.routes");
 const sstRoutes = require("./routes/business/sst.routes");
+const legalComplianceRoutes = require("./routes/business/legal-compliance.routes");
 const decisionRoutes = require("./routes/business/decision.routes");
 const continuityRoutes = require("./routes/business/continuity.routes");
 const notificationsRoutes = require("./routes/notifications.routes");
@@ -213,6 +214,7 @@ app.use("/api/inventory", auth, requireModule("inventory"), inventoryRoutes);
 app.use("/api/payroll", auth, requireModule("payroll"), payrollRoutes);
 app.use("/api/hr", auth, requireModule("human_resources"), hrRoutes);
 app.use("/api/sst", auth, requireModule("occupational_health_safety"), sstRoutes);
+app.use("/api/legal", auth, requireModule("legal_compliance"), legalComplianceRoutes);
 app.use("/api/decision", auth, requireModule("decision_dashboard"), decisionRoutes);
 app.use("/api/continuity", auth, requireModule("cognitive_continuity"), continuityRoutes);
 
