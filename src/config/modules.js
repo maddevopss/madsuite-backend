@@ -53,6 +53,7 @@ const MODULES = {
   data_privacy_governance: { label: "Gouvernance des données et vie privée", plan: "internal", price: 0, matrix_status: "madproof_strict" },
   internal_audit:       { label: "Audit interne", plan: "internal", price: 0, matrix_status: "madproof_strict" },
   organizational_performance: { label: "Performance organisationnelle", plan: "internal", price: 0, matrix_status: "madproof_strict" },
+  organizational_governance: { label: "Gouvernance organisationnelle", plan: "internal", price: 0, matrix_status: "madproof_strict" },
   decision_dashboard:   { label: "Pilotage décisionnel", plan: "internal", price: 0, matrix_status: "foundation_alpha" },
   cognitive_continuity: { label: "Continuité cognitive", plan: "internal", price: 0, matrix_status: "madproof_strict" },
 };
@@ -60,18 +61,11 @@ const MODULES = {
 const INTERNAL_PLAN_TYPES = new Set(["admin", "internal", "master_admin", "platform_admin"]);
 const ADDON_ELIGIBLE_PLANS = new Set(["enterprise", "admin", "internal", "master_admin", "platform_admin"]);
 
-// Les modules "free" sont toujours autorisés
 const FREE_MODULES = Object.keys(MODULES).filter(k => MODULES[k].plan === "free");
 const PRO_MODULES = Object.keys(MODULES).filter(k => MODULES[k].plan === "pro");
 const ADDON_MODULES = Object.keys(MODULES).filter(k => MODULES[k].plan === "addon");
 const INTERNAL_MODULES = Object.keys(MODULES).filter(k => MODULES[k].plan === "internal");
 
-/**
- * Vérifie si un module est autorisé pour un plan donné.
- * @param {string} moduleKey - Ex: "invoices"
- * @param {string} planType - "free", "trial", "solo", "pro", "enterprise", "admin", "internal"
- * @returns {boolean}
- */
 function isModuleIncludedInPlan(moduleKey, planType) {
   const mod = MODULES[moduleKey];
   if (!mod) return false;
@@ -84,7 +78,6 @@ function isModuleIncludedInPlan(moduleKey, planType) {
   if (mod.plan === "addon" && ADDON_ELIGIBLE_PLANS.has(normalizedPlan)) return true;
   if (mod.plan === "internal" && INTERNAL_PLAN_TYPES.has(normalizedPlan)) return true;
 
-  // Les add-ons ne sont jamais inclus dans un plan — ils doivent être activés explicitement
   return false;
 }
 
