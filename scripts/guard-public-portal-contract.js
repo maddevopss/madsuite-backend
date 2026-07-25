@@ -4,18 +4,24 @@ const path = require("path");
 const repoRoot = path.resolve(__dirname, "..");
 const routesPath = path.join(repoRoot, "src", "routes", "portal.routes.js");
 const servicePath = path.join(repoRoot, "src", "services", "portal.service.js");
+const estimateLinkServicePath = path.join(
+  repoRoot,
+  "src",
+  "services",
+  "estimate",
+  "estimate-public-link.service.js",
+);
 
 const violations = [];
 const routes = fs.existsSync(routesPath) ? fs.readFileSync(routesPath, "utf8") : "";
 const service = fs.existsSync(servicePath) ? fs.readFileSync(servicePath, "utf8") : "";
+const estimateLinks = fs.existsSync(estimateLinkServicePath)
+  ? fs.readFileSync(estimateLinkServicePath, "utf8")
+  : "";
 
-if (!routes) {
-  violations.push("src/routes/portal.routes.js is missing.");
-}
-
-if (!service) {
-  violations.push("src/services/portal.service.js is missing.");
-}
+if (!routes) violations.push("src/routes/portal.routes.js is missing.");
+if (!service) violations.push("src/services/portal.service.js is missing.");
+if (!estimateLinks) violations.push("estimate-public-link.service.js is missing.");
 
 if (routes && !routes.includes("requireModuleForOrg")) {
   violations.push("portal.routes.js must use requireModuleForOrg for public module checks.");
@@ -41,22 +47,30 @@ if (routes && !routes.includes("MODULE_NOT_AVAILABLE")) {
   violations.push("portal module denial must use MODULE_NOT_AVAILABLE.");
 }
 
-// Les soumissions historiques continuent d'utiliser public_token; les factures V1
-// sont résolues par empreinte via le service de liens publics sécurisé.
-if (service && !service.includes("public_token = $1")) {
-  violations.push("portal.service.js must resolve estimate documents by public_token.");
+if (service && !service.includes("getPublicEstimateContextByToken")) {
+  violations.push("portal.service.js must resolve estimates through the secure estimate link service.");
+}
+if (service && !service.includes("decidePublicEstimate")) {
+  violations.push("portal.service.js must delegate public estimate decisions to the secure service.");
+}
+if (service && service.includes("public_token = $1")) {
+  violations.push("portal.service.js must not resolve public estimates by legacy UUID.");
 }
 
-if (service && !service.includes("organisation_id")) {
-  violations.push("portal.service.js must carry organisation_id through portal document resolution.");
+if (estimateLinks && !estimateLinks.includes('crypto.randomBytes(32).toString("base64url")')) {
+  violations.push("estimate public links must use 256-bit opaque tokens.");
 }
-
-if (service && !service.includes("WHERE id = $2 AND organisation_id = $3")) {
-  violations.push("Portal estimate action update must be scoped by id and organisation_id.");
+if (estimateLinks && !estimateLinks.includes('createHash("sha256")')) {
+  violations.push("estimate public tokens must be stored by SHA-256 fingerprint.");
 }
-
-if (service && !service.includes("recordBusinessAudit")) {
-  violations.push("Portal estimate actions must record a business audit event.");
+if (estimateLinks && !estimateLinks.includes("consentConfirmed !== true")) {
+  violations.push("public estimate acceptance must require explicit consent.");
+}
+if (estimateLinks && !estimateLinks.includes("estimate_public_decisions")) {
+  violations.push("public estimate decisions must be persisted in the canonical decision table.");
+}
+if (estimateLinks && !estimateLinks.includes("recordBusinessAudit")) {
+  violations.push("secure estimate decisions must record a business audit event.");
 }
 
 if (violations.length > 0) {
