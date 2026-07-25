@@ -50,11 +50,13 @@ describe("paiement fournisseur conforme au CTMAD", () => {
     });
   });
 
-  test("la validation postérieure exige le paiement, l’événement et le statut final", async () => {
+  test("la validation postérieure exige paiement, événement, MADTrust et graphe", async () => {
     await expect(verifySupplierPayment({
       result: {
         payment: { id: 9 },
         event: { event_id: "8c621680-c786-4bb6-98dd-886f072fea86" },
+        trust: { assessmentId: "68b4ab9b-1996-4438-9823-9ee8872d6a20" },
+        graphEdges: [{ id: 1 }, { id: 2 }, { id: 3 }],
         status: "partially_paid",
         duplicate: false,
       },
@@ -63,14 +65,27 @@ describe("paiement fournisseur conforme au CTMAD", () => {
     await expect(verifySupplierPayment({
       result: {
         payment: { id: 9 },
-        event: null,
+        event: { event_id: "8c621680-c786-4bb6-98dd-886f072fea86" },
+        trust: null,
+        graphEdges: [{ id: 1 }, { id: 2 }, { id: 3 }],
         status: "partially_paid",
         duplicate: false,
       },
-    })).rejects.toThrow("événement");
+    })).rejects.toThrow("MADTrust");
+
+    await expect(verifySupplierPayment({
+      result: {
+        payment: { id: 9 },
+        event: { event_id: "8c621680-c786-4bb6-98dd-886f072fea86" },
+        trust: { assessmentId: "68b4ab9b-1996-4438-9823-9ee8872d6a20" },
+        graphEdges: [{ id: 1 }],
+        status: "partially_paid",
+        duplicate: false,
+      },
+    })).rejects.toThrow("graphe métier");
   });
 
-  test("une répétition idempotente demeure valide sans produire un second événement", async () => {
+  test("une répétition idempotente demeure valide sans produire de nouvelles preuves", async () => {
     await expect(verifySupplierPayment({
       result: { payment: { id: 9 }, duplicate: true },
     })).resolves.toBeUndefined();
