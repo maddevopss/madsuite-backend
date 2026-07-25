@@ -4,6 +4,7 @@ const requireRole = require("../../middleware/requireRole");
 const accountingPostingService = require("../../services/business/accounting-posting.service");
 const supplierPaymentService = require("../../services/business/supplier-payment.service");
 const paymentReversalService = require("../../services/business/payment-reversal.service");
+const supplierBillLifecycleService = require("../../services/business/supplier-bill-lifecycle.service");
 
 router.use(requireOrganisation);
 
@@ -49,7 +50,12 @@ router.get("/bills", async (req, res, next) => {
     const { rows } = await req.db.query(
       `SELECT b.*, s.name supplier_name,
               COALESCE(SUM(p.amount) FILTER (WHERE p.reversed_at IS NULL), 0) paid_total,
-              b.total - COALESCE(SUM(p.amount) FILTER (WHERE p.reversed_at IS NULL), 0) balance_due
+              COALESCE((SELECT SUM(c.total) FROM supplier_credit_notes c
+                        WHERE c.organisation_id = b.organisation_id AND c.supplier_bill_id = b.id), 0) credited_total,
+              GREATEST(0, b.total
+                - COALESCE(SUM(p.amount) FILTER (WHERE p.reversed_at IS NULL), 0)
+                - COALESCE((SELECT SUM(c.total) FROM supplier_credit_notes c
+                            WHERE c.organisation_id = b.organisation_id AND c.supplier_bill_id = b.id), 0)) balance_due
        FROM supplier_bills b
        JOIN suppliers s ON s.id = b.supplier_id
        LEFT JOIN supplier_payments p ON p.supplier_bill_id = b.id AND p.organisation_id = b.organisation_id
@@ -91,6 +97,43 @@ router.post("/bills/:id/approve", requireRole("admin"), async (req, res, next) =
     const result = await accountingPostingService.approveSupplierBill({
       billId: req.params.id,
       organisationId: req.organisationId,
+      createdBy: req.user?.id,
+    });
+    if (!result) return res.status(404).json({ message: "Facture fournisseur introuvable." });
+    return res.status(result.duplicate ? 200 : 201).json(result);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post("/bills/:id/credit-notes", requireRole("admin"), async (req, res, next) => {
+  try {
+    const result = await supplierBillLifecycleService.postSupplierCreditNote({
+      billId: req.params.id,
+      organisationId: req.organisationId,
+      subtotal: req.body.subtotal,
+      taxTotal: req.body.taxTotal || 0,
+      total: req.body.total,
+      reason: req.body.reason,
+      idempotencyKey: req.body.idempotencyKey,
+      creditedAt: req.body.creditedAt,
+      createdBy: req.user?.id,
+    });
+    if (!result) return res.status(404).json({ message: "Facture fournisseur introuvable." });
+    return res.status(result.duplicate ? 200 : 201).json(result);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post("/bills/:id/void", requireRole("admin"), async (req, res, next) => {
+  try {
+    const result = await supplierBillLifecycleService.voidSupplierBill({
+      billId: req.params.id,
+      organisationId: req.organisationId,
+      reason: req.body.reason,
+      idempotencyKey: req.body.idempotencyKey,
+      voidedAt: req.body.voidedAt,
       createdBy: req.user?.id,
     });
     if (!result) return res.status(404).json({ message: "Facture fournisseur introuvable." });
