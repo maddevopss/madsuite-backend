@@ -20,7 +20,7 @@ const MODULES = {
 
   // --- Modules inclus dans Pro ---
   invoices:      { label: "Factures",          plan: "pro",   price: 0, matrix_status: "core" },
-  reports:       { label: "Rapports",          plan: "pro",   price: 0, matrix_status: "business" },
+  reports:       { label: "Rapports",           plan: "pro",   price: 0, matrix_status: "business" },
   kiosk_punch:   { label: "Kiosque Punch",     plan: "pro",   price: 0, matrix_status: "operational" },
 
   // --- Add-ons payants ---
@@ -54,6 +54,7 @@ const MODULES = {
   internal_audit:       { label: "Audit interne", plan: "internal", price: 0, matrix_status: "madproof_strict" },
   organizational_performance: { label: "Performance organisationnelle", plan: "internal", price: 0, matrix_status: "madproof_strict" },
   organizational_governance: { label: "Gouvernance organisationnelle", plan: "internal", price: 0, matrix_status: "madproof_strict" },
+  advanced_financial_management: { label: "Gestion financière avancée", plan: "internal", price: 0, matrix_status: "madproof_strict" },
   decision_dashboard:   { label: "Pilotage décisionnel", plan: "internal", price: 0, matrix_status: "foundation_alpha" },
   cognitive_continuity: { label: "Continuité cognitive", plan: "internal", price: 0, matrix_status: "madproof_strict" },
 };
