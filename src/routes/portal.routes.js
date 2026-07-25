@@ -1,13 +1,21 @@
 const express = require("express");
+const { z } = require("zod");
 
 const router = express.Router();
 const auth = require("../middleware/auth");
 const portalService = require("../services/portal.service");
 const invoicePublicLinksRoutes = require("./invoicePublicLinks.routes");
+const estimatePublicLinksRoutes = require("./estimatePublicLinks.routes");
 const { generateInvoicePdfBuffer } = require("../services/pdf/invoice-pdf.service");
 const { requireModule, requireModuleForOrg } = require("../middleware/requireModule");
 const db = require("../../db");
 const logger = require("../config/logger");
+
+const estimateActionSchema = z.object({
+  action: z.enum(["accepted", "rejected"]),
+  signer_name: z.string().trim().min(2).max(255),
+  consent_confirmed: z.boolean().optional().default(false),
+});
 
 async function hasOrgModule(organisationId, moduleKey) {
   return requireModuleForOrg(moduleKey, organisationId)();
@@ -16,7 +24,6 @@ async function hasOrgModule(organisationId, moduleKey) {
 async function ensurePortalModule(res, organisationId, moduleKey) {
   const hasAccess = await hasOrgModule(organisationId, moduleKey);
   if (hasAccess) return true;
-
   res.status(403).json({
     success: false,
     code: "MODULE_NOT_AVAILABLE",
@@ -42,13 +49,8 @@ function safePdfFilename(invoiceNumber) {
   return `${normalized || "facture"}.pdf`;
 }
 
-// Gestion authentifiée des liens publics.
-router.use(
-  "/manage/invoices",
-  auth,
-  requireModule("invoices"),
-  invoicePublicLinksRoutes,
-);
+router.use("/manage/invoices", auth, requireModule("invoices"), invoicePublicLinksRoutes);
+router.use("/manage/estimates", auth, requireModule("estimates"), estimatePublicLinksRoutes);
 
 router.use((req, res, next) => {
   setPrivatePortalHeaders(res);
@@ -58,9 +60,7 @@ router.use((req, res, next) => {
 router.get("/:token", async (req, res) => {
   try {
     const data = await portalService.getDocumentByToken(req.params.token);
-    if (!data) {
-      return res.status(404).json({ message: "Lien expiré ou invalide." });
-    }
+    if (!data) return res.status(404).json({ message: "Lien expiré ou invalide." });
     return res.status(200).json(data);
   } catch (error) {
     logger.error("Erreur GET portal", { error: error.message });
@@ -70,15 +70,23 @@ router.get("/:token", async (req, res) => {
 
 router.post("/:token/action", async (req, res) => {
   try {
-    const { action, signature_data } = req.body;
-    const clientIp = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+    const parsed = estimateActionSchema.safeParse(req.body || {});
+    if (!parsed.success) {
+      return res.status(400).json({ message: "Données de décision invalides.", errors: parsed.error.flatten() });
+    }
+    if (parsed.data.action === "accepted" && parsed.data.consent_confirmed !== true) {
+      return res.status(400).json({ message: "Le consentement doit être confirmé pour accepter la soumission." });
+    }
+    const forwarded = req.headers["x-forwarded-for"];
+    const clientIp = Array.isArray(forwarded) ? forwarded[0] : String(forwarded || req.socket.remoteAddress || "").split(",")[0].trim();
     const result = await portalService.handleEstimateAction(
       req.params.token,
-      action,
-      signature_data,
+      parsed.data.action,
+      parsed.data,
       clientIp,
     );
-    return res.json({ success: true, document: result });
+    if (!result) return res.status(404).json({ message: "Lien expiré ou invalide." });
+    return res.status(200).json({ success: true, decision: result });
   } catch (error) {
     logger.error("Erreur POST portal action", { error: error.message });
     return res.status(error.statusCode || 400).json({ message: error.message });
@@ -88,13 +96,9 @@ router.post("/:token/action", async (req, res) => {
 router.get("/:token/pdf", async (req, res) => {
   try {
     const context = await portalService.getInvoiceContextByToken(req.params.token);
-    if (!context) {
-      return res.status(404).json({ message: "Lien expiré ou invalide." });
-    }
-
+    if (!context) return res.status(404).json({ message: "Lien expiré ou invalide." });
     const buffer = await generateInvoicePdfBuffer(context.invoice, context.organisationId);
     const filename = safePdfFilename(context.invoice.invoice_number);
-
     res.setHeader("Content-Type", "application/pdf");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     res.setHeader("Content-Length", String(buffer.length));
@@ -108,41 +112,25 @@ router.get("/:token/pdf", async (req, res) => {
 router.post("/:token/checkout", async (req, res) => {
   try {
     const context = await portalService.getInvoiceContextByToken(req.params.token);
-
-    if (!context) {
-      return res.status(400).json({ message: "Facture introuvable ou invalide pour le paiement." });
-    }
-
+    if (!context) return res.status(400).json({ message: "Facture introuvable ou invalide pour le paiement." });
     if (!(await ensurePortalModule(res, context.organisationId, "payments"))) return;
-
-    if (context.invoice.status === "paid") {
-      return res.status(400).json({ message: "Cette facture est déjà payée." });
+    if (context.invoice.status === "paid") return res.status(400).json({ message: "Cette facture est déjà payée." });
+    if (!context.invoice.finalized_at || context.invoice.status !== "sent") {
+      return res.status(400).json({ message: "La facture doit être finalisée et envoyée avant de pouvoir être payée." });
     }
-
-    if (context.invoice.status !== "finalized") {
-      return res.status(400).json({ message: "La facture doit être finalisée avant de pouvoir être payée." });
-    }
-
-    const orgRes = await db.query(
-      "SELECT stripe_account_id FROM organisations WHERE id = $1",
-      [context.organisationId],
-    );
-
+    const orgRes = await db.query("SELECT stripe_account_id FROM organisations WHERE id = $1", [context.organisationId]);
     if (!orgRes.rows[0]?.stripe_account_id) {
       return res.status(400).json({ message: "Le paiement en ligne n'est pas configuré pour ce compte." });
     }
-
     const baseUrl = process.env.FRONTEND_URL || `${req.protocol}://${req.get("host")}`;
     const successUrl = `${baseUrl}/portal/${req.params.token}?payment=success`;
     const cancelUrl = `${baseUrl}/portal/${req.params.token}?payment=cancelled`;
-
     const sessionUrl = await require("../services/stripe.service").createInvoiceCheckoutSession(
       context.invoice,
       orgRes.rows[0],
       successUrl,
       cancelUrl,
     );
-
     return res.json({ success: true, url: sessionUrl });
   } catch (error) {
     logger.error("Erreur POST portal checkout", { error: error.message });
