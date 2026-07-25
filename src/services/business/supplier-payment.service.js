@@ -4,6 +4,10 @@ const {
   executeTransaction,
   registerPolicy,
 } = require("./transaction-engine.service");
+const {
+  persistTrustAssessment,
+  persistGraphEdges,
+} = require("./trust-persistence.service");
 
 const SUPPLIER_PAYMENT_POLICY = "supplier.payment.post@1";
 
@@ -161,10 +165,77 @@ async function executeSupplierPayment({
     },
   });
 
+  const trust = await persistTrustAssessment(client, {
+    organisationId,
+    transactionId,
+    correlationId,
+    checks: [
+      {
+        code: "supplier_payment.persisted",
+        passed: Boolean(payment.id),
+        severity: "critical",
+        evidence: [{ type: "supplier_payment", id: String(payment.id) }],
+      },
+      {
+        code: "supplier_payment.event_recorded",
+        passed: Boolean(event.event_id),
+        severity: "critical",
+        evidence: [{ type: "business_event", id: String(event.event_id) }],
+      },
+      {
+        code: "supplier_payment.accounting_recorded",
+        passed: Boolean(accounting.entryId),
+        severity: accounting.skipped ? "warning" : "critical",
+        explanation: accounting.skipped ? "Le plan comptable n’est pas initialisé." : null,
+        evidence: accounting.entryId ? [{ type: "accounting_entry", id: String(accounting.entryId) }] : [],
+      },
+      {
+        code: "supplier_bill.status_coherent",
+        passed: ["partially_paid", "paid"].includes(status),
+        severity: "critical",
+        evidence: [{ type: "supplier_bill", id: String(input.billId), status }],
+      },
+    ],
+  });
+
+  const graphEdges = await persistGraphEdges(client, {
+    organisationId,
+    transactionId,
+    correlationId,
+    edges: [
+      {
+        from: { type: "supplier_bill", id: input.billId },
+        relation: "settled_by",
+        to: { type: "supplier_payment", id: payment.id },
+        provenance: { eventId: event.event_id, transactionId },
+      },
+      ...(accounting.entryId ? [{
+        from: { type: "supplier_payment", id: payment.id },
+        relation: "posted_as",
+        to: { type: "accounting_entry", id: accounting.entryId },
+        provenance: { eventId: event.event_id, transactionId },
+      }] : []),
+      {
+        from: { type: "supplier_payment", id: payment.id },
+        relation: "produced",
+        to: { type: "business_event", id: event.event_id },
+        provenance: { transactionId },
+      },
+      {
+        from: { type: "madtrust_assessment", id: trust.assessmentId },
+        relation: "assesses",
+        to: { type: "supplier_payment", id: payment.id },
+        provenance: { transactionId },
+      },
+    ],
+  });
+
   return {
     payment: { ...payment, accounting_entry_id: accounting.entryId || null },
     accounting,
     event,
+    trust,
+    graphEdges,
     status,
     duplicate: false,
   };
@@ -177,6 +248,12 @@ async function verifySupplierPayment({ result }) {
   }
   if (!result.event?.event_id) {
     throw Object.assign(new Error("L’événement du paiement fournisseur est absent."), { statusCode: 500 });
+  }
+  if (!result.trust?.assessmentId) {
+    throw Object.assign(new Error("Le constat MADTrust du paiement fournisseur est absent."), { statusCode: 500 });
+  }
+  if (!Array.isArray(result.graphEdges) || result.graphEdges.length < 3) {
+    throw Object.assign(new Error("Le graphe métier du paiement fournisseur est incomplet."), { statusCode: 500 });
   }
   if (!result.status || !["partially_paid", "paid"].includes(result.status)) {
     throw Object.assign(new Error("Le statut final de la facture fournisseur est incohérent."), { statusCode: 500 });
@@ -212,6 +289,7 @@ async function recordSupplierPayment({
       correlationId: transaction.correlationId,
       status: transaction.status,
       policies: transaction.policyResults,
+      trustAssessmentId: transaction.result.trust?.assessmentId || null,
     },
   };
 }
