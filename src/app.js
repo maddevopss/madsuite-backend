@@ -69,6 +69,7 @@ const dataPrivacyGovernanceRoutes = require("./routes/business/data-privacy-gove
 const internalAuditRoutes = require("./routes/business/internal-audit.routes");
 const organizationalPerformanceRoutes = require("./routes/business/organizational-performance.routes");
 const organizationalGovernanceRoutes = require("./routes/business/organizational-governance.routes");
+const advancedFinancialManagementRoutes = require("./routes/business/advanced-financial-management.routes");
 const decisionRoutes = require("./routes/business/decision.routes");
 const continuityRoutes = require("./routes/business/continuity.routes");
 const notificationsRoutes = require("./routes/notifications.routes");
@@ -237,6 +238,7 @@ app.use("/api/privacy", auth, requireModule("data_privacy_governance"), dataPriv
 app.use("/api/internal-audit", auth, requireModule("internal_audit"), internalAuditRoutes);
 app.use("/api/performance", auth, requireModule("organizational_performance"), organizationalPerformanceRoutes);
 app.use("/api/governance", auth, requireModule("organizational_governance"), organizationalGovernanceRoutes);
+app.use("/api/finance", auth, requireModule("advanced_financial_management"), advancedFinancialManagementRoutes);
 app.use("/api/decision", auth, requireModule("decision_dashboard"), decisionRoutes);
 app.use("/api/continuity", auth, requireModule("cognitive_continuity"), continuityRoutes);
 
