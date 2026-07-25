@@ -1,4 +1,4 @@
-jest.mock("../../../db", () => ({ pool: { connect: jest.fn() } }));
+jest.mock("../../db", () => ({ pool: { connect: jest.fn() } }));
 jest.mock("../services/business/business-event.service", () => ({ appendEvent: jest.fn() }));
 jest.mock("../services/business/trust-persistence.service", () => ({
   persistTrustAssessment: jest.fn(),
