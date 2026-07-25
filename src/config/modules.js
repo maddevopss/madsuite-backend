@@ -53,6 +53,7 @@ const MODULES = {
   data_privacy_governance: { label: "Gouvernance des données et vie privée", plan: "internal", price: 0, matrix_status: "madproof_strict" },
   internal_audit:       { label: "Audit interne", plan: "internal", price: 0, matrix_status: "madproof_strict" },
   organizational_performance: { label: "Performance organisationnelle", plan: "internal", price: 0, matrix_status: "madproof_strict" },
+  organizational_governance: { label: "Gouvernance organisationnelle", plan: "internal", price: 0, matrix_status: "madproof_strict" },
   decision_dashboard:   { label: "Pilotage décisionnel", plan: "internal", price: 0, matrix_status: "foundation_alpha" },
   cognitive_continuity: { label: "Continuité cognitive", plan: "internal", price: 0, matrix_status: "madproof_strict" },
 };
