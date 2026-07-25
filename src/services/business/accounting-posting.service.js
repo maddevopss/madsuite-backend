@@ -1,5 +1,6 @@
 const db = require("../../../db");
 const { recordExpenseAccounting, recordSupplierBillAccounting } = require("./accounting-sync.service");
+const { appendEvent } = require("./business-event.service");
 
 async function postExpense({ expenseId, organisationId, createdBy }) {
   const client = await db.pool.connect();
@@ -34,8 +35,23 @@ async function postExpense({ expenseId, organisationId, createdBy }) {
        RETURNING *`,
       [accounting.entryId, expenseId, organisationId],
     );
+    const event = await appendEvent(client, {
+      organisationId,
+      eventType: "expense.posted",
+      aggregateType: "expense",
+      aggregateId: expenseId,
+      actorUserId: createdBy,
+      occurredAt: expense.expense_date,
+      payload: {
+        expenseId,
+        amount: Number(expense.total_amount),
+        subtotal: Number(expense.amount),
+        taxTotal: Number(expense.tax_amount || 0),
+        accountingEntryId: accounting.entryId,
+      },
+    });
     await client.query("COMMIT");
-    return { expense: updated.rows[0], duplicate: accounting.duplicate, accounting };
+    return { expense: updated.rows[0], duplicate: accounting.duplicate, accounting, event };
   } catch (error) {
     try { await client.query("ROLLBACK"); } catch (_) {}
     throw error;
@@ -82,8 +98,26 @@ async function approveSupplierBill({ billId, organisationId, createdBy }) {
     );
     if (!updated.rowCount) throw Object.assign(new Error("La facture fournisseur a été modifiée en parallèle."), { statusCode: 409 });
 
+    const event = await appendEvent(client, {
+      organisationId,
+      eventType: "supplier.bill.approved",
+      aggregateType: "supplier_bill",
+      aggregateId: billId,
+      actorUserId: createdBy,
+      occurredAt: bill.bill_date,
+      payload: {
+        billId,
+        supplierId: bill.supplier_id,
+        billNumber: bill.bill_number,
+        amount: Number(bill.total),
+        subtotal: Number(bill.subtotal),
+        taxTotal: Number(bill.tax_total || 0),
+        accountingEntryId: accounting.entryId,
+      },
+    });
+
     await client.query("COMMIT");
-    return { bill: updated.rows[0], duplicate: accounting.duplicate, accounting };
+    return { bill: updated.rows[0], duplicate: accounting.duplicate, accounting, event };
   } catch (error) {
     try { await client.query("ROLLBACK"); } catch (_) {}
     throw error;
