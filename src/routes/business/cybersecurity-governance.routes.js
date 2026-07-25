@@ -36,6 +36,18 @@ router.post('/vulnerabilities', (req,res,next) => handle(res,next,() => {
   const input = { ...req.body, ownerUserId: req.body.ownerUserId || actor(req) };
   return transactionalWrite(req, 'cybersecurity.vulnerability.create', null, input, async ({ client, organisationId, idempotencyKey }) => (await client.query(`INSERT INTO cybersecurity_vulnerabilities (organisation_id,asset_id,vulnerability_number,title,description,severity,source,due_at,owner_user_id,remediation_plan,evidence,idempotency_key) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,[organisationId,input.assetId||null,input.vulnerabilityNumber,input.title,input.description,input.severity,input.source,input.dueAt||null,input.ownerUserId,input.remediationPlan||null,input.evidence||[],idempotencyKey])).rows[0]);
 },201));
+router.post('/vulnerabilities/:id/transition', (req,res,next) => handle(res,next,() => {
+  const input = { ...req.body, vulnerabilityId: req.params.id };
+  return transactionalWrite(req, 'cybersecurity.vulnerability.transition', 'cybersecurity.vulnerability.transition', input, async ({ client, organisationId }) => {
+    const vulnerability = (await client.query('SELECT id,status,remediation_plan,evidence FROM cybersecurity_vulnerabilities WHERE id=$1 AND organisation_id=$2 FOR UPDATE',[req.params.id,organisationId])).rows[0];
+    if (!vulnerability) {
+      const error = new Error('cybersecurity.vulnerability_not_found');
+      error.statusCode = 404;
+      throw error;
+    }
+    return (await client.query(`UPDATE cybersecurity_vulnerabilities SET status=$1,remediation_plan=COALESCE($2,remediation_plan),acceptance_reason=COALESCE($3,acceptance_reason),evidence=CASE WHEN $4::jsonb='[]'::jsonb THEN evidence ELSE evidence || $4::jsonb END,updated_at=NOW() WHERE id=$5 AND organisation_id=$6 RETURNING *`,[input.action,input.remediationPlan||null,input.acceptanceReason||null,JSON.stringify(input.evidence||[]),req.params.id,organisationId])).rows[0];
+  });
+}));
 
 router.get('/incidents', (req,res,next) => handle(res,next,async () => (await db.pool.query('SELECT * FROM cybersecurity_incidents WHERE organisation_id=$1 ORDER BY occurred_at DESC',[org(req)])).rows));
 router.post('/incidents', (req,res,next) => handle(res,next,() => {
