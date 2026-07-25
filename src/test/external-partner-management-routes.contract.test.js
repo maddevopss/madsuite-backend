@@ -7,7 +7,7 @@ const source = fs.readFileSync(routePath, 'utf8');
 describe('external partner management route contract', () => {
   test('routes all partner writes through the transaction engine', () => {
     expect(source).toContain("const { executeTransaction } = require('../../services/business/transaction-engine.service')");
-    expect(source.match(/transactionalWrite\(req/g)).toHaveLength(5);
+    expect(source.match(/router\.post\([\s\S]*?transactionalWrite\(req/g)).toHaveLength(5);
     expect(source).toContain('policies: policy ? [`${policy}@1`] : []');
   });
 
