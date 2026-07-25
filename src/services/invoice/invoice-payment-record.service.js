@@ -1,6 +1,7 @@
 const db = require("../../../db");
 const { organisationValue } = require("../../utils/organisationScope");
 const { recordLedgerEntry } = require("./invoice-ledger.service");
+const { recordInvoicePaymentAccounting } = require("../business/accounting-sync.service");
 
 const PAYMENT_METHODS = ["cash", "cheque", "bank_transfer", "card", "stripe", "other"];
 
@@ -178,6 +179,16 @@ async function recordInvoicePayment({
       client,
     });
 
+    const accounting = await recordInvoicePaymentAccounting({
+      client,
+      organisationId: organisationValue(organisationId),
+      paymentId: payment.id,
+      invoiceNumber: summaryBefore.invoice_number,
+      amount: payment.amount,
+      receivedAt: payment.received_at,
+      createdBy,
+    });
+
     const remainingCents = balanceCents - amountCents;
     if (remainingCents === 0) {
       await client.query(
@@ -196,7 +207,7 @@ async function recordInvoicePayment({
 
     const summary = await loadInvoiceBalance({ invoiceId, organisationId, client });
     await client.query("COMMIT");
-    return { duplicate: false, payment, summary };
+    return { duplicate: false, payment, summary, accounting };
   } catch (error) {
     try { await client.query("ROLLBACK"); } catch (_) {}
     throw error;
