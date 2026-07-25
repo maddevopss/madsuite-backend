@@ -2,6 +2,7 @@ const router = require("express").Router();
 const { requireOrganisation } = require("../../middleware/organization.middleware");
 const requireRole = require("../../middleware/requireRole");
 const accountingPostingService = require("../../services/business/accounting-posting.service");
+const supplierPaymentService = require("../../services/business/supplier-payment.service");
 
 router.use(requireOrganisation);
 
@@ -45,11 +46,15 @@ router.post("/", requireRole("admin"), async (req, res, next) => {
 router.get("/bills", async (req, res, next) => {
   try {
     const { rows } = await req.db.query(
-      `SELECT b.*, s.name supplier_name
+      `SELECT b.*, s.name supplier_name,
+              COALESCE(SUM(p.amount) FILTER (WHERE p.reversed_at IS NULL), 0) paid_total,
+              b.total - COALESCE(SUM(p.amount) FILTER (WHERE p.reversed_at IS NULL), 0) balance_due
        FROM supplier_bills b
        JOIN suppliers s ON s.id = b.supplier_id
+       LEFT JOIN supplier_payments p ON p.supplier_bill_id = b.id AND p.organisation_id = b.organisation_id
        WHERE b.organisation_id = $1
-       ORDER BY bill_date DESC`,
+       GROUP BY b.id, s.name
+       ORDER BY b.bill_date DESC`,
       [req.organisationId],
     );
     res.json({ bills: rows });
@@ -94,6 +99,39 @@ router.post("/bills/:id/approve", requireRole("admin"), async (req, res, next) =
     const result = await accountingPostingService.approveSupplierBill({
       billId: req.params.id,
       organisationId: req.organisationId,
+      createdBy: req.user?.id,
+    });
+    if (!result) return res.status(404).json({ message: "Facture fournisseur introuvable." });
+    return res.status(result.duplicate ? 200 : 201).json(result);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.get("/bills/:id/payments", async (req, res, next) => {
+  try {
+    const { rows } = await req.db.query(
+      `SELECT * FROM supplier_payments
+       WHERE organisation_id = $1 AND supplier_bill_id = $2
+       ORDER BY paid_at DESC, id DESC`,
+      [req.organisationId, req.params.id],
+    );
+    return res.json({ payments: rows });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post("/bills/:id/payments", requireRole("admin"), async (req, res, next) => {
+  try {
+    const result = await supplierPaymentService.recordSupplierPayment({
+      organisationId: req.organisationId,
+      billId: req.params.id,
+      amount: req.body.amount,
+      paidAt: req.body.paidAt,
+      paymentMethod: req.body.paymentMethod,
+      reference: req.body.reference,
+      idempotencyKey: req.body.idempotencyKey,
       createdBy: req.user?.id,
     });
     if (!result) return res.status(404).json({ message: "Facture fournisseur introuvable." });
