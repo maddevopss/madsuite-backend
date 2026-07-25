@@ -3,6 +3,7 @@ const { requireOrganisation } = require("../../middleware/organization.middlewar
 const requireRole = require("../../middleware/requireRole");
 const accountingPostingService = require("../../services/business/accounting-posting.service");
 const supplierPaymentService = require("../../services/business/supplier-payment.service");
+const paymentReversalService = require("../../services/business/payment-reversal.service");
 
 router.use(requireOrganisation);
 
@@ -77,16 +78,7 @@ router.post("/bills", requireRole("admin"), async (req, res, next) => {
        (organisation_id, supplier_id, bill_number, bill_date, due_date, subtotal, tax_total, total, status)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'draft')
        RETURNING *`,
-      [
-        req.organisationId,
-        body.supplierId,
-        body.billNumber,
-        body.billDate,
-        body.dueDate || null,
-        subtotal,
-        taxTotal,
-        total,
-      ],
+      [req.organisationId, body.supplierId, body.billNumber, body.billDate, body.dueDate || null, subtotal, taxTotal, total],
     );
     return res.status(201).json({ bill: rows[0] });
   } catch (error) {
@@ -135,6 +127,23 @@ router.post("/bills/:id/payments", requireRole("admin"), async (req, res, next) 
       createdBy: req.user?.id,
     });
     if (!result) return res.status(404).json({ message: "Facture fournisseur introuvable." });
+    return res.status(result.duplicate ? 200 : 201).json(result);
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post("/payments/:paymentId/reverse", requireRole("admin"), async (req, res, next) => {
+  try {
+    const result = await paymentReversalService.reverseSupplierPayment({
+      organisationId: req.organisationId,
+      paymentId: req.params.paymentId,
+      reason: req.body.reason,
+      reversedAt: req.body.reversedAt,
+      idempotencyKey: req.body.idempotencyKey,
+      createdBy: req.user?.id,
+    });
+    if (!result) return res.status(404).json({ message: "Paiement fournisseur introuvable." });
     return res.status(result.duplicate ? 200 : 201).json(result);
   } catch (error) {
     return next(error);
