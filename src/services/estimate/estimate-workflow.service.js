@@ -27,17 +27,14 @@ async function findExistingInvoice({ organisationId, estimateId, idempotencyKey,
 async function convertToInvoice({ estimateId, organisationId, billedBy, idempotencyKey }) {
   const txClient = await db.pool.connect();
   let committedInvoice = null;
-
   try {
     await txClient.query("BEGIN");
-
     const sameCommand = await txClient.query(
       `SELECT * FROM invoices
         WHERE organisation_id = $1 AND idempotency_key = $2
         FOR SHARE`,
       [organisationValue(organisationId), idempotencyKey],
     );
-
     if (sameCommand.rows.length > 0) {
       const invoice = sameCommand.rows[0];
       if (Number(invoice.estimate_id) !== Number(estimateId)) {
@@ -53,11 +50,8 @@ async function convertToInvoice({ estimateId, organisationId, billedBy, idempote
         FOR UPDATE`,
       [estimateId, organisationValue(organisationId)],
     );
-
     const estimate = estimateResult.rows[0];
-    if (!estimate) {
-      throw serviceError("Soumission introuvable.", 404);
-    }
+    if (!estimate) throw serviceError("Soumission introuvable.", 404);
 
     const alreadyConverted = await txClient.query(
       `SELECT * FROM invoices
@@ -65,12 +59,10 @@ async function convertToInvoice({ estimateId, organisationId, billedBy, idempote
         FOR SHARE`,
       [organisationValue(organisationId), estimateId],
     );
-
     if (alreadyConverted.rows.length > 0) {
       await txClient.query("COMMIT");
       return { invoice: alreadyConverted.rows[0], replayed: true };
     }
-
     if (estimate.status !== "accepted") {
       throw serviceError("Seule une soumission acceptée peut être convertie en facture.", 400);
     }
@@ -81,7 +73,6 @@ async function convertToInvoice({ estimateId, organisationId, billedBy, idempote
         ORDER BY id`,
       [estimateId, organisationValue(organisationId)],
     );
-
     const invoiceNumber = await getNextInvoiceNumber(organisationId, txClient);
     const billedAt = new Date();
     const invoiceResult = await txClient.query(
@@ -105,7 +96,6 @@ async function convertToInvoice({ estimateId, organisationId, billedBy, idempote
         idempotencyKey,
       ],
     );
-
     const invoice = invoiceResult.rows[0];
 
     for (const item of itemsResult.rows) {
@@ -114,15 +104,7 @@ async function convertToInvoice({ estimateId, organisationId, billedBy, idempote
           (organisation_id, invoice_id, time_entry_id, description, quantity,
            unit_rate, amount, created_at, original_description)
          VALUES ($1, $2, NULL, $3, $4, $5, $6, CURRENT_TIMESTAMP, $7)`,
-        [
-          organisationValue(organisationId),
-          invoice.id,
-          item.description,
-          item.quantity,
-          item.unit_rate,
-          item.amount,
-          item.description,
-        ],
+        [organisationValue(organisationId), invoice.id, item.description, item.quantity, item.unit_rate, item.amount, item.description],
       );
     }
 
@@ -132,30 +114,18 @@ async function convertToInvoice({ estimateId, organisationId, billedBy, idempote
         WHERE id = $1 AND organisation_id = $2 AND status = 'accepted'`,
       [estimateId, organisationValue(organisationId)],
     );
-
-    if (updated.rowCount !== 1) {
-      throw serviceError("La soumission a changé pendant la conversion.", 409);
-    }
-
+    if (updated.rowCount !== 1) throw serviceError("La soumission a changé pendant la conversion.", 409);
     await txClient.query("COMMIT");
     committedInvoice = invoice;
   } catch (error) {
-    try {
-      await txClient.query("ROLLBACK");
-    } catch (_) {}
-
+    try { await txClient.query("ROLLBACK"); } catch (_) {}
     if (error.code === "23505") {
-      const existing = await findExistingInvoice({
-        organisationId,
-        estimateId,
-        idempotencyKey,
-      });
+      const existing = await findExistingInvoice({ organisationId, estimateId, idempotencyKey });
       if (existing && Number(existing.estimate_id) === Number(estimateId)) {
         return { invoice: existing, replayed: true };
       }
       throw serviceError("Conflit d'idempotence lors de la conversion.", 409);
     }
-
     throw error;
   } finally {
     txClient.release();
@@ -172,54 +142,28 @@ async function convertToInvoice({ estimateId, organisationId, billedBy, idempote
       estimateId,
     },
   });
-
   return { invoice: committedInvoice, replayed: false };
 }
 
 async function convertToProject({ estimateId, organisationId }) {
   const estimate = await getEstimateById(estimateId, organisationId);
-  if (!estimate) {
-    throw serviceError("Soumission introuvable.", 404);
+  if (!estimate) throw serviceError("Soumission introuvable.", 404);
+  if (estimate.status !== "accepted") {
+    throw serviceError("Seule une soumission acceptée peut être convertie en projet.", 400);
   }
 
-  if (estimate.status === "rejected" || estimate.status === "draft") {
-    throw serviceError("La soumission doit d'abord être envoyée ou acceptée.", 400);
-  }
-
-  let budgetHeures = 0;
-  if (estimate.items) {
-    budgetHeures = estimate.items.reduce((acc, item) => acc + Number(item.quantity || 0), 0);
-  }
-
-  const txClient = await db.pool.connect();
-  try {
-    await txClient.query("BEGIN");
-    await txClient.query(
-      `UPDATE estimates SET status = 'accepted', updated_at = CURRENT_TIMESTAMP
-        WHERE id = $1 AND organisation_id = $2`,
-      [estimateId, organisationValue(organisationId)],
-    );
-    await txClient.query("COMMIT");
-
-    return createProject({
-      data: {
-        client_id: estimate.client_id,
-        nom: `Projet Soumission ${estimate.estimate_number}`,
-        description: estimate.notes || `Généré depuis la soumission ${estimate.estimate_number}`,
-        budget_hours: budgetHeures,
-        taux_horaire: estimate.items && estimate.items.length > 0 ? estimate.items[0].unit_rate : 0,
-        couleur: "#28a745",
-      },
-      organisationId,
-    });
-  } catch (error) {
-    try {
-      await txClient.query("ROLLBACK");
-    } catch (_) {}
-    throw error;
-  } finally {
-    txClient.release();
-  }
+  const budgetHeures = (estimate.items || []).reduce((acc, item) => acc + Number(item.quantity || 0), 0);
+  return createProject({
+    data: {
+      client_id: estimate.client_id,
+      nom: `Projet Soumission ${estimate.estimate_number}`,
+      description: estimate.notes || `Généré depuis la soumission ${estimate.estimate_number}`,
+      budget_hours: budgetHeures,
+      taux_horaire: estimate.items?.length ? estimate.items[0].unit_rate : 0,
+      couleur: "#28a745",
+    },
+    organisationId,
+  });
 }
 
 module.exports = {
