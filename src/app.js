@@ -60,6 +60,7 @@ const sstRoutes = require("./routes/business/sst.routes");
 const legalComplianceRoutes = require("./routes/business/legal-compliance.routes");
 const documentProofRoutes = require("./routes/business/document-proof.routes");
 const assetMaintenanceRoutes = require("./routes/business/asset-maintenance.routes");
+const procurementRoutes = require("./routes/business/procurement.routes");
 const decisionRoutes = require("./routes/business/decision.routes");
 const continuityRoutes = require("./routes/business/continuity.routes");
 const notificationsRoutes = require("./routes/notifications.routes");
@@ -219,6 +220,7 @@ app.use("/api/sst", auth, requireModule("occupational_health_safety"), sstRoutes
 app.use("/api/legal", auth, requireModule("legal_compliance"), legalComplianceRoutes);
 app.use("/api/documents", auth, requireModule("document_proof"), documentProofRoutes);
 app.use("/api/assets", auth, requireModule("asset_maintenance"), assetMaintenanceRoutes);
+app.use("/api/procurement", auth, requireModule("procurement"), procurementRoutes);
 app.use("/api/decision", auth, requireModule("decision_dashboard"), decisionRoutes);
 app.use("/api/continuity", auth, requireModule("cognitive_continuity"), continuityRoutes);
 
