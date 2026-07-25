@@ -68,6 +68,7 @@ const cybersecurityGovernanceRoutes = require("./routes/business/cybersecurity-g
 const dataPrivacyGovernanceRoutes = require("./routes/business/data-privacy-governance.routes");
 const internalAuditRoutes = require("./routes/business/internal-audit.routes");
 const organizationalPerformanceRoutes = require("./routes/business/organizational-performance.routes");
+const organizationalGovernanceRoutes = require("./routes/business/organizational-governance.routes");
 const decisionRoutes = require("./routes/business/decision.routes");
 const continuityRoutes = require("./routes/business/continuity.routes");
 const notificationsRoutes = require("./routes/notifications.routes");
@@ -112,7 +113,6 @@ app.use(compression());
 app.use(cookieParser());
 app.use(corsOptions);
 
-// Routes Stripe et preuves d'achat binaires avant express.json().
 app.use("/api/stripe", stripeRoutes);
 app.use("/api/expenses", auth, requireModule("expenses"), expenseReceiptsRoutes);
 const swaggerDocument = yaml.load(path.join(__dirname, "../swagger.yaml"));
@@ -125,72 +125,42 @@ app.use(express.static(path.join(__dirname, "../../frontend/build")));
 app.get("/api/health", async (req, res) => {
   try {
     await pool.query("SELECT 1");
-
-    res.json(
-      ApiResponse.success("HEALTH_OK", {
-        status: "ok",
-        database: "ok",
-        environment: process.env.NODE_ENV || "development",
-      }),
-    );
+    res.json(ApiResponse.success("HEALTH_OK", {
+      status: "ok",
+      database: "ok",
+      environment: process.env.NODE_ENV || "development",
+    }));
   } catch {
-    res.status(503).json(
-      ApiResponse.error("HEALTH_UNAVAILABLE", {
-        message: "Base de donnees indisponible.",
-        status: "error",
-        database: "unavailable",
-        environment: process.env.NODE_ENV || "development",
-      }),
-    );
+    res.status(503).json(ApiResponse.error("HEALTH_UNAVAILABLE", {
+      message: "Base de donnees indisponible.",
+      status: "error",
+      database: "unavailable",
+      environment: process.env.NODE_ENV || "development",
+    }));
   }
 });
 
-// Routes publiques d'authentification.
-// IMPORTANT : on limite seulement /api/login, pas tout /api.
 app.use("/api/login", loginLimiter);
-
-// Routes publiques du portail
 app.use("/api/portal", defaultLimiter, portalRoutes);
-
-// Routes Kiosque Punch Mobile (publiques, securisees par le kiosk_token)
 app.use("/api/punch", defaultLimiter, punchRoutes);
-
-// loginRoutes contient /login, /logout et /refresh.
-// Donc on monte ensuite sur /api sans loginLimiter global.
 app.use("/api", loginRoutes);
 
-// Routes protégées avec limiter spécialisé.
-// IMPORTANT : les écritures du desktop-agent sont fréquentes,
-// mais les lectures du dashboard ne devraient pas être pénalisées.
 app.use(
   "/api/activity",
   auth,
   (req, res, next) => {
     const readOnlyActivityRoutes = ["/summary", "/latest", "/recent"];
-
     const isReadOnlyActivityRoute = req.method === "GET" && readOnlyActivityRoutes.includes(req.path);
-
-    if (isReadOnlyActivityRoute) {
-      return defaultLimiter(req, res, next);
-    }
-
+    if (isReadOnlyActivityRoute) return defaultLimiter(req, res, next);
     return activityLimiter(req, res, next);
   },
   activityRoutes,
 );
 
-// Rate limit par défaut pour les autres routes API protégées.
-// En NODE_ENV=test, les limiters sont neutralisés dans rateLimiters.js.
-// IMPORTANT: on exclut explicitement /api/activity pour éviter un doublon de limiters
-// (un limiter est déjà monté spécifiquement sur /api/activity plus haut).
 app.use("/api", (req, res, next) => {
-  if (req.path.startsWith("/activity")) {
-    return next();
-  }
+  if (req.path.startsWith("/activity")) return next();
   return defaultLimiter(req, res, next);
 });
-
-// Routes protégées.
 
 app.use("/api/timesheet", auth, timesheetRoutes);
 app.use("/api/clients", auth, clientsRoutes);
@@ -202,7 +172,6 @@ app.use("/api/projets", auth, projetsRoutes);
 app.use("/api/users", auth, usersRoutes);
 app.use("/api/reports", auth, requireModule("reports"), reportsRoutes);
 app.use("/api/timer", auth, timerRoutes);
-
 app.use("/api/activity-intelligence", auth, requireModule("activity_intelligence"), activityIntelligenceRoutes);
 app.use("/api/project-detection", auth, projectDetectionRoutes);
 app.use("/api/day-summary", auth, daySummaryRoutes);
@@ -217,7 +186,6 @@ app.use("/api/quotes", auth, requireModule("quotes"), quotesRoutes);
 app.use("/api/expenses", auth, requireModule("expenses"), expensesRoutes);
 app.use("/api/calendar", auth, require("./routes/calendar.routes"));
 app.use("/api/ai-assistant", auth, aiAssistantRoutes);
-
 app.use("/api/accounting", auth, requireModule("accounting"), accountingRoutes);
 app.use("/api/suppliers", auth, requireModule("suppliers"), suppliersRoutes);
 app.use("/api/inventory", auth, requireModule("inventory"), inventoryRoutes);
@@ -235,11 +203,10 @@ app.use("/api/cybersecurity", auth, requireModule("cybersecurity_governance"), c
 app.use("/api/privacy", auth, requireModule("data_privacy_governance"), dataPrivacyGovernanceRoutes);
 app.use("/api/internal-audit", auth, requireModule("internal_audit"), internalAuditRoutes);
 app.use("/api/performance", auth, requireModule("organizational_performance"), organizationalPerformanceRoutes);
+app.use("/api/governance", auth, requireModule("organizational_governance"), organizationalGovernanceRoutes);
 app.use("/api/decision", auth, requireModule("decision_dashboard"), decisionRoutes);
 app.use("/api/continuity", auth, requireModule("cognitive_continuity"), continuityRoutes);
 
-// Sensitive organisation/platform surfaces keep their internal guards too.
-// Auth is repeated here intentionally so the route mount itself is never ambiguous in audits.
 app.use("/api/organisation", auth, organisationRoutes);
 app.use("/api/organisations", auth, organisationsRoutes);
 app.use("/api/onboarding", auth, onboardingRoutes);
@@ -252,13 +219,10 @@ app.use("/api/analytics", auth, analyticsRoutes);
 app.use("/api/master-admin", auth, masterAdminRoutes);
 app.use("/api/system", auth, systemRoutes);
 
-// Routes API inconnues.
 app.use("/api", (req, res) => {
-  res.status(404).json(
-    ApiResponse.error("ROUTE_NOT_FOUND", {
-      message: "Route API introuvable.",
-    }),
-  );
+  res.status(404).json(ApiResponse.error("ROUTE_NOT_FOUND", {
+    message: "Route API introuvable.",
+  }));
 });
 
 app.use((req, res) => {
@@ -266,7 +230,6 @@ app.use((req, res) => {
 });
 
 Sentry.setupExpressErrorHandler(app);
-
 app.use(errorHandler);
 
 module.exports = app;
