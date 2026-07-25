@@ -2,6 +2,8 @@ const router = require("express").Router();
 const { requireOrganisation } = require("../../middleware/organization.middleware");
 const requireRole = require("../../middleware/requireRole");
 const accountingService = require("../../services/business/accounting.service");
+const businessEventService = require("../../services/business/business-event.service");
+const financialProjectionService = require("../../services/business/financial-projection.service");
 
 router.use(requireOrganisation);
 
@@ -172,6 +174,44 @@ router.get("/statements", async (req, res, next) => {
     res.json(await accountingService.statements(req.db, req.organisationId, req.query.endDate));
   } catch (error) {
     next(error);
+  }
+});
+
+router.get("/events", async (req, res, next) => {
+  try {
+    const events = await businessEventService.listEvents(req.db, req.organisationId, {
+      eventType: req.query.eventType,
+      aggregateType: req.query.aggregateType,
+      aggregateId: req.query.aggregateId,
+      limit: req.query.limit,
+    });
+    return res.json({ events });
+  } catch (error) {
+    return next(error);
+  }
+});
+
+router.post("/projections/financial-daily/rebuild", requireRole("admin"), async (req, res, next) => {
+  try {
+    await req.db.query("BEGIN");
+    const result = await financialProjectionService.rebuildFinancialDailyProjection(req.db, req.organisationId);
+    await req.db.query("COMMIT");
+    return res.json(result);
+  } catch (error) {
+    try { await req.db.query("ROLLBACK"); } catch (_) {}
+    return next(error);
+  }
+});
+
+router.get("/projections/financial-daily", async (req, res, next) => {
+  try {
+    const rows = await financialProjectionService.listFinancialDailyProjection(req.db, req.organisationId, {
+      startDate: req.query.startDate,
+      endDate: req.query.endDate,
+    });
+    return res.json({ rows });
+  } catch (error) {
+    return next(error);
   }
 });
 
