@@ -35,12 +35,13 @@ if (routes && !paymentsModuleChecks.some((check) => routes.includes(check))) {
   violations.push("POST /:token/checkout must require the payments module before creating Stripe checkout.");
 }
 
-const finalizedStatusChecks = [
+const finalizedInvoiceChecks = [
   'data.document.status !== "finalized"',
   'context.invoice.status !== "finalized"',
+  '!context.invoice.finalized_at || context.invoice.status !== "sent"',
 ];
-if (routes && !finalizedStatusChecks.some((check) => routes.includes(check))) {
-  violations.push("POST /:token/checkout must require finalized invoices before payment.");
+if (routes && !finalizedInvoiceChecks.some((check) => routes.includes(check))) {
+  violations.push("POST /:token/checkout must require a finalized and payable invoice before Stripe checkout.");
 }
 
 if (routes && !routes.includes("MODULE_NOT_AVAILABLE")) {
