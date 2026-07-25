@@ -60,6 +60,7 @@ const sstRoutes = require("./routes/business/sst.routes");
 const legalComplianceRoutes = require("./routes/business/legal-compliance.routes");
 const documentProofRoutes = require("./routes/business/document-proof.routes");
 const advancedDocumentGovernanceRoutes = require("./routes/business/advanced-document-governance.routes");
+const externalPartnerManagementRoutes = require("./routes/business/external-partner-management.routes");
 const assetMaintenanceRoutes = require("./routes/business/asset-maintenance.routes");
 const procurementRoutes = require("./routes/business/procurement.routes");
 const qualityRoutes = require("./routes/business/quality.routes");
@@ -232,6 +233,7 @@ app.use("/api/sst", auth, requireModule("occupational_health_safety"), sstRoutes
 app.use("/api/legal", auth, requireModule("legal_compliance"), legalComplianceRoutes);
 app.use("/api/documents", auth, requireModule("document_proof"), documentProofRoutes);
 app.use("/api/document-governance", auth, requireModule("advanced_document_governance"), advancedDocumentGovernanceRoutes);
+app.use("/api/partners", auth, requireModule("external_partner_management"), externalPartnerManagementRoutes);
 app.use("/api/assets", auth, requireModule("asset_maintenance"), assetMaintenanceRoutes);
 app.use("/api/procurement", auth, requireModule("procurement"), procurementRoutes);
 app.use("/api/quality", auth, requireModule("quality_management"), qualityRoutes);
