@@ -9,8 +9,8 @@ const actor = (req) => req.user?.id || req.user?.userId || null;
 const key = (req) => req.get('Idempotency-Key') || req.body?.idempotencyKey;
 const handle = (res, next, fn, status = 200) => Promise.resolve(fn()).then((data) => res.status(status).json(data)).catch(next);
 
-router.get('/risks', (req, res, next) => handle(res, next, async () => (await db.pool.query('SELECT * FROM enterprise_risks WHERE organisation_id=$1 ORDER BY created_at DESC', [org(req)])).rows));
-router.post('/risks', (req, res, next) => handle(res, next, async () => {
+router.get('/', (req, res, next) => handle(res, next, async () => (await db.pool.query('SELECT * FROM enterprise_risks WHERE organisation_id=$1 ORDER BY created_at DESC', [org(req)])).rows));
+router.post('/', (req, res, next) => handle(res, next, async () => {
   const likelihood = Number(req.body.likelihood);
   const impact = Number(req.body.impact);
   return (await db.pool.query(`INSERT INTO enterprise_risks (organisation_id,risk_number,category,title,description,source_type,source_id,owner_user_id,likelihood,impact,inherent_score,appetite_threshold,next_review_at,evidence,idempotency_key,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`, [org(req),req.body.riskNumber,req.body.category,req.body.title,req.body.description,req.body.sourceType||null,req.body.sourceId||null,req.body.ownerUserId,likelihood,impact,likelihood*impact,req.body.appetiteThreshold||null,req.body.nextReviewAt||null,req.body.evidence||[],key(req),actor(req)])).rows[0];
