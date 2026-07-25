@@ -64,6 +64,7 @@ const procurementRoutes = require("./routes/business/procurement.routes");
 const qualityRoutes = require("./routes/business/quality.routes");
 const enterpriseRiskRoutes = require("./routes/business/enterprise-risk.routes");
 const enterpriseBusinessContinuityRoutes = require("./routes/business/enterprise-business-continuity.routes");
+const cybersecurityGovernanceRoutes = require("./routes/business/cybersecurity-governance.routes");
 const decisionRoutes = require("./routes/business/decision.routes");
 const continuityRoutes = require("./routes/business/continuity.routes");
 const notificationsRoutes = require("./routes/notifications.routes");
@@ -227,6 +228,7 @@ app.use("/api/procurement", auth, requireModule("procurement"), procurementRoute
 app.use("/api/quality", auth, requireModule("quality_management"), qualityRoutes);
 app.use("/api/risks", auth, requireModule("enterprise_risk"), enterpriseRiskRoutes);
 app.use("/api/business-continuity", auth, requireModule("business_continuity"), enterpriseBusinessContinuityRoutes);
+app.use("/api/cybersecurity", auth, requireModule("cybersecurity_governance"), cybersecurityGovernanceRoutes);
 app.use("/api/decision", auth, requireModule("decision_dashboard"), decisionRoutes);
 app.use("/api/continuity", auth, requireModule("cognitive_continuity"), continuityRoutes);
 
