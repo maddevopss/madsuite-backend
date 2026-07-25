@@ -45,6 +45,7 @@ const MODULES = {
   legal_compliance:     { label: "Juridique et conformité", plan: "internal", price: 0, matrix_status: "madproof_strict" },
   document_proof:       { label: "Documents et preuves", plan: "internal", price: 0, matrix_status: "madproof_strict" },
   advanced_document_governance: { label: "Gouvernance documentaire avancée", plan: "internal", price: 0, matrix_status: "madproof_strict" },
+  external_partner_management: { label: "Partenaires externes", plan: "internal", price: 0, matrix_status: "madproof_strict" },
   asset_maintenance:    { label: "Actifs et entretien", plan: "internal", price: 0, matrix_status: "madproof_strict" },
   procurement:          { label: "Achats et approvisionnements", plan: "internal", price: 0, matrix_status: "madproof_strict" },
   quality_management:   { label: "Gestion de la qualité", plan: "internal", price: 0, matrix_status: "madproof_strict" },
