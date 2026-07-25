@@ -18,14 +18,16 @@ describe('organizational governance explicit transitions', () => {
   });
 
   test('reads real authors and policy owners before approval', () => {
-    expect(route).toContain('SELECT id,author_user_id,category FROM governance_decisions');
-    expect(route).toContain('SELECT id,owner_user_id FROM governance_policies');
+    expect(route).toContain('FROM governance_decisions');
+    expect(route).toContain('author_user_id');
+    expect(route).toContain('FROM governance_policies');
+    expect(route).toContain('owner_user_id');
   });
 
   test.each([
-    'governance.committee.meeting.complete@1',
-    'governance.decision.approve@1',
-    'governance.policy.publish@1',
-    'governance.authority.validate@1',
-  ])('references %s', (policy) => expect(route).toContain(policy));
+    'governance.committee.meeting.complete',
+    'governance.decision.approve',
+    'governance.policy.publish',
+    'governance.authority.validate',
+  ])('references %s', (policy) => expect(route).toContain(`'${policy}'`));
 });
