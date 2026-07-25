@@ -50,6 +50,7 @@ const MODULES = {
   enterprise_risk:      { label: "Gestion des risques", plan: "internal", price: 0, matrix_status: "madproof_strict" },
   business_continuity:  { label: "Continuité des activités", plan: "internal", price: 0, matrix_status: "madproof_strict" },
   cybersecurity_governance: { label: "Gouvernance de la cybersécurité", plan: "internal", price: 0, matrix_status: "madproof_strict" },
+  data_privacy_governance: { label: "Gouvernance des données et vie privée", plan: "internal", price: 0, matrix_status: "madproof_strict" },
   decision_dashboard:   { label: "Pilotage décisionnel", plan: "internal", price: 0, matrix_status: "foundation_alpha" },
   cognitive_continuity: { label: "Continuité cognitive", plan: "internal", price: 0, matrix_status: "madproof_strict" },
 };
