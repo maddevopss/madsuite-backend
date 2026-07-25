@@ -82,8 +82,9 @@ async function transitionRecord({ organisationId, kind, id, action, reason, evid
   const tx = await executeTransaction({ type: `${config.type}.transition`, organisationId: organisationValue(organisationId), actorUserId: createdBy, idempotencyKey, policies: [config.policy], input,
     execute: async ({ client, transactionId, correlationId, organisationId: orgId, actorUserId }) => {
       const { rows } = await client.query(`SELECT * FROM ${config.table} WHERE organisation_id=$1 AND id=$2 FOR UPDATE`, [orgId,id]); const current = rows[0]; if (!current) return null;
-      const extra = kind === "contract" && action === "signed" ? ",signed_at=NOW(),evidence=$5" : kind === "contract" && action === "terminated" ? ",terminated_at=NOW(),termination_reason=$4" : kind === "matter" && ["closed","settled","cancelled"].includes(action) ? ",closed_at=NOW(),closure_reason=$4" : "";
-      const updated = await client.query(`UPDATE ${config.table} SET status=$3,ct_mad_transaction_id=$6,correlation_id=$7${extra} WHERE organisation_id=$1 AND id=$2 RETURNING *`, [orgId,id,action,reason||null,evidence,transactionId,correlationId]);
+      const timestampUpdate = kind === "contract" && action === "signed" ? ",signed_at=NOW()" : kind === "contract" && action === "terminated" ? ",terminated_at=NOW()" : kind === "matter" && ["closed","settled","cancelled"].includes(action) ? ",closed_at=NOW()" : "";
+      const reasonColumn = kind === "contract" ? "termination_reason" : "closure_reason";
+      const updated = await client.query(`UPDATE ${config.table} SET status=$3,${reasonColumn}=COALESCE($4,${reasonColumn}),evidence=$5,ct_mad_transaction_id=$6,correlation_id=$7${timestampUpdate} WHERE organisation_id=$1 AND id=$2 RETURNING *`, [orgId,id,action,reason||null,evidence,transactionId,correlationId]);
       const event = await appendEvent(client, { organisationId: orgId, eventType: `${config.type}.${action}`, aggregateType: config.type.replace("legal.","legal_"), aggregateId: id, actorUserId, correlationId, payload: { reason: reason || null, evidenceCount: evidence.length } });
       return { record: updated.rows[0], event };
     }});
