@@ -56,6 +56,7 @@ const MODULES = {
   organizational_governance: { label: "Gouvernance organisationnelle", plan: "internal", price: 0, matrix_status: "madproof_strict" },
   advanced_financial_management: { label: "Gestion financière avancée", plan: "internal", price: 0, matrix_status: "madproof_strict" },
   facilities_management: { label: "Biens et installations", plan: "internal", price: 0, matrix_status: "madproof_strict" },
+  environmental_management: { label: "Gestion environnementale", plan: "internal", price: 0, matrix_status: "madproof_strict" },
   decision_dashboard:   { label: "Pilotage décisionnel", plan: "internal", price: 0, matrix_status: "foundation_alpha" },
   cognitive_continuity: { label: "Continuité cognitive", plan: "internal", price: 0, matrix_status: "madproof_strict" },
 };
