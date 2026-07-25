@@ -73,8 +73,8 @@ async function recordPostedEntry(client, {
   const entry = await client.query(
     `INSERT INTO accounting_entries
       (organisation_id, journal_id, entry_number, entry_date, description,
-       source_type, source_id, status, posted_at, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,'posted',NOW(),$8)
+       source_type, source_id, status, created_by)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,'draft',$8)
      RETURNING id`,
     [
       organisationId,
@@ -103,6 +103,13 @@ async function recordPostedEntry(client, {
       ],
     );
   }
+
+  await client.query(
+    `UPDATE accounting_entries
+     SET status = 'posted', posted_at = NOW()
+     WHERE organisation_id = $1 AND id = $2 AND status = 'draft'`,
+    [organisationId, entry.rows[0].id],
+  );
 
   return { skipped: false, duplicate: false, entryId: entry.rows[0].id };
 }
