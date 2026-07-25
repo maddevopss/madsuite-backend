@@ -48,6 +48,7 @@ const MODULES = {
   procurement:          { label: "Achats et approvisionnements", plan: "internal", price: 0, matrix_status: "madproof_strict" },
   quality_management:   { label: "Gestion de la qualité", plan: "internal", price: 0, matrix_status: "madproof_strict" },
   enterprise_risk:      { label: "Gestion des risques", plan: "internal", price: 0, matrix_status: "madproof_strict" },
+  business_continuity:  { label: "Continuité des activités", plan: "internal", price: 0, matrix_status: "madproof_strict" },
   decision_dashboard:   { label: "Pilotage décisionnel", plan: "internal", price: 0, matrix_status: "foundation_alpha" },
   cognitive_continuity: { label: "Continuité cognitive", plan: "internal", price: 0, matrix_status: "madproof_strict" },
 };
