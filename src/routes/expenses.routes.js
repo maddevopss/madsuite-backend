@@ -5,6 +5,7 @@ const ApiResponse = require("../utils/apiResponse");
 const { requireOrganisation } = require("../middleware/organization.middleware");
 const { getOrganisationId } = require("../utils/organisationScope");
 const expensesService = require("../services/expenses.service");
+const accountingPostingService = require("../services/business/accounting-posting.service");
 
 const CATEGORY_PATTERN = /^[a-z0-9_-]{2,50}$/;
 const CURRENCY_PATTERN = /^[A-Z]{3}$/;
@@ -14,6 +15,14 @@ router.use(requireOrganisation);
 
 function validationError(res, message, fields = {}) {
   return res.status(400).json(ApiResponse.error("VALIDATION_ERROR", { message, fields }));
+}
+
+function requireAdmin(req, res) {
+  if (req.user?.role !== "admin") {
+    res.status(403).json(ApiResponse.error("FORBIDDEN", { message: "Permissions insuffisantes" }));
+    return false;
+  }
+  return true;
 }
 
 function validateExpensePayload(body, { partial = false } = {}) {
@@ -97,6 +106,26 @@ router.post("/", async (req, res, next) => {
       organisationId: getOrganisationId(req),
     });
     return res.status(201).json(ApiResponse.success("EXPENSE_CREATED", expense));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/:id/post", async (req, res, next) => {
+  try {
+    if (!requireAdmin(req, res)) return;
+    const result = await accountingPostingService.postExpense({
+      expenseId: req.params.id,
+      organisationId: getOrganisationId(req),
+      createdBy: req.user?.id,
+    });
+    if (!result) {
+      return res.status(404).json(ApiResponse.error("NOT_FOUND", { message: "Dépense introuvable" }));
+    }
+    return res.status(result.duplicate ? 200 : 201).json(ApiResponse.success(
+      result.duplicate ? "EXPENSE_ACCOUNTING_DUPLICATE" : "EXPENSE_ACCOUNTING_POSTED",
+      result,
+    ));
   } catch (err) {
     next(err);
   }
