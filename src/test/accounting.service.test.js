@@ -3,6 +3,7 @@ const {
   validateEntryLines,
   createEntry,
   postEntry,
+  seedDefaultChart,
 } = require("../services/business/accounting.service");
 
 describe("accounting.service", () => {
@@ -41,10 +42,10 @@ describe("accounting.service", () => {
   test("annule la transaction quand la création échoue", async () => {
     const db = {
       query: jest.fn()
-        .mockResolvedValueOnce({}) // BEGIN
-        .mockResolvedValueOnce({}) // journal insert
+        .mockResolvedValueOnce({})
+        .mockResolvedValueOnce({})
         .mockRejectedValueOnce(new Error("échec base"))
-        .mockResolvedValueOnce({}), // ROLLBACK
+        .mockResolvedValueOnce({}),
     };
 
     await expect(createEntry(db, 10, 20, {
@@ -69,5 +70,17 @@ describe("accounting.service", () => {
 
     await expect(postEntry(db, 10, 99)).rejects.toMatchObject({ status: 409 });
     expect(db.query).toHaveBeenCalledTimes(1);
+  });
+
+  test("initialise le plan comptable de façon idempotente", async () => {
+    const db = {
+      query: jest.fn().mockResolvedValue({ rows: [{ inserted: 19 }] }),
+    };
+
+    await expect(seedDefaultChart(db, 10)).resolves.toBe(19);
+    expect(db.query).toHaveBeenCalledWith(
+      "SELECT seed_default_chart_of_accounts($1)::integer AS inserted",
+      [10],
+    );
   });
 });
