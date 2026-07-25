@@ -51,6 +51,12 @@ const aiAssistantRoutes = require("./routes/aiAssistant.routes");
 const modulesRoutes = require("./routes/modules.routes");
 const hubRoutes = require("./routes/hub.routes");
 const cognitiveRoutes = require("./routes/cognitive.routes");
+const accountingRoutes = require("./routes/business/accounting.routes");
+const suppliersRoutes = require("./routes/business/suppliers.routes");
+const inventoryRoutes = require("./routes/business/inventory.routes");
+const payrollRoutes = require("./routes/business/payroll.routes");
+const decisionRoutes = require("./routes/business/decision.routes");
+const continuityRoutes = require("./routes/business/continuity.routes");
 const notificationsRoutes = require("./routes/notifications.routes");
 const analyticsRoutes = require("./routes/analytics.routes");
 const exportRoutes = require("./integrations/export/export.routes");
@@ -198,6 +204,13 @@ app.use("/api/quotes", auth, requireModule("quotes"), quotesRoutes);
 app.use("/api/expenses", auth, requireModule("expenses"), expensesRoutes);
 app.use("/api/calendar", auth, require("./routes/calendar.routes"));
 app.use("/api/ai-assistant", auth, aiAssistantRoutes);
+
+app.use("/api/accounting", auth, requireModule("accounting"), accountingRoutes);
+app.use("/api/suppliers", auth, requireModule("suppliers"), suppliersRoutes);
+app.use("/api/inventory", auth, requireModule("inventory"), inventoryRoutes);
+app.use("/api/payroll", auth, requireModule("payroll"), payrollRoutes);
+app.use("/api/decision", auth, requireModule("decision_dashboard"), decisionRoutes);
+app.use("/api/continuity", auth, requireModule("cognitive_continuity"), continuityRoutes);
 
 // Sensitive organisation/platform surfaces keep their internal guards too.
 // Auth is repeated here intentionally so the route mount itself is never ambiguous in audits.

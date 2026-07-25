@@ -36,6 +36,12 @@ const MODULES = {
   // --- Modules internes / MADPROOF strict ---
   cognitive_engine: { label: "Moteur cognitif", plan: "internal", price: 0, matrix_status: "madproof_strict" },
   desktop_agent:    { label: "Agent desktop",   plan: "internal", price: 0, matrix_status: "consent_required" },
+  accounting:           { label: "Comptabilité",         plan: "internal", price: 0, matrix_status: "foundation_alpha" },
+  suppliers:            { label: "Fournisseurs",         plan: "internal", price: 0, matrix_status: "foundation_alpha" },
+  inventory:            { label: "Inventaire",           plan: "internal", price: 0, matrix_status: "foundation_alpha" },
+  payroll:              { label: "Paie",                 plan: "internal", price: 0, matrix_status: "ruleset_required" },
+  decision_dashboard:   { label: "Pilotage décisionnel", plan: "internal", price: 0, matrix_status: "foundation_alpha" },
+  cognitive_continuity: { label: "Continuité cognitive", plan: "internal", price: 0, matrix_status: "madproof_strict" },
 };
 
 const INTERNAL_PLAN_TYPES = new Set(["admin", "internal", "master_admin", "platform_admin"]);
