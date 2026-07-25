@@ -1,5 +1,3 @@
-jest.mock("../../../db", () => ({ pool: { connect: jest.fn(), query: jest.fn() } }));
-
 const { evaluatePolicy } = require("../services/business/transaction-engine.service");
 const {
   OBLIGATION_CREATE_POLICY,
