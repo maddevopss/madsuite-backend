@@ -55,7 +55,7 @@ async function loadInvoiceBalance({ invoiceId, organisationId, client = db, lock
   }
   const result = await client.query(
     `SELECT i.id, i.invoice_number, i.status, i.total, i.finalized_at,
-            COALESCE(SUM(p.amount), 0)::numeric(14,2) AS paid_total
+            COALESCE(SUM(p.amount) FILTER (WHERE p.reversed_at IS NULL), 0)::numeric(14,2) AS paid_total
      FROM invoices i
      LEFT JOIN invoice_payments p ON p.invoice_id = i.id AND p.organisation_id = i.organisation_id
      WHERE i.id = $1 AND i.organisation_id = $2 AND i.deleted_at IS NULL
@@ -85,7 +85,9 @@ async function listInvoicePayments({ invoiceId, organisationId }) {
   if (!summary) return null;
   const result = await db.query(
     `SELECT id, invoice_id, amount, currency, method, source,
-            external_reference, note, received_at, created_at
+            external_reference, note, received_at, created_at,
+            accounting_entry_id, reversed_at, reversal_reason, reversed_by,
+            reversal_accounting_entry_id
      FROM invoice_payments
      WHERE organisation_id = $1 AND invoice_id = $2
      ORDER BY received_at DESC, id DESC`,
@@ -99,7 +101,8 @@ async function executeInvoicePayment({ client, transactionId, correlationId, org
   const normalizedIdempotencyKey = String(idempotencyKey).trim();
   const existing = await client.query(
     `SELECT id, invoice_id, amount, currency, method, source,
-            external_reference, note, received_at, created_at
+            external_reference, note, received_at, created_at,
+            accounting_entry_id, reversed_at, reversal_reason, reversal_accounting_entry_id
      FROM invoice_payments
      WHERE organisation_id = $1 AND idempotency_key = $2
      FOR UPDATE`,
@@ -155,6 +158,13 @@ async function executeInvoicePayment({ client, transactionId, correlationId, org
     receivedAt: payment.received_at,
     createdBy: actorUserId,
   });
+  if (accounting.entryId) {
+    await client.query(
+      "UPDATE invoice_payments SET accounting_entry_id=$1 WHERE id=$2 AND organisation_id=$3",
+      [accounting.entryId, payment.id, organisationId],
+    );
+    payment.accounting_entry_id = accounting.entryId;
+  }
 
   const remainingCents = balanceCents - amountCents;
   if (remainingCents === 0) {
