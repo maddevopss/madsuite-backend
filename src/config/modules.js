@@ -42,6 +42,7 @@ const MODULES = {
   payroll:              { label: "Paie",                 plan: "internal", price: 0, matrix_status: "ruleset_required" },
   human_resources:      { label: "Ressources humaines",  plan: "internal", price: 0, matrix_status: "foundation_alpha" },
   occupational_health_safety: { label: "Santé et sécurité au travail", plan: "internal", price: 0, matrix_status: "madproof_strict" },
+  legal_compliance:     { label: "Juridique et conformité", plan: "internal", price: 0, matrix_status: "madproof_strict" },
   decision_dashboard:   { label: "Pilotage décisionnel", plan: "internal", price: 0, matrix_status: "foundation_alpha" },
   cognitive_continuity: { label: "Continuité cognitive", plan: "internal", price: 0, matrix_status: "madproof_strict" },
 };
