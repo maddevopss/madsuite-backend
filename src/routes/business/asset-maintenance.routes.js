@@ -1,0 +1,29 @@
+const express = require('express');
+const db = require('../../../db');
+const { transitionWorkOrder } = require('../../services/business/asset-maintenance-transaction.service');
+const { organisationValue } = require('../../utils/organisationScope');
+
+const router = express.Router();
+const actor = (req) => req.user?.id || req.user?.userId || null;
+const org = (req) => organisationValue(req.organisationId || req.user?.organisation_id);
+const key = (req) => req.get('Idempotency-Key') || req.body?.idempotencyKey;
+const handle = (res, next, fn, status = 200) => Promise.resolve(fn()).then((data) => data ? res.status(status).json(data) : res.status(404).json({ code: 'ASSET_RECORD_NOT_FOUND' })).catch(next);
+
+router.get('/records', (req,res,next) => handle(res,next,async()=> (await db.pool.query('SELECT * FROM asset_records WHERE organisation_id=$1 ORDER BY created_at DESC',[org(req)])).rows));
+router.post('/records', (req,res,next) => handle(res,next,async()=> (await db.pool.query(`INSERT INTO asset_records (organisation_id,asset_code,name,asset_type,serial_number,registration_number,location,acquired_at,acquisition_cost,residual_value,useful_life_months,warranty_expires_at,owner_user_id,metadata,evidence,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *`,[org(req),req.body.assetCode,req.body.name,req.body.assetType,req.body.serialNumber||null,req.body.registrationNumber||null,req.body.location||null,req.body.acquiredAt||null,req.body.acquisitionCost||null,req.body.residualValue||null,req.body.usefulLifeMonths||null,req.body.warrantyExpiresAt||null,req.body.ownerUserId||null,req.body.metadata||{},req.body.evidence||[],actor(req)])).rows[0],201));
+
+router.get('/plans', (req,res,next) => handle(res,next,async()=> (await db.pool.query('SELECT * FROM asset_maintenance_plans WHERE organisation_id=$1 ORDER BY next_due_at NULLS LAST',[org(req)])).rows));
+router.post('/plans', (req,res,next) => handle(res,next,async()=> (await db.pool.query(`INSERT INTO asset_maintenance_plans (organisation_id,asset_id,name,maintenance_type,interval_days,interval_usage,usage_unit,next_due_at,next_due_usage,checklist,required_evidence,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,[org(req),req.body.assetId,req.body.name,req.body.maintenanceType,req.body.intervalDays||null,req.body.intervalUsage||null,req.body.usageUnit||null,req.body.nextDueAt||null,req.body.nextDueUsage||null,req.body.checklist||[],req.body.requiredEvidence||[],actor(req)])).rows[0],201));
+
+router.get('/work-orders', (req,res,next) => handle(res,next,async()=> (await db.pool.query('SELECT * FROM asset_work_orders WHERE organisation_id=$1 ORDER BY created_at DESC',[org(req)])).rows));
+router.post('/work-orders', (req,res,next) => handle(res,next,async()=> (await db.pool.query(`INSERT INTO asset_work_orders (organisation_id,asset_id,maintenance_plan_id,work_order_number,work_type,priority,description,assigned_user_id,scheduled_at,due_at,idempotency_key,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,[org(req),req.body.assetId,req.body.maintenancePlanId||null,req.body.workOrderNumber,req.body.workType,req.body.priority||'normal',req.body.description,req.body.assignedUserId||null,req.body.scheduledAt||null,req.body.dueAt||null,key(req),actor(req)])).rows[0],201));
+router.post('/work-orders/:id/:action', (req,res,next) => handle(res,next,()=>transitionWorkOrder({ organisationId:org(req), id:Number(req.params.id), action:req.params.action, reason:req.body.reason, evidence:req.body.evidence||[], findings:req.body.findings||[], labourCost:req.body.labourCost||0, partsCost:req.body.partsCost||0, externalCost:req.body.externalCost||0, idempotencyKey:key(req), createdBy:actor(req) })));
+
+router.post('/records/:id/readings', (req,res,next) => handle(res,next,async()=> (await db.pool.query(`INSERT INTO asset_usage_readings (organisation_id,asset_id,reading_value,reading_unit,measured_at,evidence,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,[org(req),Number(req.params.id),req.body.readingValue,req.body.readingUnit,req.body.measuredAt,req.body.evidence||[],actor(req)])).rows[0],201));
+
+router.get('/alerts', (req,res,next) => handle(res,next,async()=> { const organisationId=org(req); const [plans,orders,warranties]=await Promise.all([
+  db.pool.query(`SELECT p.*,a.asset_code,a.name asset_name FROM asset_maintenance_plans p JOIN asset_records a ON a.id=p.asset_id AND a.organisation_id=p.organisation_id WHERE p.organisation_id=$1 AND p.status='active' AND p.next_due_at<=CURRENT_DATE+INTERVAL '30 days' ORDER BY p.next_due_at`,[organisationId]),
+  db.pool.query(`SELECT w.*,a.asset_code,a.name asset_name FROM asset_work_orders w JOIN asset_records a ON a.id=w.asset_id AND a.organisation_id=w.organisation_id WHERE w.organisation_id=$1 AND w.status NOT IN ('completed','verified','cancelled') AND w.due_at<=NOW() ORDER BY w.due_at`,[organisationId]),
+  db.pool.query(`SELECT id,asset_code,name,warranty_expires_at FROM asset_records WHERE organisation_id=$1 AND status='active' AND warranty_expires_at<=CURRENT_DATE+INTERVAL '60 days' ORDER BY warranty_expires_at`,[organisationId])]); return { maintenancePlans:plans.rows, overdueWorkOrders:orders.rows, expiringWarranties:warranties.rows }; }));
+
+module.exports = router;
