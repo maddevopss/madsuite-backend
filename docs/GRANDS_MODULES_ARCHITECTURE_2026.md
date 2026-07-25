@@ -19,6 +19,19 @@
 - Phase E — pilotage: encaissements, dettes, marge, stocks, alertes et tendances.
 - Phase F — continuité cognitive: capture de contexte, reprise de tâche, recommandations explicables.
 
+## Phase B maintenant disponible
+
+- plan comptable initial réexécutable sans doublons;
+- journaux des ventes, achats, encaissements, décaissements, paie et général;
+- périodes comptables ouvertes, fermées ou verrouillées;
+- validation stricte de chaque ligne et de l'équilibre débit-crédit;
+- grand livre avec solde progressif par compte;
+- balance de vérification et premiers états financiers;
+- renversement contrôlé d'une écriture publiée;
+- protection des lignes et des périodes historiques;
+- unicité d'une écriture provenant d'une même opération métier;
+- tests unitaires des invariants comptables fondamentaux.
+
 ## Règle de promotion MAD
 
 Chaque fonction passe successivement par: hypothèse → prototype → résultat vérifiable → fondation documentée. Une fonction expérimentale ne doit jamais devenir silencieusement une règle institutionnelle.
