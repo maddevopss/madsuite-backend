@@ -1,6 +1,7 @@
 const router = require("express").Router();
 const { requireOrganisation } = require("../../middleware/organization.middleware");
 const requireRole = require("../../middleware/requireRole");
+const accountingPostingService = require("../../services/business/accounting-posting.service");
 
 router.use(requireOrganisation);
 
@@ -60,7 +61,12 @@ router.get("/bills", async (req, res, next) => {
 router.post("/bills", requireRole("admin"), async (req, res, next) => {
   try {
     const body = req.body;
-    const total = Number(body.subtotal || 0) + Number(body.taxTotal || 0);
+    const subtotal = Number(body.subtotal || 0);
+    const taxTotal = Number(body.taxTotal || 0);
+    if (!Number.isFinite(subtotal) || subtotal <= 0 || !Number.isFinite(taxTotal) || taxTotal < 0) {
+      return res.status(400).json({ message: "Montants de facture fournisseur invalides." });
+    }
+    const total = Number((subtotal + taxTotal).toFixed(2));
     const { rows } = await req.db.query(
       `INSERT INTO supplier_bills
        (organisation_id, supplier_id, bill_number, bill_date, due_date, subtotal, tax_total, total, status)
@@ -72,14 +78,28 @@ router.post("/bills", requireRole("admin"), async (req, res, next) => {
         body.billNumber,
         body.billDate,
         body.dueDate || null,
-        body.subtotal || 0,
-        body.taxTotal || 0,
+        subtotal,
+        taxTotal,
         total,
       ],
     );
-    res.status(201).json({ bill: rows[0] });
+    return res.status(201).json({ bill: rows[0] });
   } catch (error) {
-    next(error);
+    return next(error);
+  }
+});
+
+router.post("/bills/:id/approve", requireRole("admin"), async (req, res, next) => {
+  try {
+    const result = await accountingPostingService.approveSupplierBill({
+      billId: req.params.id,
+      organisationId: req.organisationId,
+      createdBy: req.user?.id,
+    });
+    if (!result) return res.status(404).json({ message: "Facture fournisseur introuvable." });
+    return res.status(result.duplicate ? 200 : 201).json(result);
+  } catch (error) {
+    return next(error);
   }
 });
 
