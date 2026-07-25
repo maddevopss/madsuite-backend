@@ -19,18 +19,24 @@
 - Phase E — pilotage: encaissements, dettes, marge, stocks, alertes et tendances.
 - Phase F — continuité cognitive: capture de contexte, reprise de tâche, recommandations explicables.
 
-## Phase B maintenant disponible
+## État de la Phase B
 
-- plan comptable initial réexécutable sans doublons;
-- journaux des ventes, achats, encaissements, décaissements, paie et général;
-- périodes comptables ouvertes, fermées ou verrouillées;
-- validation stricte de chaque ligne et de l'équilibre débit-crédit;
-- grand livre avec solde progressif par compte;
-- balance de vérification et premiers états financiers;
-- renversement contrôlé d'une écriture publiée;
-- protection des lignes et des périodes historiques;
-- unicité d'une écriture provenant d'une même opération métier;
-- tests unitaires des invariants comptables fondamentaux.
+La fondation comptable comprend maintenant:
+
+- un plan comptable initial et des journaux spécialisés;
+- des périodes ouvertes, fermées ou verrouillées;
+- la création, la publication et le renversement d'écritures;
+- un grand livre, une balance de vérification, un état des résultats et un bilan;
+- l'immutabilité des écritures et de leurs lignes après publication;
+- une clé d'unicité empêchant qu'une même opération source produise plusieurs écritures;
+- la comptabilisation transactionnelle des paiements clients.
+
+Un paiement client comptabilisé produit:
+
+- un débit au compte bancaire `1010`;
+- un crédit aux comptes clients `1100`.
+
+Si le plan comptable de l'organisation n'a pas encore été initialisé, le paiement demeure valide, mais aucune écriture comptable approximative n'est créée. Cette décision est retournée explicitement par le service avec le motif `chart_of_accounts_not_initialized`.
 
 ## Règle de promotion MAD
 
