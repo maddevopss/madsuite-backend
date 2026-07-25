@@ -1,7 +1,7 @@
 const express = require('express');
 const db = require('../../../db');
 const { organisationValue } = require('../../utils/organisationScope');
-const { executeTransaction } = require('../../services/business/transaction-engine.service');
+const { executeTransaction, evaluatePolicy } = require('../../services/business/transaction-engine.service');
 require('../../services/business/internal-audit-transaction.service');
 
 const router = express.Router();
@@ -45,12 +45,12 @@ router.post('/engagements/:id/complete', (req,res,next) => handle(res,next,() =>
 
 router.get('/findings', (req,res,next) => handle(res,next,async () => (await db.pool.query('SELECT * FROM internal_audit_findings WHERE organisation_id=$1 ORDER BY created_at DESC',[org(req)])).rows));
 router.post('/findings', (req,res,next) => handle(res,next,() => transactionalWrite(req,'audit.finding.create','audit.finding.create',req.body,async ({ client, organisationId, idempotencyKey }) => (await client.query(`INSERT INTO internal_audit_findings (organisation_id,engagement_id,finding_number,classification,title,description,criterion,root_cause,owner_user_id,due_at,evidence,idempotency_key) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,[organisationId,req.body.engagementId,req.body.findingNumber,req.body.classification,req.body.title,req.body.description,req.body.criterion,req.body.rootCause||null,req.body.ownerUserId,req.body.dueAt||null,req.body.evidence||[],idempotencyKey])).rows[0]),201));
-router.post('/findings/:id/close', (req,res,next) => handle(res,next,() => transactionalWrite(req,'audit.finding.close','audit.finding.close',{...req.body,findingId:req.params.id},async ({ client, organisationId }) => {
+router.post('/findings/:id/close', (req,res,next) => handle(res,next,() => transactionalWrite(req,'audit.finding.close',null,{...req.body,findingId:req.params.id},async ({ client, organisationId, idempotencyKey }) => {
   const finding = (await client.query('SELECT id,status FROM internal_audit_findings WHERE id=$1 AND organisation_id=$2 FOR UPDATE',[req.params.id,organisationId])).rows[0];
   if (!finding) throw notFound('audit.finding_not_found');
   const openActionsCount = Number((await client.query(`SELECT COUNT(*)::int AS count FROM internal_audit_actions WHERE finding_id=$1 AND organisation_id=$2 AND status NOT IN ('closed','cancelled')`,[req.params.id,organisationId])).rows[0].count);
   const input = { ...req.body, findingId: req.params.id, openActionsCount };
-  const decision = await require('../../services/business/transaction-engine.service').evaluatePolicy('audit.finding.close@1',{ input, idempotencyKey: key(req), organisationId, actorUserId: actor(req) });
+  const decision = await evaluatePolicy({ policy: 'audit.finding.close@1', input, idempotencyKey, organisationId, actorUserId: actor(req), client });
   if (!decision.allowed) {
     const error = new Error(decision.code);
     error.statusCode = decision.statusCode || 409;
