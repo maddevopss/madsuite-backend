@@ -2,6 +2,7 @@ const logger = require("../config/logger");
 const outboxService = require("../services/outbox.service");
 const emailService = require("../services/email.service");
 const paymentReminderDelivery = require("../services/payment-reminder-delivery.service");
+const { createEstimatePublicLink } = require("../services/estimate/estimate-public-link.service");
 const { createJobResultTracker } = require("./jobResultAggregator");
 
 async function processOutboxEvents() {
@@ -32,7 +33,6 @@ async function processOutboxEvents() {
       await outboxService.markEventProcessing(event.id);
 
       const { event_type, payload } = event;
-
       if (event_type === "dunning_reminder") {
         const { email, invoice, subType } = payload;
         if (subType === "final") {
@@ -45,7 +45,26 @@ async function processOutboxEvents() {
         await paymentReminderDelivery.markAttemptSent(reminderAttemptId);
       } else if (event_type === "estimate_reminder") {
         const { email, estimate } = payload;
-        await emailService.sendEstimateReminder(email, estimate, event.id);
+        const link = await createEstimatePublicLink({
+          estimateId: estimate.id,
+          organisationId: estimate.organisation_id,
+          createdBy: null,
+          baseUrl: process.env.FRONTEND_URL || "http://localhost:5173",
+          expiresInDays: 30,
+          req: null,
+        });
+        if (!link?.portalUrl) {
+          throw new Error("Impossible de créer le lien sécurisé de la soumission.");
+        }
+        const secureToken = link.portalUrl.split("/").filter(Boolean).pop();
+        if (!secureToken || secureToken.length !== 43) {
+          throw new Error("Le lien sécurisé de la soumission est invalide.");
+        }
+        await emailService.sendEstimateReminder(
+          email,
+          { ...estimate, public_token: secureToken },
+          event.id,
+        );
       } else if (event_type === "recurring_invoice_reminder") {
         const { email, invoice } = payload;
         await emailService.sendInvoiceReminder(email, invoice, event.id);
