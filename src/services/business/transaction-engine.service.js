@@ -14,13 +14,18 @@ function resolvePolicy(ref) {
   return policy;
 }
 
+async function evaluatePolicy({ policy: ref, ...context } = {}) {
+  const policy = resolvePolicy(ref);
+  const result = await policy.evaluate(context);
+  const normalized = typeof result === "boolean" ? { allowed: result } : result;
+  return { name: policy.name, version: policy.version, ...normalized };
+}
+
 async function evaluatePolicies(refs = [], context) {
   const results = [];
   for (const ref of refs) {
-    const policy = resolvePolicy(ref);
-    const result = await policy.evaluate(context);
-    const normalized = typeof result === "boolean" ? { allowed: result } : result;
-    results.push({ name: policy.name, version: policy.version, ...normalized });
+    const result = await evaluatePolicy({ policy: ref, ...context });
+    results.push(result);
   }
   const denied = results.find((result) => result.allowed === false);
   if (denied) {
@@ -74,4 +79,4 @@ async function executeTransaction(definition) {
   }
 }
 
-module.exports = { registerPolicy, resolvePolicy, evaluatePolicies, executeTransaction, createTransactionId };
+module.exports = { registerPolicy, resolvePolicy, evaluatePolicy, evaluatePolicies, executeTransaction, createTransactionId };
