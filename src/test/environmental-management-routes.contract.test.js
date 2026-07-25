@@ -19,7 +19,7 @@ describe('environmental management route contract', () => {
     'environment.metric.record',
     'environment.report.publish',
   ])('enforces policy %s inside the transaction', (policy) => {
-    expect(source).toContain(`\"${policy}\"`);
+    expect(source).toContain(`"${policy}"`);
   });
 
   test('uses the transaction client for every protected database write', () => {
