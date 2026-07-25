@@ -17,6 +17,15 @@ router.get("/accounts", async (req, res, next) => {
   }
 });
 
+router.post("/accounts/seed", requireRole("admin"), async (req, res, next) => {
+  try {
+    const inserted = await accountingService.seedDefaultChart(req.db, req.organisationId);
+    res.status(inserted > 0 ? 201 : 200).json({ inserted });
+  } catch (error) {
+    next(error);
+  }
+});
+
 router.post("/accounts", requireRole("admin"), async (req, res, next) => {
   try {
     const body = req.body;
@@ -30,6 +39,52 @@ router.post("/accounts", requireRole("admin"), async (req, res, next) => {
     res.status(201).json({ account: rows[0] });
   } catch (error) {
     next(error);
+  }
+});
+
+router.get("/periods", async (req, res, next) => {
+  try {
+    const { rows } = await req.db.query(
+      `SELECT * FROM accounting_periods
+       WHERE organisation_id = $1
+       ORDER BY starts_on DESC`,
+      [req.organisationId],
+    );
+    res.json({ periods: rows });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.post("/periods", requireRole("admin"), async (req, res, next) => {
+  try {
+    const body = req.body;
+    const { rows } = await req.db.query(
+      `INSERT INTO accounting_periods
+       (organisation_id, fiscal_year, period_number, starts_on, ends_on)
+       VALUES ($1,$2,$3,$4,$5)
+       RETURNING *`,
+      [req.organisationId, body.fiscalYear, body.periodNumber, body.startsOn, body.endsOn],
+    );
+    res.status(201).json({ period: rows[0] });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.patch("/periods/:id/close", requireRole("admin"), async (req, res, next) => {
+  try {
+    const { rows } = await req.db.query(
+      `UPDATE accounting_periods
+       SET status = 'closed', closed_at = NOW(), closed_by = $3
+       WHERE organisation_id = $1 AND id = $2 AND status = 'open'
+       RETURNING *`,
+      [req.organisationId, req.params.id, req.user?.id || null],
+    );
+    if (!rows[0]) return res.status(404).json({ message: "Période ouverte introuvable." });
+    return res.json({ period: rows[0] });
+  } catch (error) {
+    return next(error);
   }
 });
 
@@ -66,6 +121,35 @@ router.post("/entries/:id/post", requireRole("admin"), async (req, res, next) =>
     return res.json({ entry });
   } catch (error) {
     return next(error);
+  }
+});
+
+router.post("/entries/:id/reverse", requireRole("admin"), async (req, res, next) => {
+  try {
+    const entry = await accountingService.reverseEntry(
+      req.db,
+      req.organisationId,
+      req.user?.id,
+      Number(req.params.id),
+      req.body.reversalDate,
+      req.body.reason,
+    );
+    res.status(201).json({ entry });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/ledger", async (req, res, next) => {
+  try {
+    const rows = await accountingService.ledger(req.db, req.organisationId, {
+      accountId: req.query.accountId,
+      startDate: req.query.startDate,
+      endDate: req.query.endDate,
+    });
+    res.json({ rows });
+  } catch (error) {
+    next(error);
   }
 });
 
