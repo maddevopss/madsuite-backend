@@ -65,20 +65,31 @@ const MODULES = {
 const INTERNAL_PLAN_TYPES = new Set(["admin", "internal", "master_admin", "platform_admin"]);
 const ADDON_ELIGIBLE_PLANS = new Set(["enterprise", "admin", "internal", "master_admin", "platform_admin"]);
 
+// Les modules "free" sont toujours autorisés
 const FREE_MODULES = Object.keys(MODULES).filter(k => MODULES[k].plan === "free");
 const PRO_MODULES = Object.keys(MODULES).filter(k => MODULES[k].plan === "pro");
 const ADDON_MODULES = Object.keys(MODULES).filter(k => MODULES[k].plan === "addon");
 const INTERNAL_MODULES = Object.keys(MODULES).filter(k => MODULES[k].plan === "internal");
 
+/**
+ * Vérifie si un module est autorisé pour un plan donné.
+ * @param {string} moduleKey - Ex: "invoices"
+ * @param {string} planType - "free", "trial", "solo", "pro", "enterprise", "admin", "internal"
+ * @returns {boolean}
+ */
 function isModuleIncludedInPlan(moduleKey, planType) {
   const mod = MODULES[moduleKey];
   if (!mod) return false;
+
   const normalizedPlan = String(planType || "free").toLowerCase();
+
   if (mod.plan === "free") return true;
   if (mod.plan === "trial" && ["trial", "solo", "pro", "enterprise"].includes(normalizedPlan)) return true;
   if (mod.plan === "pro" && ["pro", "enterprise", "admin", "internal", "master_admin", "platform_admin"].includes(normalizedPlan)) return true;
   if (mod.plan === "addon" && ADDON_ELIGIBLE_PLANS.has(normalizedPlan)) return true;
   if (mod.plan === "internal" && INTERNAL_PLAN_TYPES.has(normalizedPlan)) return true;
+
+  // Les add-ons ne sont jamais inclus dans un plan — ils doivent être activés explicitement
   return false;
 }
 
@@ -86,7 +97,22 @@ function getModuleRegistryDiagnostics() {
   const keys = Object.keys(MODULES);
   const duplicateKeys = keys.filter((key, index) => keys.indexOf(key) !== index);
   const modulesWithoutMatrixStatus = keys.filter((key) => !MODULES[key].matrix_status);
-  return { moduleCount: keys.length, duplicateKeys, modulesWithoutMatrixStatus, internalModules: INTERNAL_MODULES };
+
+  return {
+    moduleCount: keys.length,
+    duplicateKeys,
+    modulesWithoutMatrixStatus,
+    internalModules: INTERNAL_MODULES,
+  };
 }
 
-module.exports = { MODULES, FREE_MODULES, PRO_MODULES, ADDON_MODULES, INTERNAL_MODULES, INTERNAL_PLAN_TYPES, isModuleIncludedInPlan, getModuleRegistryDiagnostics };
+module.exports = {
+  MODULES,
+  FREE_MODULES,
+  PRO_MODULES,
+  ADDON_MODULES,
+  INTERNAL_MODULES,
+  INTERNAL_PLAN_TYPES,
+  isModuleIncludedInPlan,
+  getModuleRegistryDiagnostics,
+};
