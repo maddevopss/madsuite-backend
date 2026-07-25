@@ -56,9 +56,13 @@ async function processOutboxEvents() {
         if (!link?.portalUrl) {
           throw new Error("Impossible de créer le lien sécurisé de la soumission.");
         }
+        const secureToken = link.portalUrl.split("/").filter(Boolean).pop();
+        if (!secureToken || secureToken.length !== 43) {
+          throw new Error("Le lien sécurisé de la soumission est invalide.");
+        }
         await emailService.sendEstimateReminder(
           email,
-          { ...estimate, portal_url: link.portalUrl },
+          { ...estimate, public_token: secureToken },
           event.id,
         );
       } else if (event_type === "recurring_invoice_reminder") {
