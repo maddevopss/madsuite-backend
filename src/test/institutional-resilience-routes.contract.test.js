@@ -7,7 +7,7 @@ const source = fs.readFileSync(routePath, 'utf8');
 describe('institutional resilience route contract', () => {
   test('routes protected writes through the transaction engine', () => {
     expect(source).toContain("const { executeTransaction } = require('../../services/business/transaction-engine.service')");
-    expect(source.match(/transactionalWrite\(req/g)).toHaveLength(7);
+    expect(source.match(/transactionalWrite\(req/g)).toHaveLength(8);
     expect(source).toContain('policies: policy ? [`${policy}@1`] : []');
   });
 
