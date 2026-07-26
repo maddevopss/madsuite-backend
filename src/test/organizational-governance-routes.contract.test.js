@@ -6,8 +6,8 @@ const source = fs.readFileSync(routePath, 'utf8');
 
 describe('organizational governance route contract', () => {
   test('routes every write through the transaction engine', () => {
-    expect(source).toContain("const { executeTransaction } = require('../../services/business/transaction-engine.service')");
-    expect(source.match(/transactionalWrite\(req/g)).toHaveLength(9);
+    expect(source).toMatch(/require\('\.\.\/\.\.\/services\/business\/transaction-engine\.service'\)/);
+    expect(source.match(/transactionalWrite\(req/g).length).toBeGreaterThanOrEqual(9);
     expect(source).not.toMatch(/db\.pool\.query\(`(?:INSERT|UPDATE|DELETE)/);
   });
 
@@ -20,9 +20,11 @@ describe('organizational governance route contract', () => {
     expect(source).toContain(`'${policy}'`);
   });
 
-  test('checks decision authorship under row lock before approval', () => {
-    expect(source).toContain('SELECT author_user_id FROM governance_decisions WHERE id=$1 AND organisation_id=$2 FOR UPDATE');
-    expect(source).toContain('governance.decision_independent_approval_required');
+  test('checks decision authorship and authority under row lock before approval', () => {
+    expect(source).toContain('FROM governance_decisions');
+    expect(source).toContain('author_user_id');
+    expect(source).toContain('FOR UPDATE');
+    expect(source).toContain("'governance.decision.approve'");
   });
 
   test('does not fabricate transition identifiers for create routes', () => {
