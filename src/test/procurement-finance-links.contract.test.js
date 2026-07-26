@@ -16,12 +16,12 @@ describe('procurement finance integration contract', () => {
     expect(route).toContain('WHERE id=$1 AND organisation_id=$2 FOR UPDATE');
     expect(route).toContain("['suppliers', req.body.supplierId]");
     expect(route).toContain("['supplier_bills', req.body.supplierBillId]");
-    expect(route).toContain("['finance_budgets', req.body.budgetId]");
+    expect(route).toContain("['financial_budgets', req.body.budgetId]");
   });
 
   test('stores references rather than copied financial data', () => {
     expect(migration).toContain('purchase_order_id BIGINT REFERENCES procurement_purchase_orders(id)');
-    expect(migration).toContain('budget_id BIGINT REFERENCES finance_budgets(id)');
+    expect(migration).toContain('budget_id BIGINT REFERENCES financial_budgets(id)');
     expect(migration).not.toMatch(/subtotal|taxes|total NUMERIC|supplier_name/);
     expect(migration).toContain('UNIQUE (organisation_id, idempotency_key)');
   });
