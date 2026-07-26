@@ -35,14 +35,19 @@ router.post('/assets/:id/decommission', (req, res, next) => handle(res, next, ()
   const input = { ...req.body, assetId: req.params.id, approvedByUserId: req.body.approvedByUserId || actor(req) };
   return transactionalWrite(req, 'facilities.asset.decommission', 'facilities.asset.decommission', input, async ({ client, organisationId }) => {
     const asset = (await client.query('SELECT id,status FROM facilities_assets WHERE id=$1 AND organisation_id=$2 FOR UPDATE', [req.params.id, organisationId])).rows[0];
-    if (!asset) {
-      const error = new Error('facilities.asset_not_found');
-      error.statusCode = 404;
-      throw error;
-    }
+    if (!asset) { const error = new Error('facilities.asset_not_found'); error.statusCode = 404; throw error; }
     return (await client.query(`UPDATE facilities_assets SET status='decommissioned',evidence=evidence || $1::jsonb,updated_at=NOW() WHERE id=$2 AND organisation_id=$3 RETURNING *`, [JSON.stringify(input.evidence || []), req.params.id, organisationId])).rows[0];
   });
 }));
+
+router.get('/maintenance-links', (req, res, next) => handle(res, next, async () => (await db.pool.query(`SELECT l.*,f.asset_code AS facilities_asset_code,m.asset_code AS maintenance_asset_code FROM facilities_maintenance_links l JOIN facilities_assets f ON f.id=l.facilities_asset_id AND f.organisation_id=l.organisation_id JOIN asset_records m ON m.id=l.maintenance_asset_id AND m.organisation_id=l.organisation_id WHERE l.organisation_id=$1 ORDER BY l.created_at DESC`, [org(req)])).rows));
+router.post('/maintenance-links', (req, res, next) => handle(res, next, () => transactionalWrite(req, 'facilities.maintenance_link.create', null, req.body, async ({ client, organisationId, idempotencyKey }) => {
+  const facilityAsset = (await client.query('SELECT id,asset_code FROM facilities_assets WHERE id=$1 AND organisation_id=$2 FOR UPDATE', [req.body.facilitiesAssetId, organisationId])).rows[0];
+  const maintenanceAsset = (await client.query('SELECT id,asset_code FROM asset_records WHERE id=$1 AND organisation_id=$2 FOR UPDATE', [req.body.maintenanceAssetId, organisationId])).rows[0];
+  if (!facilityAsset || !maintenanceAsset) { const error = new Error('facilities.maintenance_link_target_not_found'); error.statusCode = 404; throw error; }
+  if (!req.body.justification || !String(req.body.justification).trim()) { const error = new Error('facilities.maintenance_link_justification_required'); error.statusCode = 400; throw error; }
+  return (await client.query(`INSERT INTO facilities_maintenance_links (organisation_id,facilities_asset_id,maintenance_asset_id,relationship_type,justification,evidence,idempotency_key,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`, [organisationId, req.body.facilitiesAssetId, req.body.maintenanceAssetId, req.body.relationshipType || 'same_asset', req.body.justification, req.body.evidence || [], idempotencyKey, actor(req)])).rows[0];
+}), 201));
 
 router.get('/inspections', (req, res, next) => handle(res, next, async () => (await db.pool.query('SELECT * FROM facilities_inspections WHERE organisation_id=$1 ORDER BY inspected_at DESC', [org(req)])).rows));
 router.post('/inspections', (req, res, next) => handle(res, next, () => {
