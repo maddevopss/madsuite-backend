@@ -25,11 +25,12 @@ describe("Bloc 1 / Sprint 1 — fondation comptable", () => {
     }
   });
 
-  test("les comptes système et les périodes fermées sont gouvernés", () => {
+  test("les périodes fermées et les chevauchements sont gouvernés", () => {
     const migration = readMigration("070_accounting_periods_explainability.sql");
 
-    expect(migration).toMatch(/period/i);
-    expect(migration).toMatch(/closed/i);
-    expect(migration).toMatch(/organisation_id/i);
+    expect(migration).toContain("ADD COLUMN IF NOT EXISTS close_reason TEXT");
+    expect(migration).toContain("IF target_period.status <> 'open' THEN");
+    expect(migration).toContain("prevent_accounting_period_overlap");
+    expect(migration).toContain("p.organisation_id = NEW.organisation_id");
   });
 });
