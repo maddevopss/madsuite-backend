@@ -7,23 +7,21 @@ function readMigration(name) {
 
 describe("Bloc 1 / Sprint 1 — fondation comptable", () => {
   test("le schéma protège les comptes et périodes par organisation", () => {
-    const migration = readMigration("059_accounting_phase_b.sql");
+    const coreMigration = readMigration("058_core_business_modules.sql");
+    const periodMigration = readMigration("059_accounting_phase_b.sql");
 
-    expect(migration).toContain("UNIQUE (organisation_id, code)");
-    expect(migration).toContain("accounting_periods");
-    expect(migration).toContain("status IN ('open','closed','locked')");
-    expect(migration).toContain("ENABLE ROW LEVEL SECURITY");
-    expect(migration).toContain("app.current_organisation_id");
+    expect(coreMigration).toContain("UNIQUE (organisation_id, code)");
+    expect(periodMigration).toContain("accounting_periods");
+    expect(periodMigration).toContain("status IN ('open','closed','locked')");
+    expect(periodMigration).toContain("ALTER TABLE accounting_periods ENABLE ROW LEVEL SECURITY");
+    expect(periodMigration).toContain("app.current_organisation_id");
   });
 
   test("le plan comptable couvre les cinq familles fondamentales", () => {
-    const service = fs.readFileSync(
-      path.join(__dirname, "../services/business/accounting.service.js"),
-      "utf8",
-    );
+    const coreMigration = readMigration("058_core_business_modules.sql");
 
     for (const type of ["asset", "liability", "equity", "revenue", "expense"]) {
-      expect(service).toContain(`"${type}"`);
+      expect(coreMigration).toContain(`'${type}'`);
     }
   });
 
