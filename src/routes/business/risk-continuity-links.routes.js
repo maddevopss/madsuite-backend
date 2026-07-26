@@ -8,6 +8,7 @@ const {
   addCommonPaginationClauses,
   finalizePage,
 } = require('../../utils/integrationPagination');
+const { capabilitiesMeta } = require('../../utils/serverCapabilities');
 
 const router = express.Router({ mergeParams: true });
 const org = (req) => organisationValue(req.organisationId || req.user?.organisation_id);
@@ -59,7 +60,10 @@ router.get('/', (req, res, next) => handle(res, next, async () => {
     LIMIT $${values.length}
   `, values)).rows;
 
-  return finalizePage(rows, page, { contract: 'integration-list@1' });
+  return finalizePage(rows, page, {
+    contract: 'integration-list@1',
+    ...capabilitiesMeta({ user: req.user }),
+  });
 }));
 
 router.post('/', (req, res, next) => handle(res, next, async () => {
@@ -96,7 +100,10 @@ router.post('/', (req, res, next) => handle(res, next, async () => {
       `, [organisationId, req.body.riskId, req.body.processId || null, req.body.planId || null, req.body.relationType, req.body.rationale, req.body.evidence || [], idempotencyKey, actor(req)])).rows[0];
     },
   });
-  return resourceResponse(transaction.result, { contract: 'integration-resource@1' });
+  return resourceResponse(transaction.result, {
+    contract: 'integration-resource@1',
+    ...capabilitiesMeta({ user: req.user, resource: transaction.result }),
+  });
 }, 201));
 
 module.exports = router;
