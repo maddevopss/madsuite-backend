@@ -7,7 +7,7 @@ function readMigration(name) {
 
 describe("Bloc 1 / Sprint 1 — fondation comptable", () => {
   test("le schéma protège les comptes et périodes par organisation", () => {
-    const migration = readMigration("058_accounting_core.sql");
+    const migration = readMigration("059_accounting_phase_b.sql");
 
     expect(migration).toContain("UNIQUE (organisation_id, code)");
     expect(migration).toContain("accounting_periods");
