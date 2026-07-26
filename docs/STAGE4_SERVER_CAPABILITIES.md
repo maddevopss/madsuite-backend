@@ -19,3 +19,5 @@ Chaque action (`read`, `create`, `update`, `approve`, `close`) expose :
 - une politique de module peut désactiver explicitement une action.
 
 Le frontend utilise ces capacités pour présenter l’interface, mais le serveur continue d’appliquer ses gardes et politiques lors de chaque commande. Une capacité positive n’est jamais un jeton d’autorisation réutilisable.
+
+<!-- Relance CI après réalignement de la branche sur main. -->
