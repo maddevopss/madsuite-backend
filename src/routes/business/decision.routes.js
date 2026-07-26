@@ -1,5 +1,6 @@
 const router = require("express").Router();
 const { requireOrganisation } = require("../../middleware/organization.middleware");
+const { buildInstitutionalSummary } = require("../../services/business/institutional-summary.service");
 
 router.use(requireOrganisation);
 
@@ -40,6 +41,14 @@ router.get("/summary", async (req, res, next) => {
       operations: { inventoryValue, lowStock },
       profitability: { revenue, expenses, netIncome: revenue - expenses },
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/institutional-summary", async (req, res, next) => {
+  try {
+    res.json(await buildInstitutionalSummary(req.db, req.organisationId));
   } catch (error) {
     next(error);
   }
