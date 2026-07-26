@@ -4,6 +4,7 @@ const requireRole = require("../../middleware/requireRole");
 const accountingService = require("../../services/business/accounting.service");
 const accountingGovernanceService = require("../../services/business/accounting-governance.service");
 const accountingReversalService = require("../../services/business/accounting-reversal-governance.service");
+const accountingExportService = require("../../services/business/accounting-export.service");
 const businessEventService = require("../../services/business/business-event.service");
 const financialProjectionService = require("../../services/business/financial-projection.service");
 
@@ -164,6 +165,41 @@ router.get("/statements", async (req, res, next) => {
 router.get("/statements/explained", async (req, res, next) => {
   try { return res.json(await accountingGovernanceService.explainedStatements(req.db, req.organisationId, req.query.endDate)); }
   catch (error) { return next(error); }
+});
+
+router.get("/cash-flow", async (req, res, next) => {
+  try {
+    return res.json(await accountingExportService.cashFlow(
+      req.db,
+      req.organisationId,
+      req.query.startDate,
+      req.query.endDate,
+    ));
+  } catch (error) { return next(error); }
+});
+
+router.get("/exports/trial-balance.csv", async (req, res, next) => {
+  try {
+    const csv = await accountingExportService.trialBalanceCsv(
+      req.db,
+      req.organisationId,
+      req.query.startDate,
+      req.query.endDate,
+    );
+    return res.type("text/csv").set("Content-Disposition", "attachment; filename=balance-verification.csv").send(csv);
+  } catch (error) { return next(error); }
+});
+
+router.get("/exports/journal.csv", async (req, res, next) => {
+  try {
+    const csv = await accountingExportService.journalCsv(
+      req.db,
+      req.organisationId,
+      req.query.startDate,
+      req.query.endDate,
+    );
+    return res.type("text/csv").set("Content-Disposition", "attachment; filename=journal-comptable.csv").send(csv);
+  } catch (error) { return next(error); }
 });
 
 router.get("/events", async (req, res, next) => {
