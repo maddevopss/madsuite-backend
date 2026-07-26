@@ -19,7 +19,7 @@ describe('stable integration response contracts', () => {
   test.each([continuityRoutes, institutionalRoutes])('uses versioned contracts in integration routes', (source) => {
     expect(source).toContain("contract: 'integration-list@1'");
     expect(source).toContain("contract: 'integration-resource@1'");
-    expect(source).toContain('listResponse');
+    expect(source).toContain('finalizePage');
     expect(source).toContain('resourceResponse');
   });
 });
