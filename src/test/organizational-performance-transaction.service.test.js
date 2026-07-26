@@ -22,8 +22,8 @@ describe('organizational performance transaction policies', () => {
     expect(result.allowed).toBe(true);
   });
 
-  test('exige une approbation indépendante', async () => {
-    const result = await evaluatePolicy(context(OBJECTIVE_APPROVE_POLICY, { objectiveId: 1, approvedByUserId: 2, approvalReason: 'Aligné', approverIsOwner: true }));
+  test('exige une approbation indépendante fondée sur le propriétaire serveur', async () => {
+    const result = await evaluatePolicy(context(OBJECTIVE_APPROVE_POLICY, { objectiveId: 1, ownerUserId: 2, approvedByUserId: 2, approvalReason: 'Aligné' }));
     expect(result.allowed).toBe(false);
     expect(result.code).toBe('performance.objective_independent_approval_required');
   });
