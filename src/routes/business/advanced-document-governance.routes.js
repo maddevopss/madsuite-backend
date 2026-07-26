@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../../../db');
 const { organisationValue } = require('../../utils/organisationScope');
 const { executeTransaction, evaluatePolicy } = require('../../services/business/transaction-engine.service');
+const documentEvidenceReferenceRoutes = require('./document-evidence-references.routes');
 require('../../services/business/advanced-document-governance-transaction.service');
 
 const router = express.Router();
