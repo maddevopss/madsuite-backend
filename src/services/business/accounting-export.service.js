@@ -1,3 +1,5 @@
+const { jsPDF } = require('jspdf');
+
 function csvCell(value) {
   return `"${String(value ?? '').replaceAll('"', '""')}"`;
 }
@@ -79,4 +81,41 @@ async function cashFlow(db, organisationId, startDate, endDate) {
   };
 }
 
-module.exports = { csvCell, toCsv, trialBalanceCsv, journalCsv, cashFlow };
+async function statementsPdf(db, organisationId, endDate) {
+  const { rows } = await db.query(
+    `SELECT a.code, a.name, a.account_type,
+            (COALESCE(SUM(CASE WHEN e.status IN ('posted','reversed') THEN l.debit ELSE 0 END),0)
+             - COALESCE(SUM(CASE WHEN e.status IN ('posted','reversed') THEN l.credit ELSE 0 END),0))::numeric AS balance
+     FROM accounting_accounts a
+     LEFT JOIN accounting_entry_lines l ON l.account_id=a.id AND l.organisation_id=a.organisation_id
+     LEFT JOIN accounting_entries e ON e.id=l.entry_id
+       AND ($2::date IS NULL OR e.entry_date <= $2::date)
+     WHERE a.organisation_id=$1
+     GROUP BY a.id
+     ORDER BY a.account_type,a.code`,
+    [organisationId, endDate || null],
+  );
+
+  const sum = (type) => rows.filter((row) => row.account_type === type)
+    .reduce((total, row) => total + Number(row.balance), 0);
+  const revenue = -sum('revenue');
+  const expenses = sum('expense');
+  const netIncome = revenue - expenses;
+
+  const doc = new jsPDF();
+  doc.setFontSize(16);
+  doc.text('États financiers MADSuite', 14, 18);
+  doc.setFontSize(10);
+  doc.text(`En date du ${endDate || new Date().toISOString().slice(0, 10)}`, 14, 25);
+  doc.text(`Revenus : ${revenue.toFixed(2)} $`, 14, 38);
+  doc.text(`Dépenses : ${expenses.toFixed(2)} $`, 14, 45);
+  doc.text(`Résultat net : ${netIncome.toFixed(2)} $`, 14, 52);
+  doc.text(`Actifs : ${sum('asset').toFixed(2)} $`, 14, 66);
+  doc.text(`Passifs : ${(-sum('liability')).toFixed(2)} $`, 14, 73);
+  doc.text(`Capitaux propres : ${(-sum('equity')).toFixed(2)} $`, 14, 80);
+  doc.setFontSize(8);
+  doc.text('Chaque montant demeure traçable aux écritures comptables sources dans MADSuite.', 14, 94);
+  return Buffer.from(doc.output('arraybuffer'));
+}
+
+module.exports = { csvCell, toCsv, trialBalanceCsv, journalCsv, cashFlow, statementsPdf };
