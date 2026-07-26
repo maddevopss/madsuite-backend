@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../../../db');
 const { organisationValue } = require('../../utils/organisationScope');
 const { executeTransaction, evaluatePolicy } = require('../../services/business/transaction-engine.service');
+const auditCorrectiveActionLinksRoutes = require('./audit-corrective-action-links.routes');
 require('../../services/business/internal-audit-transaction.service');
 
 const router = express.Router();
@@ -69,6 +70,8 @@ router.post('/actions/:id/transition', (req,res,next) => handle(res,next,() => {
     return (await client.query(`UPDATE internal_audit_actions SET status=$1,implementation_result=COALESCE($2,implementation_result),effectiveness_result=COALESCE($3,effectiveness_result),implementation_evidence=CASE WHEN $4::jsonb='[]'::jsonb THEN implementation_evidence ELSE implementation_evidence || $4::jsonb END,verification_evidence=CASE WHEN $5::jsonb='[]'::jsonb THEN verification_evidence ELSE verification_evidence || $5::jsonb END,updated_at=NOW() WHERE id=$6 AND organisation_id=$7 RETURNING *`,[input.action,input.implementationResult||null,input.effectivenessResult||null,JSON.stringify(input.implementationEvidence||[]),JSON.stringify(input.verificationEvidence||[]),req.params.id,organisationId])).rows[0];
   });
 }));
+
+router.use('/corrective-action-links', auditCorrectiveActionLinksRoutes);
 
 router.get('/followups', (req,res,next) => handle(res,next,async () => (await db.pool.query('SELECT * FROM internal_audit_followups WHERE organisation_id=$1 ORDER BY reviewed_at DESC',[org(req)])).rows));
 router.post('/followups', (req,res,next) => handle(res,next,() => transactionalWrite(req,'audit.followup.complete','audit.followup.complete',{...req.body,reviewerUserId:req.body.reviewerUserId||actor(req)},async ({ client, organisationId, idempotencyKey }) => (await client.query(`INSERT INTO internal_audit_followups (organisation_id,engagement_id,followup_number,reviewer_user_id,conclusion,residual_risk,next_followup_at,evidence,status,idempotency_key) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,[organisationId,req.body.engagementId,req.body.followupNumber,req.body.reviewerUserId||actor(req),req.body.conclusion,req.body.residualRisk||null,req.body.nextFollowupAt||null,req.body.evidence||[],req.body.status||'completed',idempotencyKey])).rows[0]),201));

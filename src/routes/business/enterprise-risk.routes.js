@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../../../db');
 const { organisationValue } = require('../../utils/organisationScope');
 const { executeTransaction } = require('../../services/business/transaction-engine.service');
+const riskContinuityLinksRoutes = require('./risk-continuity-links.routes');
 require('../../services/business/enterprise-risk-transaction.service');
 
 const router = express.Router();
@@ -95,6 +96,8 @@ router.post('/incidents', (req, res, next) => handle(res, next, () => {
   const input = { ...req.body, ownerUserId: req.body.ownerUserId || actor(req) };
   return transactionalWrite(req, 'risk.incident.record', 'risk.incident.record', input, async ({ client, organisationId, idempotencyKey }) => (await client.query(`INSERT INTO enterprise_risk_incidents (organisation_id,risk_id,incident_number,source_type,source_id,occurred_at,title,description,severity,impact_summary,evidence,owner_user_id,idempotency_key) VALUES ($1,$2,$3,$4,$5,COALESCE($6,NOW()),$7,$8,$9,$10,$11,$12,$13) RETURNING *`, [organisationId,input.riskId||null,input.incidentNumber,input.sourceType,input.sourceId||null,input.occurredAt||null,input.title,input.description,input.severity||'medium',input.impactSummary||null,input.evidence||[],input.ownerUserId,idempotencyKey])).rows[0]);
 }, 201));
+
+router.use('/continuity-links', riskContinuityLinksRoutes);
 
 router.get('/alerts', (req, res, next) => handle(res, next, async () => (await db.pool.query(`SELECT 'risk_review' AS alert_type,id,risk_number AS reference,next_review_at AS due_at FROM enterprise_risks WHERE organisation_id=$1 AND next_review_at IS NOT NULL AND next_review_at <= NOW() AND status NOT IN ('closed','cancelled') UNION ALL SELECT 'treatment_due',id,treatment_number,due_at FROM enterprise_risk_treatments WHERE organisation_id=$1 AND due_at IS NOT NULL AND due_at <= NOW() AND status NOT IN ('closed','cancelled') ORDER BY due_at`, [org(req)])).rows));
 
