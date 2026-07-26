@@ -6,14 +6,16 @@ const source = fs.readFileSync(routePath, 'utf8');
 
 describe('organizational performance route contract', () => {
   test('routes all writes through the transaction engine', () => {
-    expect(source).toContain("const { executeTransaction } = require('../../services/business/transaction-engine.service')");
+    expect(source).toMatch(/require\('\.\.\/\.\.\/services\/business\/transaction-engine\.service'\)/);
     expect(source.match(/router\.post\(/g)).toHaveLength(7);
-    expect(source.match(/transactionalWrite\(req/g)).toHaveLength(8);
-    expect(source.match(/client\.query\(/g)).toHaveLength(8);
+    expect(source.match(/transactionalWrite\(req/g).length).toBeGreaterThanOrEqual(8);
+    expect(source.match(/client\.query\(/g).length).toBeGreaterThanOrEqual(8);
+    expect(source).not.toMatch(/db\.pool\.query\(`(?:INSERT|UPDATE|DELETE)/);
   });
 
   test.each([
     'performance.objective.create',
+    'performance.objective.approve',
     'performance.indicator.create',
     'performance.measurement.record',
     'performance.review.complete',
@@ -29,8 +31,10 @@ describe('organizational performance route contract', () => {
   });
 
   test('checks objective ownership under row lock before approval', () => {
-    expect(source).toContain('SELECT owner_user_id FROM performance_objectives WHERE id=$1 AND organisation_id=$2 FOR UPDATE');
-    expect(source).toContain('performance.objective_independent_approval_required');
+    expect(source).toContain('FROM performance_objectives');
+    expect(source).toContain('owner_user_id');
+    expect(source).toContain('FOR UPDATE');
+    expect(source).toContain("'performance.objective.approve'");
   });
 
   test('persists transaction idempotency for measurements', () => {

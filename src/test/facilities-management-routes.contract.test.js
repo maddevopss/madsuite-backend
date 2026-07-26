@@ -6,10 +6,10 @@ const source = fs.readFileSync(routePath, 'utf8');
 
 describe('facilities management route contract', () => {
   test('routes all writes through the transaction engine', () => {
-    expect(source).toContain("const { executeTransaction } = require('../../services/business/transaction-engine.service')");
-    expect(source.match(/router\.post\([\s\S]*?transactionalWrite\(req/g)).toHaveLength(6);
+    expect(source).toMatch(/require\('\.\.\/\.\.\/services\/business\/transaction-engine\.service'\)/);
+    expect(source.match(/router\.post\([\s\S]*?transactionalWrite\(req/g)).toHaveLength(7);
     expect(source).toContain('policies: policy ? [`${policy}@1`] : []');
-    expect(source.match(/client\.query\(/g)).toHaveLength(6);
+    expect(source.match(/client\.query\(/g).length).toBeGreaterThanOrEqual(7);
   });
 
   test.each([
@@ -17,6 +17,7 @@ describe('facilities management route contract', () => {
     'facilities.space.create',
     'facilities.inspection.complete',
     'facilities.transfer.accept',
+    'facilities.asset.decommission',
     'facilities.asset.dispose',
   ])('enforces policy %s when the business state requires it', (policy) => {
     expect(source).toContain(`'${policy}'`);

@@ -1,7 +1,7 @@
 const express = require('express');
 const db = require('../../../db');
 const { organisationValue } = require('../../utils/organisationScope');
-const { executeTransaction } = require('../../services/business/transaction-engine.service');
+const { executeTransaction, evaluatePolicy } = require('../../services/business/transaction-engine.service');
 require('../../services/business/organizational-performance-transaction.service');
 
 const router = express.Router();
@@ -28,16 +28,21 @@ router.post('/objectives', (req,res,next) => handle(res,next,() => {
   const input = { ...req.body, ownerUserId: req.body.ownerUserId || actor(req) };
   return transactionalWrite(req, 'performance.objective.create', 'performance.objective.create', input, async ({ client, organisationId }) => (await client.query(`INSERT INTO performance_objectives (organisation_id,objective_number,title,description,owner_user_id,parent_objective_id,perspective,status,priority,period_start,period_end,baseline,target,unit) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,[organisationId,input.objectiveNumber,input.title,input.description,input.ownerUserId,input.parentObjectiveId||null,input.perspective,input.status||'draft',input.priority||'medium',input.periodStart,input.periodEnd,input.baseline??null,input.target??null,input.unit||null])).rows[0]);
 },201));
-router.post('/objectives/:id/approve', (req,res,next) => handle(res,next,() => transactionalWrite(req, 'performance.objective.approve', null, { ...req.body, objectiveId: req.params.id }, async ({ client, organisationId }) => {
+router.post('/objectives/:id/approve', (req,res,next) => handle(res,next,() => transactionalWrite(req, 'performance.objective.approve', null, { ...req.body, objectiveId: req.params.id }, async ({ client, organisationId, idempotencyKey }) => {
   const objective = (await client.query('SELECT owner_user_id FROM performance_objectives WHERE id=$1 AND organisation_id=$2 FOR UPDATE',[req.params.id,organisationId])).rows[0];
-  if (!objective) return null;
-  const approvedByUserId = req.body.approvedByUserId || actor(req);
-  if (String(objective.owner_user_id) === String(approvedByUserId)) {
-    const error = new Error('performance.objective_independent_approval_required');
-    error.statusCode = 409;
+  if (!objective) {
+    const error = new Error('performance.objective_not_found');
+    error.statusCode = 404;
     throw error;
   }
-  return (await client.query(`UPDATE performance_objectives SET status='active',approved_by_user_id=$1,approved_at=NOW(),updated_at=NOW() WHERE id=$2 AND organisation_id=$3 RETURNING *`,[approvedByUserId,req.params.id,organisationId])).rows[0];
+  const input = { ...req.body, objectiveId:req.params.id, ownerUserId:objective.owner_user_id, approvedByUserId:req.body.approvedByUserId||actor(req) };
+  const decision = await evaluatePolicy({ policy:'performance.objective.approve@1', input, idempotencyKey, organisationId, actorUserId:actor(req), client });
+  if (!decision.allowed) {
+    const error = new Error(decision.code);
+    error.statusCode = decision.statusCode || 409;
+    throw error;
+  }
+  return (await client.query(`UPDATE performance_objectives SET status='active',approved_by_user_id=$1,approved_at=NOW(),updated_at=NOW() WHERE id=$2 AND organisation_id=$3 RETURNING *`,[input.approvedByUserId,req.params.id,organisationId])).rows[0];
 })));
 
 router.get('/indicators', (req,res,next) => handle(res,next,async () => (await db.pool.query('SELECT * FROM performance_indicators WHERE organisation_id=$1 ORDER BY created_at DESC',[org(req)])).rows));
