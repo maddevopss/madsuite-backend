@@ -1,0 +1,97 @@
+openapi: 3.0.3
+info:
+  title: MADSuite — Contrats institutionnels de l’étage 4
+  version: "1.0.0"
+  description: Contrats versionnés pour les listes, ressources, capacités, transitions et erreurs.
+components:
+  parameters:
+    PageLimit:
+      in: query
+      name: limit
+      schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+    PageCursor:
+      in: query
+      name: cursor
+      schema: { type: string, maxLength: 500 }
+    IdempotencyKey:
+      in: header
+      name: Idempotency-Key
+      required: true
+      schema: { type: string, minLength: 8, maxLength: 200 }
+  schemas:
+    ContractMeta:
+      type: object
+      required: [contract]
+      properties:
+        contract: { type: string, example: integration-list@1 }
+        deprecated: { type: boolean, default: false }
+        sunset: { type: string, format: date-time, nullable: true }
+        replacedBy: { type: string, nullable: true }
+    PageMeta:
+      allOf:
+        - $ref: '#/components/schemas/ContractMeta'
+        - type: object
+          required: [limit, hasMore]
+          properties:
+            limit: { type: integer }
+            hasMore: { type: boolean }
+            nextCursor: { type: string, nullable: true }
+    CapabilityReason:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string, example: permission.insufficient }
+        message: { type: string }
+    Capability:
+      type: object
+      required: [allowed, reason]
+      properties:
+        allowed: { type: boolean }
+        reason:
+          nullable: true
+          allOf: [{ $ref: '#/components/schemas/CapabilityReason' }]
+    Capabilities:
+      type: object
+      required: [read, create, update, approve, close]
+      additionalProperties: { $ref: '#/components/schemas/Capability' }
+    Evidence:
+      type: object
+      required: [type, id]
+      properties:
+        type: { type: string, maxLength: 100 }
+        id: { type: string, maxLength: 200 }
+      additionalProperties: true
+    TransitionRequest:
+      type: object
+      required: [rationale, evidence]
+      properties:
+        rationale: { type: string, minLength: 3, maxLength: 2000 }
+        evidence:
+          type: array
+          minItems: 1
+          maxItems: 20
+          items: { $ref: '#/components/schemas/Evidence' }
+    BusinessError:
+      type: object
+      required: [code, message, details]
+      properties:
+        code: { type: string, example: transition.evidence_required }
+        message: { type: string }
+        details: { type: object, additionalProperties: true }
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error: { $ref: '#/components/schemas/BusinessError' }
+  responses:
+    InvalidTransition:
+      description: Entrée de transition invalide.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ErrorResponse' }
+          example:
+            error:
+              code: transition.evidence_required
+              message: transition.evidence_required
+              details: { field: evidence }
+paths: {}
