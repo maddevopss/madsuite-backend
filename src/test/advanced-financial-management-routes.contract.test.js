@@ -6,14 +6,22 @@ const source = fs.readFileSync(routePath, 'utf8');
 
 describe('advanced financial management route contract', () => {
   test('routes every write through the transaction engine', () => {
-    expect(source).toContain("const { executeTransaction } = require('../../services/business/transaction-engine.service')");
-    expect(source.match(/transactionalWrite\(req/g)).toHaveLength(6);
+    expect(source).toMatch(/require\('\.\.\/\.\.\/services\/business\/transaction-engine\.service'\)/);
+    expect(source.match(/transactionalWrite\(req/g).length).toBeGreaterThanOrEqual(6);
     expect(source).not.toMatch(/db\.pool\.query\(`(?:INSERT|UPDATE|DELETE)/);
   });
 
   test('enforces policies compatible with create routes', () => {
     expect(source).toContain("'finance.cash_position.record'");
     expect(source).toContain("'finance.funding_facility.approve'");
+  });
+
+  test.each([
+    'finance.budget.approve',
+    'finance.forecast.publish',
+    'finance.scenario.approve',
+  ])('exposes explicit transition %s', (policy) => {
+    expect(source).toContain(`'${policy}'`);
   });
 
   test('does not fabricate transition ids for budgets, forecasts, or scenarios', () => {

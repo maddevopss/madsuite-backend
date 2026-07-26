@@ -24,7 +24,8 @@ registerPolicy('performance.objective.create', '1', ({ input, idempotencyKey }) 
 registerPolicy('performance.objective.approve', '1', ({ input, idempotencyKey }) => {
   if (!validIdempotency(idempotencyKey)) return { allowed: false, statusCode: 400, code: 'performance.idempotency_required' };
   if (!input?.objectiveId || !input?.approvedByUserId || !hasText(input?.approvalReason)) return { allowed: false, statusCode: 400, code: 'performance.objective_approval_required' };
-  if (input?.approverIsOwner === true) return { allowed: false, statusCode: 409, code: 'performance.objective_independent_approval_required' };
+  if (!input?.ownerUserId) return { allowed: false, statusCode: 500, code: 'performance.objective_owner_state_required' };
+  if (String(input.ownerUserId) === String(input.approvedByUserId)) return { allowed: false, statusCode: 409, code: 'performance.objective_independent_approval_required' };
   return { allowed: true, code: 'performance.objective_approve_allowed' };
 });
 
