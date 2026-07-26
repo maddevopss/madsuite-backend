@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../../../db');
 const { organisationValue } = require('../../utils/organisationScope');
 const { executeTransaction } = require('../../services/business/transaction-engine.service');
+const { listResponse, resourceResponse } = require('../../utils/integrationResponseContract');
 
 const router = express.Router({ mergeParams: true });
 const org = (req) => organisationValue(req.organisationId || req.user?.organisation_id);
@@ -15,8 +16,8 @@ function notFound(code) {
   return error;
 }
 
-router.get('/', (req, res, next) => handle(res, next, async () => (
-  await db.pool.query(`
+router.get('/', (req, res, next) => handle(res, next, async () => {
+  const rows = (await db.pool.query(`
     SELECT l.*, r.risk_number, r.title AS risk_title,
            p.process_number, p.name AS process_name,
            cp.plan_number, cp.title AS plan_title
@@ -26,8 +27,9 @@ router.get('/', (req, res, next) => handle(res, next, async () => (
     LEFT JOIN enterprise_continuity_plans cp ON cp.id=l.plan_id AND cp.organisation_id=l.organisation_id
     WHERE l.organisation_id=$1
     ORDER BY l.created_at DESC
-  `, [org(req)])
-).rows));
+  `, [org(req)])).rows;
+  return listResponse(rows, { contract: 'integration-list@1' });
+}));
 
 router.post('/', (req, res, next) => handle(res, next, async () => {
   const transaction = await executeTransaction({
@@ -63,7 +65,7 @@ router.post('/', (req, res, next) => handle(res, next, async () => {
       `, [organisationId, req.body.riskId, req.body.processId || null, req.body.planId || null, req.body.relationType, req.body.rationale, req.body.evidence || [], idempotencyKey, actor(req)])).rows[0];
     },
   });
-  return transaction.result;
+  return resourceResponse(transaction.result, { contract: 'integration-resource@1' });
 }, 201));
 
 module.exports = router;
