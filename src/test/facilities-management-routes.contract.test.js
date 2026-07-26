@@ -7,7 +7,7 @@ const source = fs.readFileSync(routePath, 'utf8');
 describe('facilities management route contract', () => {
   test('routes all writes through the transaction engine', () => {
     expect(source).toMatch(/require\('\.\.\/\.\.\/services\/business\/transaction-engine\.service'\)/);
-    expect(source.match(/router\.post\([\s\S]*?transactionalWrite\(req/g)).toHaveLength(7);
+    expect(source.match(/router\.post\([\s\S]*?transactionalWrite\(req/g)).toHaveLength(8);
     expect(source).toContain('policies: policy ? [`${policy}@1`] : []');
     expect(source.match(/client\.query\(/g).length).toBeGreaterThanOrEqual(7);
   });
