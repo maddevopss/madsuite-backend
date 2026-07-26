@@ -5,7 +5,7 @@ CREATE TABLE IF NOT EXISTS procurement_finance_links (
   purchase_order_id BIGINT REFERENCES procurement_purchase_orders(id),
   supplier_id BIGINT REFERENCES suppliers(id),
   supplier_bill_id BIGINT REFERENCES supplier_bills(id),
-  budget_id BIGINT REFERENCES finance_budgets(id),
+  budget_id BIGINT REFERENCES financial_budgets(id),
   relationship_type TEXT NOT NULL,
   justification TEXT NOT NULL,
   evidence JSONB NOT NULL DEFAULT '[]'::jsonb,
