@@ -31,6 +31,18 @@ router.post('/spaces', (req, res, next) => handle(res, next, () => transactional
 
 router.get('/assets', (req, res, next) => handle(res, next, async () => (await db.pool.query('SELECT * FROM facilities_assets WHERE organisation_id=$1 ORDER BY asset_code', [org(req)])).rows));
 router.post('/assets', (req, res, next) => handle(res, next, () => transactionalWrite(req, 'facilities.asset.create', null, req.body, async ({ client, organisationId }) => (await client.query(`INSERT INTO facilities_assets (organisation_id,site_id,space_id,asset_code,name,asset_type,responsible_user_id,acquisition_cost,currency_code,acquired_at,commissioned_at,status,criticality,evidence) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`, [organisationId, req.body.siteId || null, req.body.spaceId || null, req.body.assetCode, req.body.name, req.body.assetType, req.body.responsibleUserId, req.body.acquisitionCost || null, req.body.currencyCode || 'CAD', req.body.acquiredAt || null, req.body.commissionedAt || null, req.body.status || 'active', req.body.criticality || 'normal', req.body.evidence || []])).rows[0]), 201));
+router.post('/assets/:id/decommission', (req, res, next) => handle(res, next, () => {
+  const input = { ...req.body, assetId: req.params.id, approvedByUserId: req.body.approvedByUserId || actor(req) };
+  return transactionalWrite(req, 'facilities.asset.decommission', 'facilities.asset.decommission', input, async ({ client, organisationId }) => {
+    const asset = (await client.query('SELECT id,status FROM facilities_assets WHERE id=$1 AND organisation_id=$2 FOR UPDATE', [req.params.id, organisationId])).rows[0];
+    if (!asset) {
+      const error = new Error('facilities.asset_not_found');
+      error.statusCode = 404;
+      throw error;
+    }
+    return (await client.query(`UPDATE facilities_assets SET status='decommissioned',evidence=evidence || $1::jsonb,updated_at=NOW() WHERE id=$2 AND organisation_id=$3 RETURNING *`, [JSON.stringify(input.evidence || []), req.params.id, organisationId])).rows[0];
+  });
+}));
 
 router.get('/inspections', (req, res, next) => handle(res, next, async () => (await db.pool.query('SELECT * FROM facilities_inspections WHERE organisation_id=$1 ORDER BY inspected_at DESC', [org(req)])).rows));
 router.post('/inspections', (req, res, next) => handle(res, next, () => {
