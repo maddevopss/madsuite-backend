@@ -23,7 +23,7 @@ describe("Bloc 1 / Sprint 1 — fondation comptable", () => {
     );
 
     for (const type of ["asset", "liability", "equity", "revenue", "expense"]) {
-      expect(service).toContain(`\"${type}\"`);
+      expect(service).toContain(`"${type}"`);
     }
   });
 
