@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../../../db');
 const { organisationValue } = require('../../utils/organisationScope');
 const { executeTransaction } = require('../../services/business/transaction-engine.service');
+const documentEvidenceReferenceRoutes = require('./document-evidence-references.routes');
 require('../../services/business/advanced-document-governance-transaction.service');
 
 const router = express.Router();
@@ -33,6 +34,8 @@ router.post('/documents/:id/versions', (req,res,next) => handle(res,next,() => {
   const policy = input.approvedByUserId ? 'documents.version.approve' : null;
   return transactionalWrite(req, 'documents.version.create', policy, input, async ({ client, organisationId }) => (await client.query(`INSERT INTO governed_document_versions (organisation_id,document_id,version_number,change_summary,content_hash,storage_ref,prepared_by_user_id,approved_by_user_id,approved_at,evidence) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,[organisationId,req.params.id,input.versionNumber,input.changeSummary,input.contentHash,input.storageRef,input.preparedByUserId,input.approvedByUserId||null,input.approvedAt||null,input.evidence||[]])).rows[0]);
 },201));
+
+router.use('/evidence-references', documentEvidenceReferenceRoutes);
 
 router.get('/retention-actions', (req,res,next) => handle(res,next,async () => (await db.pool.query('SELECT * FROM document_retention_actions WHERE organisation_id=$1 ORDER BY scheduled_at',[org(req)])).rows));
 router.post('/retention-actions', (req,res,next) => handle(res,next,() => {
