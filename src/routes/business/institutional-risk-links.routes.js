@@ -2,7 +2,12 @@ const express = require('express');
 const db = require('../../../db');
 const { organisationValue } = require('../../utils/organisationScope');
 const { executeTransaction } = require('../../services/business/transaction-engine.service');
-const { listResponse, resourceResponse } = require('../../utils/integrationResponseContract');
+const { resourceResponse } = require('../../utils/integrationResponseContract');
+const {
+  parseIntegrationListQuery,
+  addCommonPaginationClauses,
+  finalizePage,
+} = require('../../utils/integrationPagination');
 
 const router = express.Router();
 const org = (req) => organisationValue(req.organisationId || req.user?.organisation_id);
@@ -17,11 +22,39 @@ function notFound(code) {
 }
 
 router.get('/', (req, res, next) => handle(res, next, async () => {
-  const rows = (await db.pool.query(
-    'SELECT * FROM institutional_risk_links WHERE organisation_id=$1 ORDER BY created_at DESC',
-    [org(req)],
-  )).rows;
-  return listResponse(rows, { contract: 'integration-list@1' });
+  const page = parseIntegrationListQuery(req.query);
+  const clauses = ['l.organisation_id=$1'];
+  const values = [org(req)];
+
+  if (req.query.targetType) {
+    values.push(req.query.targetType);
+    clauses.push(`l.target_type=$${values.length}`);
+  }
+  if (req.query.relationshipType) {
+    values.push(req.query.relationshipType);
+    clauses.push(`l.relationship_type=$${values.length}`);
+  }
+  if (req.query.riskId) {
+    values.push(req.query.riskId);
+    clauses.push(`l.risk_id=$${values.length}`);
+  }
+  if (req.query.targetId) {
+    values.push(req.query.targetId);
+    clauses.push(`l.target_id=$${values.length}`);
+  }
+
+  addCommonPaginationClauses({ clauses, values, page, alias: 'l' });
+  values.push(page.limit + 1);
+
+  const rows = (await db.pool.query(`
+    SELECT l.*
+    FROM institutional_risk_links l
+    WHERE ${clauses.join(' AND ')}
+    ORDER BY l.created_at ${page.direction.toUpperCase()}, l.id ${page.direction.toUpperCase()}
+    LIMIT $${values.length}
+  `, values)).rows;
+
+  return finalizePage(rows, page, { contract: 'integration-list@1' });
 }));
 
 router.post('/', (req, res, next) => handle(res, next, async () => {

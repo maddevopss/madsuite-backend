@@ -2,7 +2,12 @@ const express = require('express');
 const db = require('../../../db');
 const { organisationValue } = require('../../utils/organisationScope');
 const { executeTransaction } = require('../../services/business/transaction-engine.service');
-const { listResponse, resourceResponse } = require('../../utils/integrationResponseContract');
+const { resourceResponse } = require('../../utils/integrationResponseContract');
+const {
+  parseIntegrationListQuery,
+  addCommonPaginationClauses,
+  finalizePage,
+} = require('../../utils/integrationPagination');
 
 const router = express.Router({ mergeParams: true });
 const org = (req) => organisationValue(req.organisationId || req.user?.organisation_id);
@@ -17,6 +22,30 @@ function notFound(code) {
 }
 
 router.get('/', (req, res, next) => handle(res, next, async () => {
+  const page = parseIntegrationListQuery(req.query);
+  const clauses = ['l.organisation_id=$1'];
+  const values = [org(req)];
+
+  if (req.query.relationType) {
+    values.push(req.query.relationType);
+    clauses.push(`l.relation_type=$${values.length}`);
+  }
+  if (req.query.riskId) {
+    values.push(req.query.riskId);
+    clauses.push(`l.risk_id=$${values.length}`);
+  }
+  if (req.query.processId) {
+    values.push(req.query.processId);
+    clauses.push(`l.process_id=$${values.length}`);
+  }
+  if (req.query.planId) {
+    values.push(req.query.planId);
+    clauses.push(`l.plan_id=$${values.length}`);
+  }
+
+  addCommonPaginationClauses({ clauses, values, page, alias: 'l' });
+  values.push(page.limit + 1);
+
   const rows = (await db.pool.query(`
     SELECT l.*, r.risk_number, r.title AS risk_title,
            p.process_number, p.name AS process_name,
@@ -25,10 +54,12 @@ router.get('/', (req, res, next) => handle(res, next, async () => {
     JOIN enterprise_risks r ON r.id=l.risk_id AND r.organisation_id=l.organisation_id
     LEFT JOIN enterprise_business_processes p ON p.id=l.process_id AND p.organisation_id=l.organisation_id
     LEFT JOIN enterprise_continuity_plans cp ON cp.id=l.plan_id AND cp.organisation_id=l.organisation_id
-    WHERE l.organisation_id=$1
-    ORDER BY l.created_at DESC
-  `, [org(req)])).rows;
-  return listResponse(rows, { contract: 'integration-list@1' });
+    WHERE ${clauses.join(' AND ')}
+    ORDER BY l.created_at ${page.direction.toUpperCase()}, l.id ${page.direction.toUpperCase()}
+    LIMIT $${values.length}
+  `, values)).rows;
+
+  return finalizePage(rows, page, { contract: 'integration-list@1' });
 }));
 
 router.post('/', (req, res, next) => handle(res, next, async () => {
