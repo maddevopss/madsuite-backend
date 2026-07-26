@@ -7,7 +7,7 @@ const source = fs.readFileSync(routePath, 'utf8');
 describe('enterprise risk route contract', () => {
   test('routes every write through the transaction engine', () => {
     expect(source).toContain("const { executeTransaction } = require('../../services/business/transaction-engine.service')");
-    expect(source.match(/transactionalWrite\(req/g)).toHaveLength(7);
+    expect(source.match(/transactionalWrite\(req/g)).toHaveLength(10);
     expect(source).not.toMatch(/db\.pool\.query\(`(?:INSERT|UPDATE|DELETE)/);
   });
 
