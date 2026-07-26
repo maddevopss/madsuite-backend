@@ -2,6 +2,7 @@ const express = require('express');
 const db = require('../../../db');
 const { organisationValue } = require('../../utils/organisationScope');
 const { executeTransaction } = require('../../services/business/transaction-engine.service');
+const { listResponse, resourceResponse } = require('../../utils/integrationResponseContract');
 
 const router = express.Router();
 const org = (req) => organisationValue(req.organisationId || req.user?.organisation_id);
@@ -15,10 +16,13 @@ function notFound(code) {
   return error;
 }
 
-router.get('/', (req, res, next) => handle(res, next, async () => (await db.pool.query(
-  'SELECT * FROM institutional_risk_links WHERE organisation_id=$1 ORDER BY created_at DESC',
-  [org(req)],
-)).rows));
+router.get('/', (req, res, next) => handle(res, next, async () => {
+  const rows = (await db.pool.query(
+    'SELECT * FROM institutional_risk_links WHERE organisation_id=$1 ORDER BY created_at DESC',
+    [org(req)],
+  )).rows;
+  return listResponse(rows, { contract: 'integration-list@1' });
+}));
 
 router.post('/', (req, res, next) => handle(res, next, async () => {
   const input = { ...req.body };
@@ -62,7 +66,7 @@ router.post('/', (req, res, next) => handle(res, next, async () => {
       )).rows[0];
     },
   });
-  return transaction.result;
+  return resourceResponse(transaction.result, { contract: 'integration-resource@1' });
 }, 201));
 
 module.exports = router;
