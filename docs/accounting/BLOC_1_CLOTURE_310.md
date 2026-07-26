@@ -1,57 +1,59 @@
-# Bloc 1 — Comptabilité complète (#310)
+# Bloc 1 — Constat de fermeture de la comptabilité complète
 
-## Capacités consolidées
+## Portée
 
-MADSuite possède désormais un noyau comptable en partie double par organisation comprenant :
+Ce constat ferme l’issue #310 et confirme la réalisation des huit sprints du bloc de comptabilité complète de MADSuite.
 
-- un plan comptable fr-CA configurable;
-- des journaux et périodes comptables;
-- des écritures brouillon, publiées et renversées;
-- l’égalité obligatoire des débits et crédits;
-- la fermeture et la réouverture gouvernées des périodes;
-- le grand livre et la balance de vérification;
-- l’état des résultats et le bilan expliqués;
-- un état initial des flux de trésorerie traçable;
-- des exports CSV du journal et de la balance;
-- la production PDF des états financiers;
-- l’isolation stricte par organisation;
-- des événements métier, une projection quotidienne et un chemin d’explication jusqu’aux sources.
+## Preuves validées
 
-## API
+- Sprint 1 — backend #312 : plan comptable, périodes, gouvernance des comptes système et isolation par organisation;
+- Sprint 2 — backend #313 : écritures équilibrées, journal en partie double et normalisation monétaire au cent près;
+- Sprint 3 — backend #314 : réconciliation du registre financier, détection des doublons et écarts de montant;
+- Sprint 4 — backend #311 : grand livre, balance de vérification, états financiers, flux de trésorerie et exports CSV;
+- Sprint 5 — frontend maddevopss/madsuite-frontend#89 : interface comptable protégée, accessible et présentée en dollars canadiens;
+- Sprint 6 — backend #315 : intégration vérifiée des factures, paiements clients, dépenses et fournisseurs;
+- Sprint 7 — backend #316 : scénario financier complet, équilibre débit/crédit et détection d’un écart d’un cent;
+- Sprint 8 — backend #317 : dépendances fusionnées, validations CI vertes et risques résiduels consignés.
 
-- `GET /api/accounting/accounts`
-- `POST /api/accounting/accounts/seed`
-- `POST /api/accounting/accounts`
-- `GET|POST /api/accounting/periods`
-- `POST /api/accounting/periods/:id/close`
-- `POST /api/accounting/periods/:id/reopen`
-- `GET|POST /api/accounting/entries`
-- `POST /api/accounting/entries/:id/post`
-- `POST /api/accounting/entries/:id/reverse`
-- `GET /api/accounting/entries/:id/explain`
-- `GET /api/accounting/ledger`
-- `GET /api/accounting/trial-balance`
-- `GET /api/accounting/statements`
-- `GET /api/accounting/statements/explained`
-- `GET /api/accounting/cash-flow`
-- `GET /api/accounting/exports/trial-balance.csv`
-- `GET /api/accounting/exports/journal.csv`
+## Scénario de fermeture validé
 
-## Règles de fermeture
+1. Initialiser un plan comptable pour une organisation.
+2. Ouvrir une période comptable.
+3. Finaliser une facture de 114,98 $ comprenant 100,00 $ de revenus, 5,00 $ de TPS et 9,98 $ de TVQ.
+4. Vérifier l’écriture : débit des comptes clients de 114,98 $, crédits correspondants de 100,00 $, 5,00 $ et 9,98 $.
+5. Recevoir un paiement de 114,98 $ et vérifier le transfert des comptes clients vers l’encaisse.
+6. Enregistrer une dépense et ses taxes récupérables.
+7. Vérifier le journal, le grand livre, la balance, l’état des résultats, le bilan et le flux de trésorerie.
+8. Réconcilier chaque source avec exactement une écriture équilibrée.
+9. Vérifier qu’une seconde organisation ne peut lire aucune donnée du scénario.
+10. Vérifier qu’une écriture publiée ne peut être modifiée et doit être corrigée par contrepassation.
 
-1. Une écriture publiée n’est jamais corrigée destructivement; elle est renversée.
-2. Une période fermée refuse les nouvelles écritures ordinaires.
-3. Toute opération conserve son organisation, sa provenance et ses références.
-4. Les exports et rapports réutilisent uniquement les écritures publiées ou renversées.
-5. Les clés d’idempotence préviennent la double comptabilisation des automatismes.
-6. Tous les montants sont exprimés en dollars canadiens sauf devise explicitement déclarée.
+## Dépendances fusionnées
 
-## Validation attendue avant fusion
+- backend #312;
+- backend #313;
+- backend #314;
+- backend #311;
+- frontend maddevopss/madsuite-frontend#89;
+- backend #315;
+- backend #316.
 
-```bash
-npm run build
-npm test -- --runInBand
-npm run db:preflight:org
-```
+## Conditions de fermeture
 
-Le scénario de recette est : création du plan comptable, ouverture d’une période, facture, paiement, dépense, publication, balance équilibrée, états financiers, flux de trésorerie et traçage jusqu’aux écritures sources.
+Les conditions bloquantes ont été levées :
+
+- les migrations et validations contractuelles sont couvertes;
+- les écritures testées demeurent équilibrées;
+- les doublons de source et les écarts sont détectés;
+- les routes comptables demeurent isolées par organisation;
+- l’interface passe par le routeur protégé;
+- les écritures publiées sont traitées comme immuables et corrigées par contrepassation;
+- les validations CI de la PR de fermeture sont vertes avant la mise à jour finale.
+
+## Risques résiduels
+
+Les obligations fiscales, les formats de transmission gouvernementaux et les traitements spécialisés d’un cabinet comptable demeurent des chantiers réglementaires distincts. MADSuite produit et conserve les données comptables; il ne remplace pas automatiquement un professionnel autorisé lorsque la loi ou la situation de l’entreprise l’exige.
+
+## Décision
+
+Le bloc #310 peut être fermé. La comptabilité complète dispose maintenant de fondations vérifiables, d’intégrations métier, de rapports, d’une interface utilisateur et de preuves de réconciliation. Toute évolution réglementaire ou fonction spécialisée devra être traitée dans un chantier distinct, sans rouvrir implicitement ce constat.
