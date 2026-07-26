@@ -69,7 +69,7 @@ router.post('/finance-links', (req, res, next) => handle(res, next, async () => 
       const checks = [
         ['suppliers', req.body.supplierId],
         ['supplier_bills', req.body.supplierBillId],
-        ['finance_budgets', req.body.budgetId],
+        ['financial_budgets', req.body.budgetId],
       ].filter(([, id]) => id);
       for (const [table, id] of checks) {
         const target = (await client.query(`SELECT id FROM ${table} WHERE id=$1 AND organisation_id=$2 FOR UPDATE`, [id, organisationId])).rows[0];
