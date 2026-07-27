@@ -2,10 +2,12 @@ const router = require("express").Router();
 const { requireOrganisation } = require("../../middleware/organization.middleware");
 const requireRole = require("../../middleware/requireRole");
 const accountingService = require("../../services/business/accounting.service");
+const accountingLedgerService = require("../../services/business/accounting-ledger.service");
 const accountingMasterdataService = require("../../services/business/accounting-masterdata.service");
 const accountingGovernanceService = require("../../services/business/accounting-governance.service");
 const accountingReversalService = require("../../services/business/accounting-reversal-governance.service");
 const accountingExportService = require("../../services/business/accounting-export.service");
+const accountingTrialBalanceService = require("../../services/business/accounting-trial-balance.service");
 const businessEventService = require("../../services/business/business-event.service");
 const financialProjectionService = require("../../services/business/financial-projection.service");
 const accountingStatementsComparativeService = require("../../services/business/accounting-statements-comparative.service");
@@ -35,7 +37,7 @@ router.post("/accounts", requireRole("admin"), async (req, res, next) => {
 
 router.get("/periods", async (req, res, next) => {
   try {
-    const { rows } = await req.db.query(`SELECT * FROM accounting_periods WHERE organisation_id = $1 ORDER BY starts_on DESC`, [req.organisationId]);
+    const { rows } = await req.db.query("SELECT * FROM accounting_periods WHERE organisation_id = $1 ORDER BY starts_on DESC", [req.organisationId]);
     res.json({ periods: rows });
   } catch (error) { next(error); }
 });
@@ -143,16 +145,34 @@ router.get("/entries/:id/explain", async (req, res, next) => {
 
 router.get("/ledger", async (req, res, next) => {
   try {
-    const rows = await accountingService.ledger(req.db, req.organisationId, { accountId: req.query.accountId, startDate: req.query.startDate, endDate: req.query.endDate });
-    res.json({ rows });
-  } catch (error) { next(error); }
+    const ledger = await accountingLedgerService.getLedger(req.db, req.organisationId, {
+      accountId: req.query.accountId,
+      startDate: req.query.startDate,
+      endDate: req.query.endDate,
+      sourceType: req.query.sourceType,
+      sourceId: req.query.sourceId,
+      projectId: req.query.projectId,
+      clientId: req.query.clientId,
+      supplierId: req.query.supplierId,
+    });
+    return res.json(ledger);
+  } catch (error) { return next(error); }
 });
 
 router.get("/trial-balance", async (req, res, next) => {
   try {
-    const rows = await accountingService.trialBalance(req.db, req.organisationId, req.query.startDate, req.query.endDate);
-    res.json({ rows });
-  } catch (error) { next(error); }
+    const result = await accountingTrialBalanceService.getComparativeTrialBalance(req.db, req.organisationId, {
+      current: {
+        startDate: req.query.startDate,
+        endDate: req.query.endDate,
+      },
+      previous: {
+        startDate: req.query.previousStartDate,
+        endDate: req.query.previousEndDate,
+      },
+    });
+    return res.json(result);
+  } catch (error) { return next(error); }
 });
 
 router.get("/statements", async (req, res, next) => {
