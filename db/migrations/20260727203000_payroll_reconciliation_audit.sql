@@ -1,4 +1,19 @@
 BEGIN;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conrelid = 'payroll_runs'::regclass
+      AND conname = 'uq_payroll_runs_org_id'
+  ) THEN
+    ALTER TABLE payroll_runs
+      ADD CONSTRAINT uq_payroll_runs_org_id
+      UNIQUE (organisation_id, id);
+  END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS payroll_reconciliation_runs (
   id BIGSERIAL PRIMARY KEY,
   organisation_id INTEGER NOT NULL REFERENCES organisations(id) ON DELETE CASCADE,
