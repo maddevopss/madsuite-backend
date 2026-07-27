@@ -5,6 +5,7 @@ const inventoryTransactionService = require('../../services/business/inventory-t
 const inventoryControlRoutes = require('./inventory-control.routes');
 const inventoryProcurementRoutes = require('./inventory-procurement.routes');
 const inventoryTraceabilityRoutes = require('./inventory-traceability.routes');
+const inventoryAnalyticsRoutes = require('./inventory-analytics.routes');
 
 router.use(requireOrganisation);
 
@@ -161,6 +162,7 @@ router.get('/alerts', async (req, res, next) => {
 
 router.use('/procurement', inventoryProcurementRoutes);
 router.use('/traceability', inventoryTraceabilityRoutes);
+router.use('/analytics', inventoryAnalyticsRoutes);
 router.use('/', inventoryControlRoutes);
 
 module.exports = router;
