@@ -1,7 +1,7 @@
-jest.mock("../../../db", () => ({ connect: jest.fn() }));
+jest.mock("../../db", () => ({ connect: jest.fn() }));
 jest.mock("../services/business/inventory-transaction.service", () => ({ postInventoryTransaction: jest.fn() }));
 
-const pool = require("../../../db");
+const pool = require("../../db");
 const inventoryTransactionService = require("../services/business/inventory-transaction.service");
 const service = require("../services/business/inventory-procurement.service");
 
