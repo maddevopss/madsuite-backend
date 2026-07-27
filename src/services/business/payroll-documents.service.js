@@ -29,7 +29,8 @@ function buildPayStub({ organisationId, run, line, employee, generatedBy }) {
     calculationChecksum: line.calculation_checksum,
     generatedBy,
   };
-  return { ...payload, documentChecksum: crypto.createHash("sha256").update(JSON.stringify(payload)).digest("hex") };
+  const documentHash = crypto.createHash("sha256").update(JSON.stringify(payload)).digest("hex");
+  return { ...payload, documentHash, documentChecksum: documentHash };
 }
 
 function buildPayrollRegister({ organisationId, run, lines }) {
