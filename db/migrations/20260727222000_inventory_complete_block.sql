@@ -68,9 +68,11 @@ CREATE TABLE IF NOT EXISTS inventory_lots (
   unit_cost NUMERIC(14,2) NOT NULL DEFAULT 0 CHECK (unit_cost >= 0),
   status TEXT NOT NULL DEFAULT 'available' CHECK (status IN ('available','reserved','quarantined','expired','consumed','disposed')),
   evidence JSONB NOT NULL DEFAULT '[]'::jsonb,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (organisation_id, item_id, lot_number, COALESCE(serial_number,''))
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_inventory_lots_identity
+  ON inventory_lots (organisation_id, item_id, lot_number, COALESCE(serial_number,''));
 
 CREATE TABLE IF NOT EXISTS inventory_status_events (
   id BIGSERIAL PRIMARY KEY,
