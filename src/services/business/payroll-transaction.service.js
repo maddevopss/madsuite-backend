@@ -3,6 +3,8 @@ const { organisationValue } = require("../../utils/organisationScope");
 const { executeTransaction, registerPolicy } = require("./transaction-engine.service");
 const { appendEvent } = require("./business-event.service");
 const { persistTrustAssessment, persistGraphEdges } = require("./trust-persistence.service");
+const { calculateGrossPay, roundMoney } = require("./payroll-gross-calculation.service");
+const { calculateNetPay } = require("./payroll-deductions.service");
 
 const CALCULATE_POLICY = "payroll.run.calculate@1";
 const APPROVE_POLICY = "payroll.run.approve@1";
@@ -10,8 +12,23 @@ const PAY_POLICY = "payroll.run.pay@1";
 const VOID_POLICY = "payroll.run.void@1";
 
 function validIdempotency(value) { return Boolean(value && String(value).trim().length >= 8); }
-function money(value) { const n = Number(value); return Number.isFinite(n) ? Number(n.toFixed(2)) : null; }
+function money(value) { const n = Number(value); return Number.isFinite(n) ? roundMoney(n) : null; }
 function checksum(value) { return crypto.createHash("sha256").update(JSON.stringify(value)).digest("hex"); }
+function mapRules(value, kind) {
+  if (Array.isArray(value)) return value;
+  return Object.entries(value || {}).map(([code, rate]) => ({ code, rate, version: kind }));
+}
+function legacyEntriesToInputs(entry = {}) {
+  return [
+    { input_type: "regular_hours", quantity: Number(entry.regularHours || 0), amount: null },
+    { input_type: "overtime_hours", quantity: Number(entry.overtimeHours || 0), amount: null },
+    { input_type: "bonus", quantity: null, amount: Number(entry.bonus || 0) },
+    { input_type: "commission", quantity: null, amount: Number(entry.commission || 0) },
+    { input_type: "taxable_benefit", quantity: null, amount: Number(entry.taxableBenefit || 0) },
+    { input_type: "reimbursement", quantity: null, amount: Number(entry.reimbursement || 0) },
+    { input_type: "adjustment", quantity: null, amount: Number(entry.adjustment || 0) },
+  ].filter((row) => Number(row.quantity || row.amount || 0) !== 0);
+}
 
 registerPolicy("payroll.run.calculate", "1", ({ input, idempotencyKey }) => {
   if (!input?.runId) return { allowed: false, statusCode: 400, code: "payroll.run_required", reason: "Un cycle de paie est requis." };
@@ -19,30 +36,30 @@ registerPolicy("payroll.run.calculate", "1", ({ input, idempotencyKey }) => {
   return { allowed: true, code: "payroll.calculate.valid" };
 });
 registerPolicy("payroll.run.approve", "1", ({ input }) => input?.runId ? { allowed: true } : { allowed: false, statusCode: 400, reason: "Un cycle de paie est requis." });
-registerPolicy("payroll.run.pay", "1", ({ input, idempotencyKey }) => {
-  if (!input?.runId || !validIdempotency(idempotencyKey)) return { allowed: false, statusCode: 400, reason: "Cycle et clé d’idempotence requis." };
-  return { allowed: true };
-});
-registerPolicy("payroll.run.void", "1", ({ input, idempotencyKey }) => {
-  if (!input?.runId || !validIdempotency(idempotencyKey) || !String(input.reason || "").trim()) return { allowed: false, statusCode: 400, reason: "Cycle, clé d’idempotence et raison sont requis." };
-  return { allowed: true };
-});
+registerPolicy("payroll.run.pay", "1", ({ input, idempotencyKey }) => (!input?.runId || !validIdempotency(idempotencyKey)) ? { allowed: false, statusCode: 400, reason: "Cycle et clé d’idempotence requis." } : { allowed: true });
+registerPolicy("payroll.run.void", "1", ({ input, idempotencyKey }) => (!input?.runId || !validIdempotency(idempotencyKey) || !String(input.reason || "").trim()) ? { allowed: false, statusCode: 400, reason: "Cycle, clé d’idempotence et raison sont requis." } : { allowed: true });
 
-function computeEmployeeLine(employee, input, rules) {
-  const regularHours = money(input.regularHours || 0);
-  const overtimeHours = money(input.overtimeHours || 0);
-  const gross = employee.pay_type === "salary"
-    ? money((Number(employee.annual_salary || 0) / Number(rules.payPeriodsPerYear || 26)))
-    : money((regularHours * Number(employee.hourly_rate || 0)) + (overtimeHours * Number(employee.hourly_rate || 0) * Number(rules.overtimeMultiplier || 1.5)));
-  const deductions = {};
-  let deductionTotal = 0;
-  for (const [code, rate] of Object.entries(rules.employeeDeductions || {})) {
-    const amount = money(gross * Number(rate)); deductions[code] = amount; deductionTotal += amount;
-  }
-  const employerContributions = {};
-  for (const [code, rate] of Object.entries(rules.employerContributions || {})) employerContributions[code] = money(gross * Number(rate));
-  const net = money(gross - deductionTotal);
-  return { regularHours, overtimeHours, grossPay: gross, deductions, employerContributions, netPay: net };
+function computeEmployeeLine(employee, inputs, rules, payDate) {
+  const normalizedInputs = Array.isArray(inputs) ? inputs : legacyEntriesToInputs(inputs || {});
+  const gross = calculateGrossPay({ employee, inputs: normalizedInputs, rules });
+  const net = calculateNetPay({
+    grossPay: gross.grossPay,
+    reimbursements: gross.reimbursements,
+    payDate,
+    employeeDeductions: mapRules(rules.employeeDeductions, rules.version || "ruleset"),
+    employerContributions: mapRules(rules.employerContributions, rules.version || "ruleset"),
+    voluntaryDeductions: mapRules(rules.voluntaryDeductions, rules.version || "ruleset"),
+  });
+  return {
+    regularHours: Number(gross.trace.regularHours || 0),
+    overtimeHours: Number(gross.trace.overtimeHours || 0),
+    grossPay: gross.grossPay,
+    reimbursements: gross.reimbursements,
+    deductions: Object.fromEntries([...net.statutoryDeductions, ...net.voluntaryDeductions].map((row) => [row.code, row.amount])),
+    employerContributions: Object.fromEntries(net.employerContributions.map((row) => [row.code, row.amount])),
+    netPay: net.netPay,
+    explanation: { gross, net },
+  };
 }
 
 async function calculateRun({ organisationId, runId, entries = [], idempotencyKey, createdBy }) {
@@ -54,22 +71,34 @@ async function calculateRun({ organisationId, runId, entries = [], idempotencyKe
       const run = rows[0]; if (!run) return null;
       if (run.status === "calculated" && run.idempotency_key === idempotencyKey) return { duplicate: true, run };
       if (run.status !== "draft") throw Object.assign(new Error("Seul un cycle en brouillon peut être calculé."), { statusCode: 409 });
-      const employees = await client.query(`SELECT * FROM payroll_employees WHERE organisation_id=$1 AND is_active=TRUE`, [orgId]);
-      const byEmployee = new Map(input.entries.map((e) => [Number(e.employeeId), e]));
-      let gross = 0, net = 0, deductions = 0, employer = 0;
+
+      const employees = await client.query(`SELECT * FROM payroll_employees WHERE organisation_id=$1 AND is_active=TRUE AND hire_date <= $2 AND (termination_date IS NULL OR termination_date >= $3)`, [orgId, run.period_end, run.period_start]);
+      const storedInputs = await client.query(`SELECT i.* FROM payroll_variable_inputs i JOIN payroll_periods p ON p.id=i.payroll_period_id AND p.organisation_id=i.organisation_id WHERE i.organisation_id=$1 AND p.period_start=$2 AND p.period_end=$3 ORDER BY i.employee_id,i.id`, [orgId, run.period_start, run.period_end]);
+      const byEmployee = new Map();
+      for (const row of storedInputs.rows) {
+        const key = Number(row.employee_id); const list = byEmployee.get(key) || []; list.push(row); byEmployee.set(key, list);
+      }
+      for (const entry of input.entries || []) {
+        const key = Number(entry.employeeId); const list = byEmployee.get(key) || []; list.push(...legacyEntriesToInputs(entry)); byEmployee.set(key, list);
+      }
+
+      let gross = 0, net = 0, deductions = 0, employer = 0, reimbursements = 0;
       for (const employee of employees.rows) {
-        const source = byEmployee.get(Number(employee.id)) || {};
-        const line = computeEmployeeLine(employee, source, run.rules);
-        gross += line.grossPay; net += line.netPay;
+        const source = byEmployee.get(Number(employee.id)) || [];
+        const line = computeEmployeeLine(employee, source, { ...run.rules, version: run.ruleset_version }, run.pay_date);
+        gross += line.grossPay; net += line.netPay; reimbursements += line.reimbursements;
         deductions += Object.values(line.deductions).reduce((a, b) => a + Number(b), 0);
         employer += Object.values(line.employerContributions).reduce((a, b) => a + Number(b), 0);
         const trace = { employeeId: employee.id, rulesetVersion: run.ruleset_version, source, result: line };
         await client.query(`INSERT INTO payroll_run_lines (organisation_id,payroll_run_id,employee_id,regular_hours,overtime_hours,gross_pay,deductions,employer_contributions,net_pay,calculation_trace,source_snapshot,ruleset_version,calculation_checksum) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT (organisation_id,payroll_run_id,employee_id) DO UPDATE SET regular_hours=EXCLUDED.regular_hours,overtime_hours=EXCLUDED.overtime_hours,gross_pay=EXCLUDED.gross_pay,deductions=EXCLUDED.deductions,employer_contributions=EXCLUDED.employer_contributions,net_pay=EXCLUDED.net_pay,calculation_trace=EXCLUDED.calculation_trace,source_snapshot=EXCLUDED.source_snapshot,ruleset_version=EXCLUDED.ruleset_version,calculation_checksum=EXCLUDED.calculation_checksum`, [orgId, run.id, employee.id, line.regularHours, line.overtimeHours, line.grossPay, line.deductions, line.employerContributions, line.netPay, trace, source, run.ruleset_version, checksum(trace)]);
       }
-      const totals = { gross: money(gross), deductions: money(deductions), employerContributions: money(employer), net: money(net) };
+      if (!employees.rows.length) throw Object.assign(new Error("Aucun employé actif pour cette période."), { statusCode: 409 });
+
+      const totals = { gross: money(gross), reimbursements: money(reimbursements), deductions: money(deductions), employerContributions: money(employer), net: money(net) };
       const updated = await client.query(`UPDATE payroll_runs SET status='calculated',totals=$1,idempotency_key=$2,calculated_at=NOW(),ct_mad_transaction_id=$3,correlation_id=$4 WHERE organisation_id=$5 AND id=$6 RETURNING *`, [totals, idempotencyKey, transactionId, correlationId, orgId, run.id]);
+      await client.query(`UPDATE payroll_periods SET status='locked',locked_at=NOW(),locked_by=$1 WHERE organisation_id=$2 AND period_start=$3 AND period_end=$4 AND status='open'`, [actorUserId, orgId, run.period_start, run.period_end]);
       const event = await appendEvent(client, { organisationId: orgId, eventType: "payroll.run.calculated", aggregateType: "payroll_run", aggregateId: run.id, actorUserId, correlationId, payload: { totals, rulesetVersion: run.ruleset_version } });
-      const trust = await persistTrustAssessment(client, { organisationId: orgId, transactionId, correlationId, checks: [{ code: "payroll.ruleset_versioned", passed: Boolean(run.ruleset_version), evidence: [{ version: run.ruleset_version }] }, { code: "payroll.lines_calculated", passed: employees.rows.length > 0, evidence: [{ employeeCount: employees.rows.length }] }] });
+      const trust = await persistTrustAssessment(client, { organisationId: orgId, transactionId, correlationId, checks: [{ code: "payroll.ruleset_versioned", passed: Boolean(run.ruleset_version), evidence: [{ version: run.ruleset_version }] }, { code: "payroll.lines_calculated", passed: employees.rows.length > 0, evidence: [{ employeeCount: employees.rows.length }] }, { code: "payroll.inputs_locked", passed: true, evidence: [{ periodStart: run.period_start, periodEnd: run.period_end }] }] });
       const graph = await persistGraphEdges(client, { organisationId: orgId, transactionId, correlationId, edges: [{ from: { type: "payroll_run", id: run.id }, relation: "produces", to: { type: "business_event", id: event.event_id }, provenance: { eventId: event.event_id } }, { from: { type: "madtrust_assessment", id: trust.assessmentId }, relation: "assesses", to: { type: "payroll_run", id: run.id }, provenance: { transactionId } }] });
       return { duplicate: false, run: updated.rows[0], event, trust, graph };
     },
