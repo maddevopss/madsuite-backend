@@ -28,6 +28,7 @@ describe('inventory-control.service', () => {
   test('refuse une réservation supérieure au disponible', async () => {
     const db = dbWith([
       { rows: [] },
+      { rows: [] },
       { rows: [{ quantity: '5' }] },
       { rows: [{ quantity: '2' }] },
       { rows: [] },
@@ -45,6 +46,7 @@ describe('inventory-control.service', () => {
 
   test('crée une réservation idempotente et retourne le disponible restant', async () => {
     const db = dbWith([
+      { rows: [] },
       { rows: [] },
       { rows: [{ quantity: '10' }] },
       { rows: [{ quantity: '2' }] },
