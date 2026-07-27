@@ -1,5 +1,14 @@
 BEGIN;
 
+-- Les clés étrangères composites protègent explicitement l'isolation par organisation.
+-- Les tables historiques utilisaient seulement une clé primaire globale sur id; PostgreSQL
+-- exige une clé candidate correspondant exactement aux colonnes référencées.
+CREATE UNIQUE INDEX IF NOT EXISTS inventory_items_organisation_id_id_uq
+  ON inventory_items (organisation_id,id);
+
+CREATE UNIQUE INDEX IF NOT EXISTS inventory_locations_organisation_id_id_uq
+  ON inventory_locations (organisation_id,id);
+
 CREATE TABLE IF NOT EXISTS inventory_reservations (
   id BIGSERIAL PRIMARY KEY,
   organisation_id BIGINT NOT NULL,
@@ -53,7 +62,9 @@ CREATE TABLE IF NOT EXISTS inventory_count_sessions (
     FOREIGN KEY (organisation_id,location_id)
     REFERENCES inventory_locations(organisation_id,id),
   CONSTRAINT inventory_count_sessions_code_uq
-    UNIQUE (organisation_id,code)
+    UNIQUE (organisation_id,code),
+  CONSTRAINT inventory_count_sessions_org_id_uq
+    UNIQUE (organisation_id,id)
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS inventory_count_sessions_one_open_per_location
