@@ -2,12 +2,14 @@ const router = require('express').Router();
 const db = require('../../../db');
 const requireRole = require('../../middleware/requireRole');
 const service = require('../../services/business/supplier-matching.service');
+const supplierApprovalPaymentRoutes = require('./supplier-approval-payment.routes');
+
+router.use('/approval-payments', supplierApprovalPaymentRoutes);
 
 router.get('/policies', async (req, res, next) => {
   try { const { rows } = await req.db.query('SELECT * FROM supplier_matching_policies WHERE organisation_id=$1 ORDER BY is_default DESC, name', [req.organisationId]); return res.json({ policies: rows }); }
   catch (error) { return next(error); }
 });
-
 router.post('/policies', requireRole('admin'), async (req, res, next) => {
   try {
     const body = req.body;
@@ -17,7 +19,6 @@ router.post('/policies', requireRole('admin'), async (req, res, next) => {
     return res.status(201).json({ policy: rows[0] });
   } catch (error) { return next(error); }
 });
-
 router.post('/bills/:billId/run', requireRole('admin'), async (req, res, next) => {
   try {
     const result = await service.runMatching({ organisationId: req.organisationId, billId: req.params.billId, policyId: req.body.policyId, actorUserId: req.user?.id, idempotencyKey: req.get('Idempotency-Key') || req.body.idempotencyKey });
@@ -25,12 +26,10 @@ router.post('/bills/:billId/run', requireRole('admin'), async (req, res, next) =
     return res.status(result.duplicate ? 200 : 201).json(result);
   } catch (error) { return next(error); }
 });
-
 router.get('/bills/:billId/exceptions', async (req, res, next) => {
   try { const { rows } = await req.db.query('SELECT * FROM supplier_matching_exceptions WHERE organisation_id=$1 AND supplier_bill_id=$2 ORDER BY created_at DESC', [req.organisationId, req.params.billId]); return res.json({ exceptions: rows }); }
   catch (error) { return next(error); }
 });
-
 router.post('/exceptions/:exceptionId/resolve', requireRole('admin'), async (req, res, next) => {
   try {
     const exception = await service.resolveException({ organisationId: req.organisationId, exceptionId: req.params.exceptionId, status: req.body.status, explanation: req.body.explanation, evidence: req.body.evidence, actorUserId: req.user?.id });
@@ -38,7 +37,6 @@ router.post('/exceptions/:exceptionId/resolve', requireRole('admin'), async (req
     return res.json({ exception });
   } catch (error) { return next(error); }
 });
-
 router.get('/exceptions', async (req, res, next) => {
   try {
     const status = req.query.status || 'open';
