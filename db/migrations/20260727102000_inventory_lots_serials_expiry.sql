@@ -1,5 +1,8 @@
 BEGIN;
 
+CREATE UNIQUE INDEX IF NOT EXISTS suppliers_organisation_id_id_uq
+  ON suppliers (organisation_id,id);
+
 ALTER TABLE inventory_items
   ADD COLUMN IF NOT EXISTS tracking_mode VARCHAR(20) NOT NULL DEFAULT 'quantity'
     CHECK (tracking_mode IN ('quantity','lot','serial')),
@@ -26,12 +29,9 @@ CREATE TABLE IF NOT EXISTS inventory_lots (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (organisation_id,id),
   UNIQUE (organisation_id,item_id,lot_number),
-  FOREIGN KEY (organisation_id,item_id)
-    REFERENCES inventory_items(organisation_id,id),
-  FOREIGN KEY (organisation_id,supplier_id)
-    REFERENCES suppliers(organisation_id,id),
-  FOREIGN KEY (organisation_id,procurement_receipt_id)
-    REFERENCES procurement_receipts(organisation_id,id)
+  FOREIGN KEY (organisation_id,item_id) REFERENCES inventory_items(organisation_id,id),
+  FOREIGN KEY (organisation_id,supplier_id) REFERENCES suppliers(organisation_id,id),
+  FOREIGN KEY (organisation_id,procurement_receipt_id) REFERENCES procurement_receipts(organisation_id,id)
 );
 
 CREATE TABLE IF NOT EXISTS inventory_lot_balances (
@@ -43,12 +43,9 @@ CREATE TABLE IF NOT EXISTS inventory_lot_balances (
   reserved_quantity NUMERIC(18,3) NOT NULL DEFAULT 0 CHECK (reserved_quantity >= 0 AND reserved_quantity <= quantity),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   PRIMARY KEY (organisation_id,lot_id,location_id),
-  FOREIGN KEY (organisation_id,lot_id)
-    REFERENCES inventory_lots(organisation_id,id),
-  FOREIGN KEY (organisation_id,item_id)
-    REFERENCES inventory_items(organisation_id,id),
-  FOREIGN KEY (organisation_id,location_id)
-    REFERENCES inventory_locations(organisation_id,id)
+  FOREIGN KEY (organisation_id,lot_id) REFERENCES inventory_lots(organisation_id,id),
+  FOREIGN KEY (organisation_id,item_id) REFERENCES inventory_items(organisation_id,id),
+  FOREIGN KEY (organisation_id,location_id) REFERENCES inventory_locations(organisation_id,id)
 );
 
 CREATE TABLE IF NOT EXISTS inventory_serial_numbers (
@@ -72,16 +69,11 @@ CREATE TABLE IF NOT EXISTS inventory_serial_numbers (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (organisation_id,id),
   UNIQUE (organisation_id,serial_number),
-  FOREIGN KEY (organisation_id,item_id)
-    REFERENCES inventory_items(organisation_id,id),
-  FOREIGN KEY (organisation_id,lot_id)
-    REFERENCES inventory_lots(organisation_id,id),
-  FOREIGN KEY (organisation_id,location_id)
-    REFERENCES inventory_locations(organisation_id,id),
-  FOREIGN KEY (organisation_id,procurement_receipt_id)
-    REFERENCES procurement_receipts(organisation_id,id),
-  FOREIGN KEY (organisation_id,supplier_id)
-    REFERENCES suppliers(organisation_id,id)
+  FOREIGN KEY (organisation_id,item_id) REFERENCES inventory_items(organisation_id,id),
+  FOREIGN KEY (organisation_id,lot_id) REFERENCES inventory_lots(organisation_id,id),
+  FOREIGN KEY (organisation_id,location_id) REFERENCES inventory_locations(organisation_id,id),
+  FOREIGN KEY (organisation_id,procurement_receipt_id) REFERENCES procurement_receipts(organisation_id,id),
+  FOREIGN KEY (organisation_id,supplier_id) REFERENCES suppliers(organisation_id,id)
 );
 
 CREATE TABLE IF NOT EXISTS inventory_trace_events (
@@ -102,14 +94,10 @@ CREATE TABLE IF NOT EXISTS inventory_trace_events (
   metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
   idempotency_key VARCHAR(180) NOT NULL,
   UNIQUE (organisation_id,idempotency_key),
-  FOREIGN KEY (organisation_id,item_id)
-    REFERENCES inventory_items(organisation_id,id),
-  FOREIGN KEY (organisation_id,lot_id)
-    REFERENCES inventory_lots(organisation_id,id),
-  FOREIGN KEY (organisation_id,serial_id)
-    REFERENCES inventory_serial_numbers(organisation_id,id),
-  FOREIGN KEY (organisation_id,location_id)
-    REFERENCES inventory_locations(organisation_id,id)
+  FOREIGN KEY (organisation_id,item_id) REFERENCES inventory_items(organisation_id,id),
+  FOREIGN KEY (organisation_id,lot_id) REFERENCES inventory_lots(organisation_id,id),
+  FOREIGN KEY (organisation_id,serial_id) REFERENCES inventory_serial_numbers(organisation_id,id),
+  FOREIGN KEY (organisation_id,location_id) REFERENCES inventory_locations(organisation_id,id)
 );
 
 CREATE TABLE IF NOT EXISTS inventory_recalls (
@@ -128,22 +116,14 @@ CREATE TABLE IF NOT EXISTS inventory_recalls (
   notes TEXT,
   UNIQUE (organisation_id,id),
   UNIQUE (organisation_id,recall_number),
-  FOREIGN KEY (organisation_id,item_id)
-    REFERENCES inventory_items(organisation_id,id),
-  FOREIGN KEY (organisation_id,lot_id)
-    REFERENCES inventory_lots(organisation_id,id)
+  FOREIGN KEY (organisation_id,item_id) REFERENCES inventory_items(organisation_id,id),
+  FOREIGN KEY (organisation_id,lot_id) REFERENCES inventory_lots(organisation_id,id)
 );
 
-CREATE INDEX IF NOT EXISTS inventory_lots_expiry_idx
-  ON inventory_lots (organisation_id,status,expires_at)
-  WHERE status IN ('available','quarantined');
-CREATE INDEX IF NOT EXISTS inventory_lot_balances_available_idx
-  ON inventory_lot_balances (organisation_id,item_id,location_id,lot_id)
-  WHERE quantity > reserved_quantity;
-CREATE INDEX IF NOT EXISTS inventory_serial_status_idx
-  ON inventory_serial_numbers (organisation_id,item_id,status,location_id);
-CREATE INDEX IF NOT EXISTS inventory_trace_lookup_idx
-  ON inventory_trace_events (organisation_id,item_id,lot_id,serial_id,occurred_at DESC);
+CREATE INDEX IF NOT EXISTS inventory_lots_expiry_idx ON inventory_lots (organisation_id,status,expires_at) WHERE status IN ('available','quarantined');
+CREATE INDEX IF NOT EXISTS inventory_lot_balances_available_idx ON inventory_lot_balances (organisation_id,item_id,location_id,lot_id) WHERE quantity > reserved_quantity;
+CREATE INDEX IF NOT EXISTS inventory_serial_status_idx ON inventory_serial_numbers (organisation_id,item_id,status,location_id);
+CREATE INDEX IF NOT EXISTS inventory_trace_lookup_idx ON inventory_trace_events (organisation_id,item_id,lot_id,serial_id,occurred_at DESC);
 
 ALTER TABLE inventory_lots ENABLE ROW LEVEL SECURITY;
 ALTER TABLE inventory_lot_balances ENABLE ROW LEVEL SECURITY;
@@ -157,10 +137,7 @@ BEGIN
   FOREACH table_name IN ARRAY ARRAY['inventory_lots','inventory_lot_balances','inventory_serial_numbers','inventory_trace_events','inventory_recalls']
   LOOP
     EXECUTE format('DROP POLICY IF EXISTS %I_tenant_policy ON %I', table_name, table_name);
-    EXECUTE format(
-      'CREATE POLICY %I_tenant_policy ON %I USING (organisation_id = NULLIF(current_setting(''app.current_organisation_id'', true),'''')::BIGINT) WITH CHECK (organisation_id = NULLIF(current_setting(''app.current_organisation_id'', true),'''')::BIGINT)',
-      table_name, table_name
-    );
+    EXECUTE format('CREATE POLICY %I_tenant_policy ON %I USING (organisation_id = NULLIF(current_setting(''app.current_organisation_id'', true),'''')::BIGINT) WITH CHECK (organisation_id = NULLIF(current_setting(''app.current_organisation_id'', true),'''')::BIGINT)', table_name, table_name);
   END LOOP;
 END $$;
 
