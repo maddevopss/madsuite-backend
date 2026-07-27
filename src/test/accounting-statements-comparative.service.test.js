@@ -20,7 +20,7 @@ describe("accounting-statements-comparative.service", () => {
   test("calcule l’état des résultats, le bilan et les flux", () => {
     const statements = buildStatements([
       { accountId: 1, code: "1010", name: "Banque", accountType: "asset", balance: 80, sources: [] },
-      { accountId: 2, code: "1500", name: "Équipement", accountType: "asset", balance: 20, sources: [] },
+      { accountId: 2, code: "1500", name: "Équipement", accountType: "asset", balance: 40, sources: [] },
       { accountId: 3, code: "2000", name: "Dette", accountType: "liability", balance: -40, sources: [] },
       { accountId: 4, code: "3000", name: "Capital", accountType: "equity", balance: -20, sources: [] },
       { accountId: 5, code: "4000", name: "Revenus", accountType: "revenue", balance: -100, sources: [] },
@@ -28,7 +28,7 @@ describe("accounting-statements-comparative.service", () => {
     ]);
 
     expect(statements.incomeStatement).toMatchObject({ revenue: 100, expenses: 40, netIncome: 60 });
-    expect(statements.balanceSheet).toMatchObject({ assets: 100, liabilities: 40, equity: 20, retainedEarnings: 60, isBalanced: true });
+    expect(statements.balanceSheet).toMatchObject({ assets: 120, liabilities: 40, equity: 20, retainedEarnings: 60, isBalanced: true });
     expect(statements.cashFlow.netChange).toBe(80);
   });
 
