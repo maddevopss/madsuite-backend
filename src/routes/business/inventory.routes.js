@@ -3,6 +3,7 @@ const { requireOrganisation } = require('../../middleware/organization.middlewar
 const requireRole = require('../../middleware/requireRole');
 const inventoryTransactionService = require('../../services/business/inventory-transaction.service');
 const inventoryControlRoutes = require('./inventory-control.routes');
+const inventoryCompleteRoutes = require('./inventory-complete.routes');
 
 router.use(requireOrganisation);
 
@@ -157,6 +158,7 @@ router.get('/alerts', async (req, res, next) => {
   } catch (error) { return next(error); }
 });
 
+router.use('/', inventoryCompleteRoutes);
 router.use('/', inventoryControlRoutes);
 
 module.exports = router;
