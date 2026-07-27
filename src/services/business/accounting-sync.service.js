@@ -28,6 +28,25 @@ async function loadAccounts(client, organisationId, codes) {
   return new Map(rows.map((row) => [row.code, row.id]));
 }
 
+function assertAccounts(accounts, codes) {
+  const missingCodes = codes.filter((code) => !accounts.has(code));
+  if (!missingCodes.length) return;
+
+  throw Object.assign(
+    new Error(`Le plan comptable est incomplet. Comptes actifs manquants : ${missingCodes.join(", ")}.`),
+    {
+      statusCode: 409,
+      code: "ACCOUNTING_CHART_INCOMPLETE",
+      missingAccountCodes: missingCodes,
+    },
+  );
+}
+
+async function lockSource(client, organisationId, sourceType, sourceId) {
+  const key = `${organisationId}:${sourceType}:${String(sourceId)}`;
+  await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))", [key]);
+}
+
 async function findExistingEntry(client, organisationId, sourceType, sourceId) {
   const { rows } = await client.query(
     `SELECT id, status
@@ -56,10 +75,6 @@ async function ensureJournal(client, organisationId, code, name, type) {
   return rows[0]?.id || null;
 }
 
-function requireAccounts(accounts, codes) {
-  return codes.every((code) => accounts.has(code));
-}
-
 async function recordPostedEntry(client, {
   organisationId,
   userId,
@@ -73,6 +88,7 @@ async function recordPostedEntry(client, {
   sourceId,
   lines,
 }) {
+  await lockSource(client, organisationId, sourceType, sourceId);
   const existing = await findExistingEntry(client, organisationId, sourceType, sourceId);
   if (existing) return { skipped: false, duplicate: true, entryId: existing.id };
 
@@ -82,8 +98,13 @@ async function recordPostedEntry(client, {
     throw Object.assign(new Error("L’écriture automatique est déséquilibrée."), { statusCode: 409 });
   }
 
+  const effectiveLines = lines.filter((item) => Number(item.debit || 0) > 0 || Number(item.credit || 0) > 0);
+  if (effectiveLines.length < 2) {
+    throw Object.assign(new Error("L’écriture automatique exige au moins deux lignes non nulles."), { statusCode: 409 });
+  }
+
   const journalId = await ensureJournal(client, organisationId, journalCode, journalName, journalType);
-  if (!journalId) throw new Error("Journal comptable introuvable.");
+  if (!journalId) throw Object.assign(new Error("Journal comptable introuvable."), { statusCode: 409 });
 
   const entry = await client.query(
     `INSERT INTO accounting_entries
@@ -103,7 +124,7 @@ async function recordPostedEntry(client, {
     ],
   );
 
-  for (const line of lines.filter((item) => Number(item.debit || 0) > 0 || Number(item.credit || 0) > 0)) {
+  for (const line of effectiveLines) {
     await client.query(
       `INSERT INTO accounting_entry_lines
         (organisation_id, entry_id, account_id, description, debit, credit)
@@ -126,7 +147,7 @@ async function recordPostedEntry(client, {
      RETURNING id`,
     [organisationId, entry.rows[0].id],
   );
-  if (!posted.rowCount) throw new Error("Impossible de publier l’écriture automatique.");
+  if (!posted.rowCount) throw Object.assign(new Error("Impossible de publier l’écriture automatique."), { statusCode: 409 });
 
   return { skipped: false, duplicate: false, entryId: entry.rows[0].id };
 }
@@ -155,9 +176,7 @@ async function recordInvoiceFinalizationAccounting({
   const codes = [ACCOUNT_CODES.receivables, ACCOUNT_CODES.serviceRevenue];
   if (normalizedTax > 0) codes.push(ACCOUNT_CODES.taxPayable);
   const accounts = await loadAccounts(client, organisationId, codes);
-  if (!requireAccounts(accounts, codes)) {
-    return { skipped: true, reason: "chart_of_accounts_not_initialized" };
-  }
+  assertAccounts(accounts, codes);
 
   return recordPostedEntry(client, {
     organisationId,
@@ -190,9 +209,7 @@ async function recordInvoicePaymentAccounting({
   const normalizedAmount = money(amount);
   const codes = [ACCOUNT_CODES.bank, ACCOUNT_CODES.receivables];
   const accounts = await loadAccounts(client, organisationId, codes);
-  if (!requireAccounts(accounts, codes)) {
-    return { skipped: true, reason: "chart_of_accounts_not_initialized" };
-  }
+  assertAccounts(accounts, codes);
 
   return recordPostedEntry(client, {
     organisationId,
@@ -219,9 +236,7 @@ async function recordExpenseAccounting({ client, organisationId, expense, create
   const codes = [ACCOUNT_CODES.generalExpense, ACCOUNT_CODES.bank];
   if (tax > 0) codes.push(ACCOUNT_CODES.taxReceivable);
   const accounts = await loadAccounts(client, organisationId, codes);
-  if (!requireAccounts(accounts, codes)) {
-    return { skipped: true, reason: "chart_of_accounts_not_initialized" };
-  }
+  assertAccounts(accounts, codes);
 
   return recordPostedEntry(client, {
     organisationId,
@@ -249,9 +264,7 @@ async function recordSupplierBillAccounting({ client, organisationId, bill, crea
   const codes = [ACCOUNT_CODES.generalExpense, ACCOUNT_CODES.payables];
   if (tax > 0) codes.push(ACCOUNT_CODES.taxReceivable);
   const accounts = await loadAccounts(client, organisationId, codes);
-  if (!requireAccounts(accounts, codes)) {
-    return { skipped: true, reason: "chart_of_accounts_not_initialized" };
-  }
+  assertAccounts(accounts, codes);
 
   return recordPostedEntry(client, {
     organisationId,
@@ -276,6 +289,8 @@ module.exports = {
   ACCOUNT_CODES,
   money,
   loadAccounts,
+  assertAccounts,
+  lockSource,
   findExistingEntry,
   recordPostedEntry,
   recordInvoiceFinalizationAccounting,
