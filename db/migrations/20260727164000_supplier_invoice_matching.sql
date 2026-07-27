@@ -9,6 +9,21 @@ ALTER TABLE supplier_bills
   ADD COLUMN IF NOT EXISTS blocked_reason TEXT,
   ADD COLUMN IF NOT EXISTS idempotency_key VARCHAR(160);
 
+-- Les clés étrangères composites créées plus bas exigent que la paire
+-- (organisation_id, id) soit unique avant la création des tables dépendantes.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conrelid = 'supplier_bills'::regclass
+      AND conname = 'uq_supplier_bills_org_id'
+  ) THEN
+    ALTER TABLE supplier_bills
+      ADD CONSTRAINT uq_supplier_bills_org_id UNIQUE (organisation_id, id);
+  END IF;
+END $$;
+
 CREATE UNIQUE INDEX IF NOT EXISTS uq_supplier_bills_org_idempotency
   ON supplier_bills (organisation_id, idempotency_key)
   WHERE idempotency_key IS NOT NULL;
@@ -94,8 +109,6 @@ CREATE TABLE IF NOT EXISTS supplier_matching_runs (
   FOREIGN KEY (organisation_id, policy_id)
     REFERENCES supplier_matching_policies (organisation_id, id)
 );
-
-ALTER TABLE supplier_bills ADD CONSTRAINT uq_supplier_bills_org_id UNIQUE (organisation_id, id);
 
 ALTER TABLE supplier_bill_lines ENABLE ROW LEVEL SECURITY;
 ALTER TABLE supplier_matching_policies ENABLE ROW LEVEL SECURITY;
