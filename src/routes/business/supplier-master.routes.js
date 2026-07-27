@@ -1,6 +1,9 @@
 const router = require('express').Router();
 const requireRole = require('../../middleware/requireRole');
 const supplierMasterService = require('../../services/business/supplier-master.service');
+const supplierMatchingRoutes = require('./supplier-matching.routes');
+
+router.use('/matching', supplierMatchingRoutes);
 
 router.get('/', async (req, res, next) => {
   try {
@@ -53,11 +56,7 @@ router.get('/compliance-alerts', async (req, res, next) => {
 
 router.post('/', requireRole('admin'), async (req, res, next) => {
   try {
-    const result = await supplierMasterService.createSupplier({
-      organisationId: req.organisationId,
-      actorUserId: req.user?.id,
-      payload: req.body || {},
-    });
+    const result = await supplierMasterService.createSupplier({ organisationId: req.organisationId, actorUserId: req.user?.id, payload: req.body || {} });
     return res.status(result.duplicate ? 200 : 201).json(result);
   } catch (error) { return next(error); }
 });
@@ -65,14 +64,10 @@ router.post('/', requireRole('admin'), async (req, res, next) => {
 router.post('/:id/contacts', requireRole('admin'), async (req, res, next) => {
   try {
     if (!String(req.body?.name || '').trim()) return res.status(400).json({ message: 'Le nom du contact est obligatoire.' });
-    const { rows } = await req.db.query(
-      `INSERT INTO supplier_contacts
-       (organisation_id,supplier_id,contact_type,name,title,email,phone,mobile,language,is_primary)
-       SELECT $1,s.id,$3,$4,$5,$6,$7,$8,$9,$10
-       FROM suppliers s WHERE s.organisation_id=$1 AND s.id=$2
-       RETURNING *`,
-      [req.organisationId,req.params.id,req.body.contactType || 'general',String(req.body.name).trim(),req.body.title || null,req.body.email || null,req.body.phone || null,req.body.mobile || null,req.body.language || 'fr-CA',Boolean(req.body.isPrimary)],
-    );
+    const { rows } = await req.db.query(`INSERT INTO supplier_contacts
+      (organisation_id,supplier_id,contact_type,name,title,email,phone,mobile,language,is_primary)
+      SELECT $1,s.id,$3,$4,$5,$6,$7,$8,$9,$10 FROM suppliers s WHERE s.organisation_id=$1 AND s.id=$2 RETURNING *`,
+      [req.organisationId,req.params.id,req.body.contactType || 'general',String(req.body.name).trim(),req.body.title || null,req.body.email || null,req.body.phone || null,req.body.mobile || null,req.body.language || 'fr-CA',Boolean(req.body.isPrimary)]);
     if (!rows[0]) return res.status(404).json({ message: 'Fournisseur introuvable.' });
     return res.status(201).json({ contact: rows[0] });
   } catch (error) { return next(error); }
@@ -81,14 +76,10 @@ router.post('/:id/contacts', requireRole('admin'), async (req, res, next) => {
 router.post('/:id/addresses', requireRole('admin'), async (req, res, next) => {
   try {
     if (!String(req.body?.line1 || '').trim() || !String(req.body?.city || '').trim()) return res.status(400).json({ message: 'L’adresse et la ville sont obligatoires.' });
-    const { rows } = await req.db.query(
-      `INSERT INTO supplier_addresses
-       (organisation_id,supplier_id,address_type,line1,line2,city,region,postal_code,country_code,is_primary)
-       SELECT $1,s.id,$3,$4,$5,$6,$7,$8,$9,$10
-       FROM suppliers s WHERE s.organisation_id=$1 AND s.id=$2
-       RETURNING *`,
-      [req.organisationId,req.params.id,req.body.addressType || 'business',String(req.body.line1).trim(),req.body.line2 || null,String(req.body.city).trim(),req.body.region || null,req.body.postalCode || null,req.body.countryCode || 'CA',Boolean(req.body.isPrimary)],
-    );
+    const { rows } = await req.db.query(`INSERT INTO supplier_addresses
+      (organisation_id,supplier_id,address_type,line1,line2,city,region,postal_code,country_code,is_primary)
+      SELECT $1,s.id,$3,$4,$5,$6,$7,$8,$9,$10 FROM suppliers s WHERE s.organisation_id=$1 AND s.id=$2 RETURNING *`,
+      [req.organisationId,req.params.id,req.body.addressType || 'business',String(req.body.line1).trim(),req.body.line2 || null,String(req.body.city).trim(),req.body.region || null,req.body.postalCode || null,req.body.countryCode || 'CA',Boolean(req.body.isPrimary)]);
     if (!rows[0]) return res.status(404).json({ message: 'Fournisseur introuvable.' });
     return res.status(201).json({ address: rows[0] });
   } catch (error) { return next(error); }
@@ -97,14 +88,10 @@ router.post('/:id/addresses', requireRole('admin'), async (req, res, next) => {
 router.post('/:id/compliance-documents', requireRole('admin'), async (req, res, next) => {
   try {
     if (!String(req.body?.documentType || '').trim()) return res.status(400).json({ message: 'Le type de document est obligatoire.' });
-    const { rows } = await req.db.query(
-      `INSERT INTO supplier_compliance_documents
-       (organisation_id,supplier_id,document_type,document_number,issued_at,expires_at,status,file_reference,notes,verified_by,verified_at)
-       SELECT $1,s.id,$3,$4,$5,$6,$7,$8,$9,$10,CASE WHEN $7='valid' THEN NOW() ELSE NULL END
-       FROM suppliers s WHERE s.organisation_id=$1 AND s.id=$2
-       RETURNING *`,
-      [req.organisationId,req.params.id,String(req.body.documentType).trim(),req.body.documentNumber || null,req.body.issuedAt || null,req.body.expiresAt || null,req.body.status || 'pending',req.body.fileReference || {},req.body.notes || null,req.user?.id || null],
-    );
+    const { rows } = await req.db.query(`INSERT INTO supplier_compliance_documents
+      (organisation_id,supplier_id,document_type,document_number,issued_at,expires_at,status,file_reference,notes,verified_by,verified_at)
+      SELECT $1,s.id,$3,$4,$5,$6,$7,$8,$9,$10,CASE WHEN $7='valid' THEN NOW() ELSE NULL END FROM suppliers s WHERE s.organisation_id=$1 AND s.id=$2 RETURNING *`,
+      [req.organisationId,req.params.id,String(req.body.documentType).trim(),req.body.documentNumber || null,req.body.issuedAt || null,req.body.expiresAt || null,req.body.status || 'pending',req.body.fileReference || {},req.body.notes || null,req.user?.id || null]);
     if (!rows[0]) return res.status(404).json({ message: 'Fournisseur introuvable.' });
     return res.status(201).json({ document: rows[0] });
   } catch (error) { return next(error); }
@@ -112,25 +99,14 @@ router.post('/:id/compliance-documents', requireRole('admin'), async (req, res, 
 
 router.post('/:id/status', requireRole('admin'), async (req, res, next) => {
   try {
-    const result = await supplierMasterService.changeStatus({
-      organisationId: req.organisationId,
-      supplierId: req.params.id,
-      status: req.body.status,
-      reason: req.body.reason,
-      actorUserId: req.user?.id,
-      idempotencyKey: req.body.idempotencyKey,
-    });
+    const result = await supplierMasterService.changeStatus({ organisationId: req.organisationId, supplierId: req.params.id, status: req.body.status, reason: req.body.reason, actorUserId: req.user?.id, idempotencyKey: req.body.idempotencyKey });
     return res.status(200).json(result);
   } catch (error) { return next(error); }
 });
 
 router.get('/:id/audit', async (req, res, next) => {
   try {
-    const { rows } = await req.db.query(
-      `SELECT * FROM supplier_audit_events
-       WHERE organisation_id=$1 AND supplier_id=$2 ORDER BY occurred_at DESC,id DESC LIMIT 250`,
-      [req.organisationId,req.params.id],
-    );
+    const { rows } = await req.db.query('SELECT * FROM supplier_audit_events WHERE organisation_id=$1 AND supplier_id=$2 ORDER BY occurred_at DESC,id DESC LIMIT 250', [req.organisationId,req.params.id]);
     return res.json({ events: rows });
   } catch (error) { return next(error); }
 });
