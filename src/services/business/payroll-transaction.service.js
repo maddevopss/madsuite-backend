@@ -40,7 +40,8 @@ registerPolicy("payroll.run.pay", "1", ({ input, idempotencyKey }) => (!input?.r
 registerPolicy("payroll.run.void", "1", ({ input, idempotencyKey }) => (!input?.runId || !validIdempotency(idempotencyKey) || !String(input.reason || "").trim()) ? { allowed: false, statusCode: 400, reason: "Cycle, clé d’idempotence et raison sont requis." } : { allowed: true });
 
 function computeEmployeeLine(employee, inputs, rules, payDate) {
-  const gross = calculateGrossPay({ employee, inputs, rules });
+  const normalizedInputs = Array.isArray(inputs) ? inputs : legacyEntriesToInputs(inputs || {});
+  const gross = calculateGrossPay({ employee, inputs: normalizedInputs, rules });
   const net = calculateNetPay({
     grossPay: gross.grossPay,
     reimbursements: gross.reimbursements,
