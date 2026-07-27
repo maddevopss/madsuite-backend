@@ -14,7 +14,7 @@ function exists(relativePath) {
 describe('Bloc Paie complet — contrat de fermeture', () => {
   test.each([
     'db/migrations/20260727230000_payroll_employee_registry.sql',
-    'db/migrations/20260727233000_payroll_employment_contracts.sql',
+    'db/migrations/20260727232000_payroll_employment_contracts.sql',
     'db/migrations/072_payroll_periods_inputs.sql',
     'db/migrations/072_payroll_transactional_core.sql',
     'db/migrations/20260727202000_payroll_approval_controls.sql',
@@ -29,7 +29,7 @@ describe('Bloc Paie complet — contrat de fermeture', () => {
   });
 
   test.each([
-    ['db/migrations/20260727233000_payroll_employment_contracts.sql', /payroll_employment_contracts/],
+    ['db/migrations/20260727232000_payroll_employment_contracts.sql', /payroll_employment_contracts/],
     ['db/migrations/072_payroll_periods_inputs.sql', /CREATE TABLE IF NOT EXISTS payroll_periods/],
     ['db/migrations/072_payroll_periods_inputs.sql', /CREATE TABLE IF NOT EXISTS payroll_variable_inputs/],
     ['db/migrations/072_payroll_transactional_core.sql', /ALTER TABLE payroll_runs/],
@@ -72,7 +72,7 @@ describe('Bloc Paie complet — contrat de fermeture', () => {
 
   test.each([
     ['db/migrations/20260727230000_payroll_employee_registry.sql', /ENABLE ROW LEVEL SECURITY/],
-    ['db/migrations/20260727233000_payroll_employment_contracts.sql', /ENABLE ROW LEVEL SECURITY/],
+    ['db/migrations/20260727232000_payroll_employment_contracts.sql', /ENABLE ROW LEVEL SECURITY/],
     ['db/migrations/072_payroll_periods_inputs.sql', /ALTER TABLE payroll_periods ENABLE ROW LEVEL SECURITY/],
     ['db/migrations/072_payroll_periods_inputs.sql', /ALTER TABLE payroll_variable_inputs ENABLE ROW LEVEL SECURITY/],
     ['db/migrations/072_payroll_periods_inputs.sql', /CREATE TRIGGER payroll_inputs_lock_guard/],
