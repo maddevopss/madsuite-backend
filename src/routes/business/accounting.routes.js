@@ -6,6 +6,7 @@ const accountingMasterdataService = require("../../services/business/accounting-
 const accountingGovernanceService = require("../../services/business/accounting-governance.service");
 const accountingReversalService = require("../../services/business/accounting-reversal-governance.service");
 const accountingExportService = require("../../services/business/accounting-export.service");
+const accountingTrialBalanceService = require("../../services/business/accounting-trial-balance.service");
 const businessEventService = require("../../services/business/business-event.service");
 const financialProjectionService = require("../../services/business/financial-projection.service");
 
@@ -149,9 +150,18 @@ router.get("/ledger", async (req, res, next) => {
 
 router.get("/trial-balance", async (req, res, next) => {
   try {
-    const rows = await accountingService.trialBalance(req.db, req.organisationId, req.query.startDate, req.query.endDate);
-    res.json({ rows });
-  } catch (error) { next(error); }
+    const result = await accountingTrialBalanceService.getComparativeTrialBalance(req.db, req.organisationId, {
+      current: {
+        startDate: req.query.startDate,
+        endDate: req.query.endDate,
+      },
+      previous: {
+        startDate: req.query.previousStartDate,
+        endDate: req.query.previousEndDate,
+      },
+    });
+    return res.json(result);
+  } catch (error) { return next(error); }
 });
 
 router.get("/statements", async (req, res, next) => {
