@@ -71,6 +71,14 @@ CREATE TABLE IF NOT EXISTS inventory_lots (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- inventory_lots peut déjà provenir d’une migration antérieure. CREATE TABLE IF NOT EXISTS
+-- ne complète pas une table existante; les colonnes requises doivent donc être ajoutées explicitement.
+ALTER TABLE inventory_lots ADD COLUMN IF NOT EXISTS serial_number TEXT;
+ALTER TABLE inventory_lots ADD COLUMN IF NOT EXISTS received_at TIMESTAMPTZ;
+ALTER TABLE inventory_lots ADD COLUMN IF NOT EXISTS expires_at DATE;
+ALTER TABLE inventory_lots ADD COLUMN IF NOT EXISTS unit_cost NUMERIC(14,2) NOT NULL DEFAULT 0;
+ALTER TABLE inventory_lots ADD COLUMN IF NOT EXISTS evidence JSONB NOT NULL DEFAULT '[]'::jsonb;
+
 CREATE UNIQUE INDEX IF NOT EXISTS uq_inventory_lots_identity
   ON inventory_lots (organisation_id, item_id, lot_number, COALESCE(serial_number,''));
 
