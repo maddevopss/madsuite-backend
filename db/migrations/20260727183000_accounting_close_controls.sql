@@ -1,4 +1,20 @@
 BEGIN;
+
+-- Les clés étrangères composites exigent une contrainte unique explicite
+-- sur la paire organisation/période avant la création des tables dépendantes.
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conrelid = 'accounting_periods'::regclass
+      AND conname = 'uq_accounting_periods_org_id'
+  ) THEN
+    ALTER TABLE accounting_periods
+      ADD CONSTRAINT uq_accounting_periods_org_id UNIQUE (organisation_id, id);
+  END IF;
+END $$;
+
 CREATE TABLE IF NOT EXISTS accounting_close_checklists (
   id BIGSERIAL PRIMARY KEY,
   organisation_id INTEGER NOT NULL REFERENCES organisations(id) ON DELETE CASCADE,
@@ -30,6 +46,7 @@ CREATE TABLE IF NOT EXISTS accounting_close_tasks (
   completed_by INTEGER REFERENCES utilisateurs(id),
   completed_at TIMESTAMPTZ,
   waiver_reason TEXT,
+  UNIQUE (organisation_id,id),
   UNIQUE (organisation_id,checklist_id,task_code),
   FOREIGN KEY (organisation_id,checklist_id) REFERENCES accounting_close_checklists(organisation_id,id) ON DELETE CASCADE
 );
