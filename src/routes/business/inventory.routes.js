@@ -4,6 +4,7 @@ const requireRole = require('../../middleware/requireRole');
 const inventoryTransactionService = require('../../services/business/inventory-transaction.service');
 const inventoryControlRoutes = require('./inventory-control.routes');
 const inventoryProcurementRoutes = require('./inventory-procurement.routes');
+const inventoryTraceabilityRoutes = require('./inventory-traceability.routes');
 
 router.use(requireOrganisation);
 
@@ -29,9 +30,9 @@ router.post('/items', requireRole('admin'), async (req, res, next) => {
     if (!String(body.sku || '').trim() || !String(body.name || '').trim()) return res.status(400).json({ message: 'Le SKU et le nom sont obligatoires.' });
     const { rows } = await req.db.query(
       `INSERT INTO inventory_items
-       (organisation_id,sku,name,description,unit,cost,sale_price,reorder_point,asset_account_id,expense_account_id,revenue_account_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
-      [req.organisationId,String(body.sku).trim(),String(body.name).trim(),body.description || null,body.unit || 'unité',body.cost || 0,body.salePrice || 0,body.reorderPoint || 0,body.assetAccountId || null,body.expenseAccountId || null,body.revenueAccountId || null],
+       (organisation_id,sku,name,description,unit,cost,sale_price,reorder_point,asset_account_id,expense_account_id,revenue_account_id,tracking_mode,shelf_life_days,expiry_warning_days)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,
+      [req.organisationId,String(body.sku).trim(),String(body.name).trim(),body.description || null,body.unit || 'unité',body.cost || 0,body.salePrice || 0,body.reorderPoint || 0,body.assetAccountId || null,body.expenseAccountId || null,body.revenueAccountId || null,body.trackingMode || 'quantity',body.shelfLifeDays || null,body.expiryWarningDays ?? 30],
     );
     return res.status(201).json({ item: rows[0] });
   } catch (error) { return next(error); }
@@ -159,6 +160,7 @@ router.get('/alerts', async (req, res, next) => {
 });
 
 router.use('/procurement', inventoryProcurementRoutes);
+router.use('/traceability', inventoryTraceabilityRoutes);
 router.use('/', inventoryControlRoutes);
 
 module.exports = router;
