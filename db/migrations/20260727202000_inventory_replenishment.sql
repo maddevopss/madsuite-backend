@@ -26,7 +26,7 @@ CREATE TABLE IF NOT EXISTS inventory_replenishment_suggestions (
   suggested_quantity NUMERIC(14,3) NOT NULL CHECK (suggested_quantity > 0),
   needed_by DATE,
   status VARCHAR(20) NOT NULL DEFAULT 'open' CHECK (status IN ('open','approved','ordered','dismissed','cancelled')),
-  purchase_order_id BIGINT REFERENCES purchase_orders(id),
+  purchase_order_id BIGINT REFERENCES procurement_purchase_orders(id),
   idempotency_key VARCHAR(160) NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (organisation_id,idempotency_key)
