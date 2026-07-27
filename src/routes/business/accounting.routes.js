@@ -2,6 +2,7 @@ const router = require("express").Router();
 const { requireOrganisation } = require("../../middleware/organization.middleware");
 const requireRole = require("../../middleware/requireRole");
 const accountingService = require("../../services/business/accounting.service");
+const accountingMasterdataService = require("../../services/business/accounting-masterdata.service");
 const accountingGovernanceService = require("../../services/business/accounting-governance.service");
 const accountingReversalService = require("../../services/business/accounting-reversal-governance.service");
 const accountingExportService = require("../../services/business/accounting-export.service");
@@ -26,13 +27,8 @@ router.post("/accounts/seed", requireRole("admin"), async (req, res, next) => {
 
 router.post("/accounts", requireRole("admin"), async (req, res, next) => {
   try {
-    const body = req.body;
-    const { rows } = await req.db.query(
-      `INSERT INTO accounting_accounts (organisation_id, code, name, account_type, normal_balance, parent_id)
-       VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,
-      [req.organisationId, body.code, body.name, body.accountType, body.normalBalance, body.parentId || null],
-    );
-    res.status(201).json({ account: rows[0] });
+    const account = await accountingMasterdataService.createAccount(req.db, req.organisationId, req.body);
+    res.status(201).json({ account });
   } catch (error) { next(error); }
 });
 
@@ -45,15 +41,8 @@ router.get("/periods", async (req, res, next) => {
 
 router.post("/periods", requireRole("admin"), async (req, res, next) => {
   try {
-    const body = req.body;
-    if (!body.fiscalYear || !body.periodNumber || !body.startsOn || !body.endsOn) return res.status(400).json({ message: "L’année, le numéro et les dates de la période sont obligatoires." });
-    if (new Date(body.startsOn) > new Date(body.endsOn)) return res.status(400).json({ message: "La date de début doit précéder la date de fin." });
-    const { rows } = await req.db.query(
-      `INSERT INTO accounting_periods (organisation_id, fiscal_year, period_number, starts_on, ends_on)
-       VALUES ($1,$2,$3,$4,$5) RETURNING *`,
-      [req.organisationId, body.fiscalYear, body.periodNumber, body.startsOn, body.endsOn],
-    );
-    return res.status(201).json({ period: rows[0] });
+    const period = await accountingMasterdataService.createPeriod(req.db, req.organisationId, req.body);
+    return res.status(201).json({ period });
   } catch (error) { return next(error); }
 });
 
@@ -92,6 +81,14 @@ router.get("/entries", async (req, res, next) => {
     );
     res.json({ entries: rows });
   } catch (error) { next(error); }
+});
+
+router.get("/entries/:id", async (req, res, next) => {
+  try {
+    const detail = await accountingMasterdataService.getEntryDetail(req.db, req.organisationId, Number(req.params.id));
+    if (!detail) return res.status(404).json({ message: "Écriture comptable introuvable." });
+    return res.json(detail);
+  } catch (error) { return next(error); }
 });
 
 router.post("/entries", requireRole("admin"), async (req, res, next) => {
@@ -169,35 +166,20 @@ router.get("/statements/explained", async (req, res, next) => {
 
 router.get("/cash-flow", async (req, res, next) => {
   try {
-    return res.json(await accountingExportService.cashFlow(
-      req.db,
-      req.organisationId,
-      req.query.startDate,
-      req.query.endDate,
-    ));
+    return res.json(await accountingExportService.cashFlow(req.db, req.organisationId, req.query.startDate, req.query.endDate));
   } catch (error) { return next(error); }
 });
 
 router.get("/exports/trial-balance.csv", async (req, res, next) => {
   try {
-    const csv = await accountingExportService.trialBalanceCsv(
-      req.db,
-      req.organisationId,
-      req.query.startDate,
-      req.query.endDate,
-    );
+    const csv = await accountingExportService.trialBalanceCsv(req.db, req.organisationId, req.query.startDate, req.query.endDate);
     return res.type("text/csv").set("Content-Disposition", "attachment; filename=balance-verification.csv").send(csv);
   } catch (error) { return next(error); }
 });
 
 router.get("/exports/journal.csv", async (req, res, next) => {
   try {
-    const csv = await accountingExportService.journalCsv(
-      req.db,
-      req.organisationId,
-      req.query.startDate,
-      req.query.endDate,
-    );
+    const csv = await accountingExportService.journalCsv(req.db, req.organisationId, req.query.startDate, req.query.endDate);
     return res.type("text/csv").set("Content-Disposition", "attachment; filename=journal-comptable.csv").send(csv);
   } catch (error) { return next(error); }
 });
