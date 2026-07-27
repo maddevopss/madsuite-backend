@@ -5,8 +5,10 @@ const accountingPostingService = require("../../services/business/accounting-pos
 const supplierPaymentService = require("../../services/business/supplier-payment.service");
 const paymentReversalService = require("../../services/business/payment-reversal.service");
 const supplierBillLifecycleService = require("../../services/business/supplier-bill-lifecycle.service");
+const supplierMasterRoutes = require("./supplier-master.routes");
 
 router.use(requireOrganisation);
+router.use("/master", supplierMasterRoutes);
 
 router.get("/", async (req, res, next) => {
   try {
