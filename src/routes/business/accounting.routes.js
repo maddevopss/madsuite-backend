@@ -10,6 +10,7 @@ const accountingExportService = require("../../services/business/accounting-expo
 const accountingTrialBalanceService = require("../../services/business/accounting-trial-balance.service");
 const businessEventService = require("../../services/business/business-event.service");
 const financialProjectionService = require("../../services/business/financial-projection.service");
+const accountingStatementsComparativeService = require("../../services/business/accounting-statements-comparative.service");
 
 router.use(requireOrganisation);
 
@@ -175,8 +176,13 @@ router.get("/trial-balance", async (req, res, next) => {
 });
 
 router.get("/statements", async (req, res, next) => {
-  try { res.json(await accountingService.statements(req.db, req.organisationId, req.query.endDate)); }
-  catch (error) { next(error); }
+  try {
+    const result = await accountingStatementsComparativeService.getComparativeStatements(req.db, req.organisationId, {
+      current: { startDate: req.query.startDate, endDate: req.query.endDate },
+      previous: { startDate: req.query.previousStartDate, endDate: req.query.previousEndDate },
+    });
+    return res.json(result);
+  } catch (error) { return next(error); }
 });
 
 router.get("/statements/explained", async (req, res, next) => {
