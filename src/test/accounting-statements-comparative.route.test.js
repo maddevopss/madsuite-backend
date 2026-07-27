@@ -8,10 +8,10 @@ jest.mock("../middleware/organization.middleware", () => ({
 
 jest.mock("../middleware/requireRole", () => () => (_req, _res, next) => next());
 
-const getComparativeStatements = jest.fn();
+const mockGetComparativeStatements = jest.fn();
 
 jest.mock("../services/business/accounting-statements-comparative.service", () => ({
-  getComparativeStatements: (...args) => getComparativeStatements(...args),
+  getComparativeStatements: (...args) => mockGetComparativeStatements(...args),
 }));
 
 const express = require("express");
@@ -27,7 +27,7 @@ function buildApp() {
 
 describe("GET /api/accounting/statements", () => {
   beforeEach(() => {
-    getComparativeStatements.mockReset();
+    mockGetComparativeStatements.mockReset();
   });
 
   test("transmet les deux périodes et retourne le contrat comparatif", async () => {
@@ -42,7 +42,7 @@ describe("GET /api/accounting/statements", () => {
         cashFlow: { netChange: { current: 400, previous: 100, variance: 300 } },
       },
     };
-    getComparativeStatements.mockResolvedValue(payload);
+    mockGetComparativeStatements.mockResolvedValue(payload);
 
     const response = await request(buildApp())
       .get("/api/accounting/statements")
@@ -55,7 +55,7 @@ describe("GET /api/accounting/statements", () => {
 
     expect(response.status).toBe(200);
     expect(response.body).toEqual(payload);
-    expect(getComparativeStatements).toHaveBeenCalledWith(
+    expect(mockGetComparativeStatements).toHaveBeenCalledWith(
       expect.any(Object),
       77,
       {
