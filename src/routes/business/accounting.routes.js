@@ -9,6 +9,7 @@ const accountingReversalService = require("../../services/business/accounting-re
 const accountingExportService = require("../../services/business/accounting-export.service");
 const accountingTrialBalanceService = require("../../services/business/accounting-trial-balance.service");
 const accountingReconciliationService = require("../../services/business/accounting-reconciliation.service");
+const accountingRemediationService = require("../../services/business/accounting-remediation.service");
 const businessEventService = require("../../services/business/business-event.service");
 const financialProjectionService = require("../../services/business/financial-projection.service");
 const accountingStatementsComparativeService = require("../../services/business/accounting-statements-comparative.service");
@@ -201,6 +202,29 @@ router.get("/reconciliation", async (req, res, next) => {
   try {
     const result = await accountingReconciliationService.reconcilePostedSources(req.db, req.organisationId);
     return res.json(result);
+  } catch (error) { return next(error); }
+});
+
+router.post("/reconciliation/remediation/preview", requireRole("admin"), async (req, res, next) => {
+  try {
+    const result = await accountingRemediationService.previewControlledAdjustment({
+      db: req.db,
+      organisationId: req.organisationId,
+      command: req.body,
+    });
+    return res.json(result);
+  } catch (error) { return next(error); }
+});
+
+router.post("/reconciliation/remediation/apply", requireRole("admin"), async (req, res, next) => {
+  try {
+    const result = await accountingRemediationService.applyControlledAdjustment({
+      db: req.db,
+      organisationId: req.organisationId,
+      userId: req.user?.id,
+      command: req.body,
+    });
+    return res.status(result.adjustment?.duplicate ? 200 : 201).json(result);
   } catch (error) { return next(error); }
 });
 
