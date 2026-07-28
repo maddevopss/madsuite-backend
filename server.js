@@ -117,8 +117,7 @@ function initializeSocket(server) {
     throw new Error("FATAL: FRONTEND_URL est requis en production pour la configuration CORS Socket.IO. Déploiement bloqué.");
   }
 
-  // Réutilise la même logique whitelist stricte que config/cors.js.
-  // En production, aucun wildcard *.vercel.app n'est accepté.
+  // Réutilise la même logique de liste blanche stricte que config/cors.js.
   const allowedOrigins = [
     ...(isProd
       ? []
@@ -127,8 +126,6 @@ function initializeSocket(server) {
     process.env.ELECTRON_URL,
     "https://madsuite.ca",
     "https://www.madsuite.ca",
-    "https://madsuite.vercel.app",
-    process.env.VERCEL_FRONTEND_URL,
     ...splitOrigins(process.env.ALLOWED_CORS_ORIGINS),
   ].filter(Boolean);
   const allowedOriginsSet = new Set(allowedOrigins);
