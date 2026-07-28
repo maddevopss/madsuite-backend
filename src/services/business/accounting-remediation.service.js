@@ -1,5 +1,6 @@
 const reconciliationService = require("./accounting-reconciliation.service");
 const governanceService = require("./accounting-governance.service");
+const accountingService = require("./accounting.service");
 
 function validationError(message, code) {
   return Object.assign(new Error(message), { statusCode: 400, code });
@@ -24,8 +25,27 @@ function findAnomaly(snapshot, source) {
   )) || null;
 }
 
-function validateCommand(command = {}) {
+function validatePreviewCommand(command = {}) {
   const source = normalizeSource(command);
+  if (!command.entryDate || !Array.isArray(command.lines) || command.lines.length < 2) {
+    throw validationError("La date et au moins deux lignes comptables sont obligatoires.", "ACCOUNTING_REMEDIATION_LINES_REQUIRED");
+  }
+
+  const validatedEntry = accountingService.validateEntryLines(command.lines);
+  return {
+    ...source,
+    entryDate: command.entryDate,
+    description: String(command.description || `Correction de ${source.sourceType} ${source.sourceId}`).trim(),
+    lines: validatedEntry.lines,
+    totals: {
+      debit: validatedEntry.debit,
+      credit: validatedEntry.credit,
+    },
+  };
+}
+
+function validateCommand(command = {}) {
+  const preview = validatePreviewCommand(command);
   if (command.confirmedByHuman !== true) {
     throw validationError("Une confirmation humaine explicite est obligatoire.", "ACCOUNTING_REMEDIATION_CONFIRMATION_REQUIRED");
   }
@@ -35,28 +55,21 @@ function validateCommand(command = {}) {
   if (String(command.idempotencyKey || "").trim().length < 8) {
     throw validationError("Une clé d’idempotence valide est obligatoire.", "ACCOUNTING_REMEDIATION_IDEMPOTENCY_REQUIRED");
   }
-  if (!command.entryDate || !Array.isArray(command.lines) || command.lines.length < 2) {
-    throw validationError("La date et au moins deux lignes comptables sont obligatoires.", "ACCOUNTING_REMEDIATION_LINES_REQUIRED");
-  }
   return {
-    ...source,
+    ...preview,
     reason: String(command.reason).trim(),
     idempotencyKey: String(command.idempotencyKey).trim(),
-    entryDate: command.entryDate,
-    description: String(command.description || `Correction de ${source.sourceType} ${source.sourceId}`).trim(),
-    lines: command.lines,
   };
 }
 
-async function applyControlledAdjustment({ db, organisationId, userId, command }) {
-  const validated = validateCommand(command);
-  const before = await reconciliationService.reconcilePostedSources(db, organisationId);
-  const anomaly = findAnomaly(before, validated);
+async function loadCurrentAdjustableAnomaly({ db, organisationId, source }) {
+  const reconciliation = await reconciliationService.reconcilePostedSources(db, organisationId);
+  const anomaly = findAnomaly(reconciliation, source);
   if (!anomaly) {
     throw conflictError(
       "L’anomalie n’existe plus. Rechargez le rapprochement avant de poursuivre.",
       "ACCOUNTING_REMEDIATION_STALE",
-      { sourceType: validated.sourceType, sourceId: validated.sourceId },
+      { sourceType: source.sourceType, sourceId: source.sourceId },
     );
   }
   if (anomaly.remediation?.action !== "create_adjustment") {
@@ -66,6 +79,34 @@ async function applyControlledAdjustment({ db, organisationId, userId, command }
       { status: anomaly.status, recommendedAction: anomaly.remediation?.action || null },
     );
   }
+  return { reconciliation, anomaly };
+}
+
+async function previewControlledAdjustment({ db, organisationId, command }) {
+  const validated = validatePreviewCommand(command);
+  const current = await loadCurrentAdjustableAnomaly({ db, organisationId, source: validated });
+  return {
+    mode: "preview",
+    mutatesAccounting: false,
+    requiresHumanConfirmation: true,
+    source: { sourceType: validated.sourceType, sourceId: validated.sourceId },
+    anomaly: current.anomaly,
+    proposedEntry: {
+      entryDate: validated.entryDate,
+      description: validated.description,
+      journalCode: "AJU",
+      journalName: "Journal des ajustements",
+      adjustmentKind: `reconciliation_${current.anomaly.status}`,
+      lines: validated.lines,
+      totals: validated.totals,
+    },
+  };
+}
+
+async function applyControlledAdjustment({ db, organisationId, userId, command }) {
+  const validated = validateCommand(command);
+  const beforeSnapshot = await loadCurrentAdjustableAnomaly({ db, organisationId, source: validated });
+  const anomaly = beforeSnapshot.anomaly;
 
   const adjustment = await governanceService.createPostedAdjustment({
     organisationId,
@@ -81,21 +122,32 @@ async function applyControlledAdjustment({ db, organisationId, userId, command }
   });
 
   const after = await reconciliationService.reconcilePostedSources(db, organisationId);
+  const remainingAnomaly = findAnomaly(after, validated);
   return {
     source: { sourceType: validated.sourceType, sourceId: validated.sourceId },
     confirmedByHuman: true,
     reason: validated.reason,
     before: anomaly,
     adjustment,
-    after: findAnomaly(after, validated),
-    resolved: !findAnomaly(after, validated),
+    after: remainingAnomaly,
+    resolved: !remainingAnomaly,
     reconciliation: after,
+    proof: {
+      actorUserId: userId || null,
+      idempotencyKey: validated.idempotencyKey,
+      beforeStatus: anomaly.status,
+      afterStatus: remainingAnomaly?.status || "resolved",
+      entryId: adjustment?.entry?.id || adjustment?.entryId || null,
+    },
   };
 }
 
 module.exports = {
   normalizeSource,
   findAnomaly,
+  validatePreviewCommand,
   validateCommand,
+  loadCurrentAdjustableAnomaly,
+  previewControlledAdjustment,
   applyControlledAdjustment,
 };
