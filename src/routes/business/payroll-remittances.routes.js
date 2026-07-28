@@ -5,9 +5,11 @@ const router = require('express').Router();
 const { requireOrganisation } = require('../../middleware/organization.middleware');
 const { buildRemittance } = require('../../services/business/payroll-remittance.service');
 const payrollDepositsRoutes = require('./payroll-deposits.routes');
+const payrollVacationsRoutes = require('./payroll-vacations.routes');
 
 router.use(requireOrganisation);
 router.use('/deposits', payrollDepositsRoutes);
+router.use('/vacations', payrollVacationsRoutes);
 
 function positiveId(value, label) {
   const id = Number(value);
