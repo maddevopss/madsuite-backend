@@ -1,0 +1,101 @@
+const reconciliationService = require("./accounting-reconciliation.service");
+const governanceService = require("./accounting-governance.service");
+
+function validationError(message, code) {
+  return Object.assign(new Error(message), { statusCode: 400, code });
+}
+
+function conflictError(message, code, details) {
+  return Object.assign(new Error(message), { statusCode: 409, code, details });
+}
+
+function normalizeSource(value) {
+  const sourceType = String(value?.sourceType || "").trim();
+  const sourceId = String(value?.sourceId || "").trim();
+  if (!sourceType || !sourceId) {
+    throw validationError("Le type et l’identifiant de la source sont obligatoires.", "ACCOUNTING_REMEDIATION_SOURCE_REQUIRED");
+  }
+  return { sourceType, sourceId };
+}
+
+function findAnomaly(snapshot, source) {
+  return (snapshot?.anomalies || []).find((item) => (
+    item.sourceType === source.sourceType && String(item.sourceId) === source.sourceId
+  )) || null;
+}
+
+function validateCommand(command = {}) {
+  const source = normalizeSource(command);
+  if (command.confirmedByHuman !== true) {
+    throw validationError("Une confirmation humaine explicite est obligatoire.", "ACCOUNTING_REMEDIATION_CONFIRMATION_REQUIRED");
+  }
+  if (String(command.reason || "").trim().length < 10) {
+    throw validationError("La justification doit contenir au moins 10 caractères.", "ACCOUNTING_REMEDIATION_REASON_REQUIRED");
+  }
+  if (String(command.idempotencyKey || "").trim().length < 8) {
+    throw validationError("Une clé d’idempotence valide est obligatoire.", "ACCOUNTING_REMEDIATION_IDEMPOTENCY_REQUIRED");
+  }
+  if (!command.entryDate || !Array.isArray(command.lines) || command.lines.length < 2) {
+    throw validationError("La date et au moins deux lignes comptables sont obligatoires.", "ACCOUNTING_REMEDIATION_LINES_REQUIRED");
+  }
+  return {
+    ...source,
+    reason: String(command.reason).trim(),
+    idempotencyKey: String(command.idempotencyKey).trim(),
+    entryDate: command.entryDate,
+    description: String(command.description || `Correction de ${source.sourceType} ${source.sourceId}`).trim(),
+    lines: command.lines,
+  };
+}
+
+async function applyControlledAdjustment({ db, organisationId, userId, command }) {
+  const validated = validateCommand(command);
+  const before = await reconciliationService.reconcilePostedSources(db, organisationId);
+  const anomaly = findAnomaly(before, validated);
+  if (!anomaly) {
+    throw conflictError(
+      "L’anomalie n’existe plus. Rechargez le rapprochement avant de poursuivre.",
+      "ACCOUNTING_REMEDIATION_STALE",
+      { sourceType: validated.sourceType, sourceId: validated.sourceId },
+    );
+  }
+  if (anomaly.remediation?.action !== "create_adjustment") {
+    throw conflictError(
+      "Cette anomalie ne peut pas être corrigée par une écriture d’ajustement.",
+      "ACCOUNTING_REMEDIATION_ACTION_NOT_ALLOWED",
+      { status: anomaly.status, recommendedAction: anomaly.remediation?.action || null },
+    );
+  }
+
+  const adjustment = await governanceService.createPostedAdjustment({
+    organisationId,
+    userId,
+    idempotencyKey: validated.idempotencyKey,
+    entryDate: validated.entryDate,
+    description: validated.description,
+    reason: validated.reason,
+    lines: validated.lines,
+    journalCode: "AJU",
+    journalName: "Journal des ajustements",
+    adjustmentKind: `reconciliation_${anomaly.status}`,
+  });
+
+  const after = await reconciliationService.reconcilePostedSources(db, organisationId);
+  return {
+    source: { sourceType: validated.sourceType, sourceId: validated.sourceId },
+    confirmedByHuman: true,
+    reason: validated.reason,
+    before: anomaly,
+    adjustment,
+    after: findAnomaly(after, validated),
+    resolved: !findAnomaly(after, validated),
+    reconciliation: after,
+  };
+}
+
+module.exports = {
+  normalizeSource,
+  findAnomaly,
+  validateCommand,
+  applyControlledAdjustment,
+};
