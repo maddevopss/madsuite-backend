@@ -11,7 +11,13 @@ router.get('/summary', async (req, res, next) => {
       req.db.query('SELECT status,due_date AS "dueDate" FROM payroll_remittances WHERE organisation_id=$1', [organisationId]),
       req.db.query('SELECT available_amount AS "availableAmount" FROM payroll_vacation_banks WHERE organisation_id=$1', [organisationId]),
       req.db.query('SELECT status FROM payroll_terminations WHERE organisation_id=$1', [organisationId]),
-      req.db.query('SELECT status,confirmed_at AS "confirmedAt" FROM payroll_direct_deposit_batches WHERE organisation_id=$1', [organisationId]),
+      req.db.query(
+        `SELECT status,
+                COALESCE(confirmation->>'confirmedAt', confirmation->>'confirmed_at') AS "confirmedAt"
+         FROM payroll_payment_batches
+         WHERE organisation_id=$1`,
+        [organisationId],
+      ),
       req.db.query('SELECT status FROM payroll_year_end_slips WHERE organisation_id=$1', [organisationId]),
     ]);
     return res.json(buildComplianceSummary({
