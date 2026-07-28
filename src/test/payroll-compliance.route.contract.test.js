@@ -7,11 +7,11 @@ jest.mock("../middleware/requireModule", () => ({
   requireModule: () => (_req, _res, next) => next(),
 }));
 
-const query = jest.fn();
+const mockQuery = jest.fn();
 jest.mock("../middleware/organization.middleware", () => ({
   requireOrganisation: (req, _res, next) => {
     req.organisationId = 77;
-    req.db = { query };
+    req.db = { query: mockQuery };
     next();
   },
 }));
@@ -21,8 +21,8 @@ const app = require("../app");
 
 describe("GET /api/payroll-compliance/summary", () => {
   beforeEach(() => {
-    query.mockReset();
-    query
+    mockQuery.mockReset();
+    mockQuery
       .mockResolvedValueOnce({ rows: [{ status: "due", dueDate: "2026-07-31" }] })
       .mockResolvedValueOnce({ rows: [{ availableAmount: "125.50" }] })
       .mockResolvedValueOnce({ rows: [{ status: "pending" }] })
@@ -43,8 +43,8 @@ describe("GET /api/payroll-compliance/summary", () => {
       unconfirmedDeposits: 0,
       draftSlips: 1,
     });
-    expect(query).toHaveBeenCalledTimes(5);
-    for (const [, params] of query.mock.calls) {
+    expect(mockQuery).toHaveBeenCalledTimes(5);
+    for (const [, params] of mockQuery.mock.calls) {
       expect(params).toEqual([77]);
     }
   });
