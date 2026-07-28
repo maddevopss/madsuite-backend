@@ -19,8 +19,6 @@ const allowedOrigins = [
   process.env.ELECTRON_URL,
   "https://madsuite.ca",
   "https://www.madsuite.ca",
-  "https://madsuite.vercel.app",
-  process.env.VERCEL_FRONTEND_URL, // URL preview spécifique si nécessaire
   ...splitOrigins(process.env.ALLOWED_CORS_ORIGINS),
 ].filter(Boolean);
 
