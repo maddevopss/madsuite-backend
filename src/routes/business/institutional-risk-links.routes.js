@@ -1,5 +1,6 @@
 const express = require('express');
 const db = require('../../../db');
+const { requireOrganisation } = require('../../middleware/organization.middleware');
 const { organisationValue } = require('../../utils/organisationScope');
 const { executeTransaction } = require('../../services/business/transaction-engine.service');
 const { resourceResponse } = require('../../utils/integrationResponseContract');
@@ -15,6 +16,8 @@ const org = (req) => organisationValue(req.organisationId || req.user?.organisat
 const actor = (req) => req.user?.id || req.user?.userId || null;
 const key = (req) => req.get('Idempotency-Key') || req.body?.idempotencyKey;
 const handle = (res, next, fn, status = 200) => Promise.resolve(fn()).then((data) => res.status(status).json(data)).catch(next);
+
+router.use(requireOrganisation);
 
 function notFound(code) {
   const error = new Error(code);
