@@ -7,11 +7,13 @@ const { buildRemittance } = require('../../services/business/payroll-remittance.
 const payrollDepositsRoutes = require('./payroll-deposits.routes');
 const payrollVacationsRoutes = require('./payroll-vacations.routes');
 const payrollTerminationsRoutes = require('./payroll-terminations.routes');
+const payrollYearEndSlipsRoutes = require('./payroll-year-end-slips.routes');
 
 router.use(requireOrganisation);
 router.use('/deposits', payrollDepositsRoutes);
 router.use('/vacations', payrollVacationsRoutes);
 router.use('/terminations', payrollTerminationsRoutes);
+router.use('/year-end-slips', payrollYearEndSlipsRoutes);
 
 function positiveId(value, label) {
   const id = Number(value);
