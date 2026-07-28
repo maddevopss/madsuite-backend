@@ -19,6 +19,22 @@ MANIFEST.md
 
 Ce dépôt contient l’API, la logique métier, les migrations, les jobs, la sécurité applicative, les intégrations et les services serveur de MADSuite.
 
+## État de fondation V1
+
+Le backend V1 est fondé et sa fermeture structurée est fusionnée. Cette qualification signifie que les grands blocs applicatifs, les contrats techniques, les migrations, les garde-fous et les preuves de certification disposent d’une base exploitable et vérifiable; elle ne signifie pas que le produit est figé ou exempt d’améliorations.
+
+Les capacités déjà présentes couvrent notamment :
+
+- facturation, estimés, paiements, rappels et portails publics sécurisés;
+- comptabilité, écritures, grand livre, balance, clôtures et intégrations financières;
+- paie, fournisseurs, inventaire, risques, continuité et autres grands modules métier;
+- tableaux de bord, métriques, jobs, notifications et intégrations;
+- continuité cognitive et assistance encadrée, non médicale;
+- isolation multi-organisation par contexte applicatif, politiques RLS et garde automatique des routeurs;
+- certification V1, registres de preuves et contrôles MADPROOF.
+
+La source institutionnelle du constat V1 demeure `bleeband/SYSTEME_MAD`. Les documents locaux décrivent l’implémentation et les preuves propres au backend.
+
 ## Stack
 
 - Node.js
@@ -90,6 +106,8 @@ Les guards bloquent notamment :
 - reconstruction inline du contrat API modules dans `src/routes/modules.routes.js`;
 - régressions des contrats modules, Stripe, activité, IA, Cognitive Engine, hub, notifications, exports, analytics, calendrier, suggestions, master-admin et rapports.
 
+Le backend applique aussi `FORCE ROW LEVEL SECURITY` aux tables protégées afin de réduire le risque de contournement involontaire par le propriétaire des tables. Le rôle applicatif ne doit jamais être superutilisateur PostgreSQL.
+
 Si un guard tombe rouge, corriger le code ou la politique plutôt que de contourner le guard. Une exception doit être documentée dans `bleeband/SYSTEME_MAD` avant fusion.
 
 ## Contrat modules
@@ -146,7 +164,7 @@ Toute route métier doit respecter l’isolation par organisation. Ne jamais exp
 
 ## MADSuite / MADPROOF
 
-MADSuite est un SaaS de gestion et d’assistance cognitive non médicale.
+MADSuite est une plateforme de gestion et d’assistance cognitive non médicale.
 
 Les routes liées à l’IA, au Cognitive Engine, à l’activité ou aux suggestions doivent rester prudentes : pas de diagnostic, pas de promesse clinique, pas de mesure d’état mental réel, pas de profilage externe.
 
@@ -158,4 +176,4 @@ Avant un déploiement : valider les variables d’environnement, migrations, tes
 
 ## Statut
 
-Actif. Priorités : garder les guards MADPROOF verts, valider CI/CD, auditer les routes IA/cognitive selon MADPROOF et vérifier la cohérence modules frontend/backend.
+Fondation V1 fusionnée. Le dépôt est en évolution continue : consolidation des grands modules, intégration transversale, exploitation, sécurité et maintien des preuves.
