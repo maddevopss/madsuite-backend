@@ -4,8 +4,10 @@ const crypto = require('crypto');
 const router = require('express').Router();
 const { requireOrganisation } = require('../../middleware/organization.middleware');
 const { buildRemittance } = require('../../services/business/payroll-remittance.service');
+const payrollDepositsRoutes = require('./payroll-deposits.routes');
 
 router.use(requireOrganisation);
+router.use('/deposits', payrollDepositsRoutes);
 
 function positiveId(value, label) {
   const id = Number(value);
