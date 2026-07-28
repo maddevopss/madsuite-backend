@@ -1,8 +1,10 @@
 const router = require('express').Router();
+const { requireOrganisation } = require('../../middleware/organization.middleware');
 const requireRole = require('../../middleware/requireRole');
 const supplierMasterService = require('../../services/business/supplier-master.service');
 const supplierMatchingRoutes = require('./supplier-matching.routes');
 
+router.use(requireOrganisation);
 router.use('/matching', supplierMatchingRoutes);
 
 router.get('/', async (req, res, next) => {
