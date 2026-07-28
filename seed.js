@@ -34,10 +34,23 @@ async function ensureOrganisation() {
   return fallback.rows[0].id;
 }
 
+function resolveSeedPassword() {
+  const explicitPassword = process.env.SEED_ADMIN_PASSWORD || process.env.E2E_PASSWORD;
+  if (explicitPassword) return explicitPassword;
+
+  if (process.env.NODE_ENV === "test") {
+    return "TestPassword123!";
+  }
+
+  throw new Error(
+    "SEED_ADMIN_PASSWORD est requis hors environnement de test. Le seed refuse d'utiliser un mot de passe par défaut.",
+  );
+}
+
 async function seed() {
   try {
     const organisationId = await ensureOrganisation();
-    const password = process.env.SEED_ADMIN_PASSWORD || process.env.E2E_PASSWORD || "1234";
+    const password = resolveSeedPassword();
     const hash = await bcrypt.hash(password, BCRYPT_SALT_ROUNDS);
 
     const users = [
