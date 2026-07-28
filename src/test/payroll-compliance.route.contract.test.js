@@ -23,7 +23,7 @@ describe("GET /api/payroll-compliance/summary", () => {
   beforeEach(() => {
     mockQuery.mockReset();
     mockQuery
-      .mockResolvedValueOnce({ rows: [{ status: "due", dueDate: "2026-07-31" }] })
+      .mockResolvedValueOnce({ rows: [{ status: "due", dueDate: "2000-01-01" }] })
       .mockResolvedValueOnce({ rows: [{ availableAmount: "125.50" }] })
       .mockResolvedValueOnce({ rows: [{ status: "pending" }] })
       .mockResolvedValueOnce({ rows: [{ status: "confirmed", confirmedAt: "2026-07-27" }] })
