@@ -22,15 +22,21 @@ function hasOrganisationMiddleware(source) {
 
 function extractQueries(source) {
   const queries = [];
-  const matcher = /(?:req\.db|pool)\.query\s*\(\s*([`'"])/g;
+  const matcher = /(?:req\.db|pool)\.query\s*\(/g;
   let match;
 
   while ((match = matcher.exec(source)) !== null) {
-    const quote = match[1];
-    const start = matcher.lastIndex;
-    let index = start;
-    let escaped = false;
+    let start = matcher.lastIndex;
+    while (/\s/.test(source[start] || "")) start += 1;
 
+    const quote = source[start];
+    if (!["`", "'", '"'].includes(quote)) {
+      queries.push({ sql: null, offset: match.index });
+      continue;
+    }
+
+    let index = start + 1;
+    let escaped = false;
     for (; index < source.length; index += 1) {
       const character = source[index];
       if (escaped) {
@@ -49,17 +55,12 @@ function extractQueries(source) {
       break;
     }
 
-    const sql = source.slice(start, index);
+    const sql = source.slice(start + 1, index);
     queries.push({ sql: quote === "`" && sql.includes("${") ? null : sql, offset: match.index });
     matcher.lastIndex = index + 1;
   }
 
-  const dynamicMatcher = /(?:req\.db|pool)\.query\s*\(\s*(?![`'"])/g;
-  while ((match = dynamicMatcher.exec(source)) !== null) {
-    queries.push({ sql: null, offset: match.index });
-  }
-
-  return queries.sort((left, right) => left.offset - right.offset);
+  return queries;
 }
 
 function insertHasOrganisationScope(sql) {
