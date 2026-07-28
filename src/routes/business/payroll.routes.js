@@ -5,9 +5,11 @@ const requireRole = require("../../middleware/requireRole");
 const payrollService = require("../../services/business/payroll-transaction.service");
 const { buildPayrollJournal } = require("../../services/business/payroll-accounting.service");
 const { buildPayStub, buildPayrollRegister } = require("../../services/business/payroll-documents.service");
+const payrollRemittancesRoutes = require("./payroll-remittances.routes");
 
 router.use(requireOrganisation);
 router.use(requireRole("admin"));
+router.use("/remittances", payrollRemittancesRoutes);
 
 function positiveId(value, label) {
   const id = Number(value);
