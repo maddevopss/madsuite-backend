@@ -8,6 +8,7 @@ const accountingGovernanceService = require("../../services/business/accounting-
 const accountingReversalService = require("../../services/business/accounting-reversal-governance.service");
 const accountingExportService = require("../../services/business/accounting-export.service");
 const accountingTrialBalanceService = require("../../services/business/accounting-trial-balance.service");
+const accountingReconciliationService = require("../../services/business/accounting-reconciliation.service");
 const businessEventService = require("../../services/business/business-event.service");
 const financialProjectionService = require("../../services/business/financial-projection.service");
 const accountingStatementsComparativeService = require("../../services/business/accounting-statements-comparative.service");
@@ -193,6 +194,13 @@ router.get("/statements/explained", async (req, res, next) => {
 router.get("/cash-flow", async (req, res, next) => {
   try {
     return res.json(await accountingExportService.cashFlow(req.db, req.organisationId, req.query.startDate, req.query.endDate));
+  } catch (error) { return next(error); }
+});
+
+router.get("/reconciliation", async (req, res, next) => {
+  try {
+    const result = await accountingReconciliationService.reconcilePostedSources(req.db, req.organisationId);
+    return res.json(result);
   } catch (error) { return next(error); }
 });
 
