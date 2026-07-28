@@ -1,5 +1,8 @@
 const router = require('express').Router();
 const { buildComplianceSummary } = require('../../services/business/payroll-compliance-summary.service');
+const requireOrganisation = require('../../middleware/requireOrganisation');
+
+router.use(requireOrganisation);
 
 router.get('/summary', async (req, res, next) => {
   try {
