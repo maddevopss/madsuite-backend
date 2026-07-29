@@ -81,8 +81,11 @@ test("crée un ajustement idempotent et retourne la preuve avant/après", async 
     duplicate: false,
     entry: { id: 88, status: "posted" },
   });
+  const db = {
+    query: jest.fn().mockResolvedValue({ rows: [{ id: 88 }] }),
+  };
 
-  const result = await applyControlledAdjustment({ db: {}, organisationId: 7, userId: 9, command });
+  const result = await applyControlledAdjustment({ db, organisationId: 7, userId: 9, command });
 
   expect(governanceService.createPostedAdjustment).toHaveBeenCalledWith(expect.objectContaining({
     organisationId: 7,
@@ -91,6 +94,10 @@ test("crée un ajustement idempotent et retourne la preuve avant/après", async 
     reason: command.reason,
     adjustmentKind: "reconciliation_amount_mismatch",
   }));
+  expect(db.query).toHaveBeenCalledWith(
+    expect.stringContaining("UPDATE accounting_entries"),
+    ["accounting_adjustment_invoice", "42", 7, 88],
+  );
   expect(result).toMatchObject({
     confirmedByHuman: true,
     before,
