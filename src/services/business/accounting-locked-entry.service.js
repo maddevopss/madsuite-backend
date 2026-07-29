@@ -31,6 +31,7 @@ async function postEntry(db, organisationId, id) {
 }
 
 module.exports = {
+  ...accountingService,
   createEntry,
   postEntry,
 };
