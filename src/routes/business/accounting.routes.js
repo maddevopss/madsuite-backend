@@ -1,7 +1,7 @@
 const router = require("express").Router();
 const { requireOrganisation } = require("../../middleware/organization.middleware");
 const requireRole = require("../../middleware/requireRole");
-const accountingService = require("../../services/business/accounting.service");
+const accountingService = require("../../services/business/accounting-period-guarded.service");
 const accountingLedgerService = require("../../services/business/accounting-ledger.service");
 const accountingMasterdataService = require("../../services/business/accounting-masterdata.service");
 const accountingGovernanceService = require("../../services/business/accounting-governance.service");
