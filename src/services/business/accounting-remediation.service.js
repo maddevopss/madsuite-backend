@@ -16,6 +16,9 @@ function normalizeSource(value) {
   if (!sourceType || !sourceId) {
     throw validationError("Le type et l’identifiant de la source sont obligatoires.", "ACCOUNTING_REMEDIATION_SOURCE_REQUIRED");
   }
+  if (!/^[a-z0-9_:-]+$/i.test(sourceType)) {
+    throw validationError("Le type de source contient des caractères invalides.", "ACCOUNTING_REMEDIATION_SOURCE_INVALID");
+  }
   return { sourceType, sourceId };
 }
 
@@ -103,6 +106,35 @@ async function previewControlledAdjustment({ db, organisationId, command }) {
   };
 }
 
+function adjustmentEntryId(adjustment) {
+  return adjustment?.entry?.id || adjustment?.entryId || null;
+}
+
+async function linkAdjustmentToSource({ db, organisationId, adjustment, source }) {
+  const entryId = adjustmentEntryId(adjustment);
+  if (!entryId) {
+    throw conflictError(
+      "L’écriture d’ajustement a été créée sans identifiant exploitable.",
+      "ACCOUNTING_REMEDIATION_ENTRY_ID_MISSING",
+    );
+  }
+  const linked = await db.query(
+    `UPDATE accounting_entries
+     SET source_type = $1, source_id = $2
+     WHERE organisation_id = $3 AND id = $4
+     RETURNING id, source_type, source_id`,
+    [`accounting_adjustment_${source.sourceType}`, source.sourceId, organisationId, entryId],
+  );
+  if (!linked.rowCount) {
+    throw conflictError(
+      "Impossible de rattacher l’ajustement à la source corrigée.",
+      "ACCOUNTING_REMEDIATION_LINK_FAILED",
+      { entryId, sourceType: source.sourceType, sourceId: source.sourceId },
+    );
+  }
+  return linked.rows[0];
+}
+
 async function applyControlledAdjustment({ db, organisationId, userId, command }) {
   const validated = validateCommand(command);
   const beforeSnapshot = await loadCurrentAdjustableAnomaly({ db, organisationId, source: validated });
@@ -121,6 +153,13 @@ async function applyControlledAdjustment({ db, organisationId, userId, command }
     adjustmentKind: `reconciliation_${anomaly.status}`,
   });
 
+  const link = await linkAdjustmentToSource({
+    db,
+    organisationId,
+    adjustment,
+    source: validated,
+  });
+
   const after = await reconciliationService.reconcilePostedSources(db, organisationId);
   const remainingAnomaly = findAnomaly(after, validated);
   return {
@@ -129,6 +168,7 @@ async function applyControlledAdjustment({ db, organisationId, userId, command }
     reason: validated.reason,
     before: anomaly,
     adjustment,
+    link,
     after: remainingAnomaly,
     resolved: !remainingAnomaly,
     reconciliation: after,
@@ -137,7 +177,9 @@ async function applyControlledAdjustment({ db, organisationId, userId, command }
       idempotencyKey: validated.idempotencyKey,
       beforeStatus: anomaly.status,
       afterStatus: remainingAnomaly?.status || "resolved",
-      entryId: adjustment?.entry?.id || adjustment?.entryId || null,
+      entryId: adjustmentEntryId(adjustment),
+      linkedSourceType: link.source_type,
+      linkedSourceId: link.source_id,
     },
   };
 }
@@ -149,5 +191,7 @@ module.exports = {
   validateCommand,
   loadCurrentAdjustableAnomaly,
   previewControlledAdjustment,
+  adjustmentEntryId,
+  linkAdjustmentToSource,
   applyControlledAdjustment,
 };
