@@ -3,6 +3,7 @@ const { executeTransaction, registerPolicy } = require("./transaction-engine.ser
 const { appendEvent } = require("./business-event.service");
 const { persistTrustAssessment, persistGraphEdges } = require("./trust-persistence.service");
 const accountingService = require("./accounting.service");
+const { assertOpenAccountingPeriod } = require("./accounting-period-lock.service");
 
 const ENTRY_REVERSE_POLICY = "accounting.entry.reverse@1";
 
@@ -135,6 +136,12 @@ async function reversePostedEntry({ organisationId, entryId, reversalDate, reaso
         [orgId, String(key).trim()],
       );
       if (existing.rows[0]) return { duplicate: true, reversal: existing.rows[0] };
+
+      await assertOpenAccountingPeriod(client, {
+        organisationId: orgId,
+        entryDate: input.reversalDate,
+        operation: "accounting.entry.reverse",
+      });
 
       const original = await loadReversibleEntry(client, orgId, input.entryId, true);
       if (!original) return null;
