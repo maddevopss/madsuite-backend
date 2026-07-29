@@ -125,12 +125,18 @@ async function reconcilePostedSources(db, organisationId) {
   }
 
   const { rows } = await db.query(
-    `WITH accounting_totals AS (
-       SELECT e.source_type, e.source_id,
-              COALESCE(SUM(l.debit), 0)::numeric AS posted_debit,
-              COALESCE(SUM(l.credit), 0)::numeric AS posted_credit,
-              COUNT(DISTINCT e.id)::integer AS entry_count,
-              ARRAY_AGG(DISTINCT e.id ORDER BY e.id) AS entry_ids
+    `WITH accounting_entries_normalized AS (
+       SELECT
+         CASE
+           WHEN e.source_type LIKE 'accounting_adjustment_%'
+             THEN SUBSTRING(e.source_type FROM LENGTH('accounting_adjustment_') + 1)
+           ELSE e.source_type
+         END AS source_type,
+         e.source_id::text AS source_id,
+         e.id,
+         e.source_type LIKE 'accounting_adjustment_%' AS is_adjustment,
+         COALESCE(SUM(l.debit), 0)::numeric AS debit,
+         COALESCE(SUM(l.credit), 0)::numeric AS credit
        FROM accounting_entries e
        JOIN accounting_entry_lines l
          ON l.entry_id = e.id AND l.organisation_id = e.organisation_id
@@ -138,7 +144,19 @@ async function reconcilePostedSources(db, organisationId) {
          AND e.status IN ('posted','reversed')
          AND e.source_type IS NOT NULL
          AND e.source_id IS NOT NULL
-       GROUP BY e.source_type, e.source_id
+       GROUP BY e.source_type, e.source_id, e.id
+     ), accounting_totals AS (
+       SELECT source_type, source_id,
+              COALESCE(SUM(debit), 0)::numeric AS posted_debit,
+              COALESCE(SUM(credit), 0)::numeric AS posted_credit,
+              CASE
+                WHEN COUNT(DISTINCT id) FILTER (WHERE NOT is_adjustment) = 0
+                  AND COUNT(DISTINCT id) FILTER (WHERE is_adjustment) > 0 THEN 1
+                ELSE COUNT(DISTINCT id) FILTER (WHERE NOT is_adjustment)
+              END::integer AS entry_count,
+              ARRAY_AGG(DISTINCT id ORDER BY id) AS entry_ids
+       FROM accounting_entries_normalized
+       GROUP BY source_type, source_id
      ), source_totals AS (
        SELECT le.source_type, le.source_id::text AS source_id,
               COALESCE(MAX(le.amount), 0)::numeric AS source_amount
@@ -148,13 +166,17 @@ async function reconcilePostedSources(db, organisationId) {
          AND le.source_id IS NOT NULL
        GROUP BY le.source_type, le.source_id::text
      )
-     SELECT a.source_type, a.source_id,
+     SELECT COALESCE(s.source_type, a.source_type) AS source_type,
+            COALESCE(s.source_id, a.source_id) AS source_id,
             COALESCE(s.source_amount, 0)::numeric AS source_amount,
-            a.posted_debit, a.posted_credit, a.entry_count, a.entry_ids
-     FROM accounting_totals a
-     LEFT JOIN source_totals s
-       ON s.source_type = a.source_type AND s.source_id = a.source_id::text
-     ORDER BY a.source_type, a.source_id`,
+            COALESCE(a.posted_debit, 0)::numeric AS posted_debit,
+            COALESCE(a.posted_credit, 0)::numeric AS posted_credit,
+            COALESCE(a.entry_count, 0)::integer AS entry_count,
+            COALESCE(a.entry_ids, ARRAY[]::bigint[]) AS entry_ids
+     FROM source_totals s
+     FULL OUTER JOIN accounting_totals a
+       ON s.source_type = a.source_type AND s.source_id = a.source_id
+     ORDER BY COALESCE(s.source_type, a.source_type), COALESCE(s.source_id, a.source_id)`,
     [organisationId],
   );
 
@@ -169,6 +191,7 @@ async function reconcilePostedSources(db, organisationId) {
        AND e.status IN ('posted','reversed')
        AND e.source_type IS NOT NULL
        AND e.source_id IS NOT NULL
+       AND e.source_type NOT LIKE 'accounting_adjustment_%'
        AND le.id IS NULL
      ORDER BY e.entry_date DESC, e.id DESC`,
     [organisationId],
