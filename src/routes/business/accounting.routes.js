@@ -4,7 +4,7 @@ const requireRole = require("../../middleware/requireRole");
 const accountingService = require("../../services/business/accounting-period-guarded.service");
 const accountingLedgerService = require("../../services/business/accounting-ledger.service");
 const accountingMasterdataService = require("../../services/business/accounting-masterdata.service");
-const accountingGovernanceService = require("../../services/business/accounting-governance.service");
+const accountingGovernanceService = require("../../services/business/accounting-governance-period-guarded.service");
 const accountingReversalService = require("../../services/business/accounting-reversal-governance.service");
 const accountingExportService = require("../../services/business/accounting-export.service");
 const accountingTrialBalanceService = require("../../services/business/accounting-trial-balance.service");
@@ -106,6 +106,7 @@ router.post("/entries", requireRole("admin"), async (req, res, next) => {
 router.post("/entries/adjustments", requireRole("admin"), async (req, res, next) => {
   try {
     const result = await accountingGovernanceService.createPostedAdjustment({
+      db: req.db,
       organisationId: req.organisationId, userId: req.user?.id, idempotencyKey: req.body.idempotencyKey,
       entryDate: req.body.entryDate, description: req.body.description, reason: req.body.reason, lines: req.body.lines,
       journalCode: req.body.journalCode, journalName: req.body.journalName, adjustmentKind: req.body.adjustmentKind,
