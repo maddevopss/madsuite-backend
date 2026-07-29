@@ -158,13 +158,13 @@ async function reconcilePostedSources(db, organisationId) {
        FROM accounting_entries_normalized
        GROUP BY source_type, source_id
      ), source_totals AS (
-       SELECT le.source_type, le.source_id::text AS source_id,
+       SELECT le.reference_type AS source_type, le.reference_id::text AS source_id,
               COALESCE(MAX(le.amount), 0)::numeric AS source_amount
        FROM ledger_entries le
        WHERE le.organisation_id = $1
-         AND le.source_type IS NOT NULL
-         AND le.source_id IS NOT NULL
-       GROUP BY le.source_type, le.source_id::text
+         AND le.reference_type IS NOT NULL
+         AND le.reference_id IS NOT NULL
+       GROUP BY le.reference_type, le.reference_id::text
      )
      SELECT COALESCE(s.source_type, a.source_type) AS source_type,
             COALESCE(s.source_id, a.source_id) AS source_id,
@@ -185,8 +185,8 @@ async function reconcilePostedSources(db, organisationId) {
      FROM accounting_entries e
      LEFT JOIN ledger_entries le
        ON le.organisation_id = e.organisation_id
-      AND le.source_type = e.source_type
-      AND le.source_id::text = e.source_id::text
+      AND le.reference_type = e.source_type
+      AND le.reference_id::text = e.source_id::text
      WHERE e.organisation_id = $1
        AND e.status IN ('posted','reversed')
        AND e.source_type IS NOT NULL
