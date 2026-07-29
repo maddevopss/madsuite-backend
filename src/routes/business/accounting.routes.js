@@ -122,6 +122,20 @@ router.post("/entries/:id/post", requireRole("admin"), async (req, res, next) =>
   } catch (error) { return next(error); }
 });
 
+router.post("/entries/:id/reversal/preview", requireRole("admin"), async (req, res, next) => {
+  try {
+    const result = await accountingReversalService.previewPostedEntryReversal({
+      db: req.db,
+      organisationId: req.organisationId,
+      entryId: Number(req.params.id),
+      reversalDate: req.body.reversalDate,
+      reason: req.body.reason,
+    });
+    if (!result) return res.status(404).json({ message: "Écriture publiée introuvable." });
+    return res.json(result);
+  } catch (error) { return next(error); }
+});
+
 router.post("/entries/:id/reverse", requireRole("admin"), async (req, res, next) => {
   try {
     const result = await accountingReversalService.reversePostedEntry({
@@ -130,6 +144,7 @@ router.post("/entries/:id/reverse", requireRole("admin"), async (req, res, next)
       reversalDate: req.body.reversalDate,
       reason: req.body.reason,
       idempotencyKey: req.body.idempotencyKey,
+      confirmedByHuman: req.body.confirmedByHuman,
       reversedBy: req.user?.id,
     });
     if (!result) return res.status(404).json({ message: "Écriture publiée introuvable." });
@@ -164,14 +179,8 @@ router.get("/ledger", async (req, res, next) => {
 router.get("/trial-balance", async (req, res, next) => {
   try {
     const result = await accountingTrialBalanceService.getComparativeTrialBalance(req.db, req.organisationId, {
-      current: {
-        startDate: req.query.startDate,
-        endDate: req.query.endDate,
-      },
-      previous: {
-        startDate: req.query.previousStartDate,
-        endDate: req.query.previousEndDate,
-      },
+      current: { startDate: req.query.startDate, endDate: req.query.endDate },
+      previous: { startDate: req.query.previousStartDate, endDate: req.query.previousEndDate },
     });
     return res.json(result);
   } catch (error) { return next(error); }
@@ -193,37 +202,24 @@ router.get("/statements/explained", async (req, res, next) => {
 });
 
 router.get("/cash-flow", async (req, res, next) => {
-  try {
-    return res.json(await accountingExportService.cashFlow(req.db, req.organisationId, req.query.startDate, req.query.endDate));
-  } catch (error) { return next(error); }
+  try { return res.json(await accountingExportService.cashFlow(req.db, req.organisationId, req.query.startDate, req.query.endDate)); }
+  catch (error) { return next(error); }
 });
 
 router.get("/reconciliation", async (req, res, next) => {
-  try {
-    const result = await accountingReconciliationService.reconcilePostedSources(req.db, req.organisationId);
-    return res.json(result);
-  } catch (error) { return next(error); }
+  try { return res.json(await accountingReconciliationService.reconcilePostedSources(req.db, req.organisationId)); }
+  catch (error) { return next(error); }
 });
 
 router.post("/reconciliation/remediation/preview", requireRole("admin"), async (req, res, next) => {
   try {
-    const result = await accountingRemediationService.previewControlledAdjustment({
-      db: req.db,
-      organisationId: req.organisationId,
-      command: req.body,
-    });
-    return res.json(result);
+    return res.json(await accountingRemediationService.previewControlledAdjustment({ db: req.db, organisationId: req.organisationId, command: req.body }));
   } catch (error) { return next(error); }
 });
 
 router.post("/reconciliation/remediation/apply", requireRole("admin"), async (req, res, next) => {
   try {
-    const result = await accountingRemediationService.applyControlledAdjustment({
-      db: req.db,
-      organisationId: req.organisationId,
-      userId: req.user?.id,
-      command: req.body,
-    });
+    const result = await accountingRemediationService.applyControlledAdjustment({ db: req.db, organisationId: req.organisationId, userId: req.user?.id, command: req.body });
     return res.status(result.adjustment?.duplicate ? 200 : 201).json(result);
   } catch (error) { return next(error); }
 });

@@ -44,7 +44,7 @@ describe("gouvernance comptable CTMAD", () => {
   test("refuse un renversement sans date", () => {
     const result = resolvePolicy(reversal.ENTRY_REVERSE_POLICY).evaluate({
       idempotencyKey: "reverse-12345",
-      input: { entryId: 44, reason: "Correction documentée" },
+      input: { entryId: 44, reason: "Correction documentée", confirmedByHuman: true },
     });
     expect(result.allowed).toBe(false);
     expect(result.code).toBe("accounting_reversal.data_required");
@@ -66,7 +66,12 @@ describe("gouvernance comptable CTMAD", () => {
 
     expect(resolvePolicy(reversal.ENTRY_REVERSE_POLICY).evaluate({
       idempotencyKey: "reverse-12345",
-      input: { entryId: 44, reversalDate: "2026-07-25", reason: "Correction documentée" },
+      input: {
+        entryId: 44,
+        reversalDate: "2026-07-25",
+        reason: "Correction documentée",
+        confirmedByHuman: true,
+      },
     }).allowed).toBe(true);
   });
 });
