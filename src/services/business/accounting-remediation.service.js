@@ -1,5 +1,5 @@
 const reconciliationService = require("./accounting-reconciliation.service");
-const governanceService = require("./accounting-governance.service");
+const governanceService = require("./accounting-governance-period-guarded.service");
 const accountingService = require("./accounting.service");
 
 function validationError(message, code) {
@@ -141,6 +141,7 @@ async function applyControlledAdjustment({ db, organisationId, userId, command }
   const anomaly = beforeSnapshot.anomaly;
 
   const adjustment = await governanceService.createPostedAdjustment({
+    db,
     organisationId,
     userId,
     idempotencyKey: validated.idempotencyKey,
