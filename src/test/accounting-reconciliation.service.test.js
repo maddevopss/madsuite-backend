@@ -36,7 +36,7 @@ describe("accounting reconciliation", () => {
     expect(result.counts).toMatchObject({ matched: 1, orphanEntries: 1 });
   });
 
-  test("agrège les écritures avant de joindre les montants sources", async () => {
+  test("normalise puis agrège les écritures avant de joindre les montants sources", async () => {
     const db = {
       query: jest
         .fn()
@@ -54,10 +54,14 @@ describe("accounting reconciliation", () => {
     };
 
     const result = await reconcilePostedSources(db, 7);
+    const reconciliationSql = db.query.mock.calls[0][0];
 
     expect(result.healthy).toBe(true);
     expect(db.query).toHaveBeenCalledTimes(2);
-    expect(db.query.mock.calls[0][0]).toContain("WITH accounting_totals AS");
+    expect(reconciliationSql).toContain("accounting_entries_normalized AS");
+    expect(reconciliationSql).toContain("accounting_totals AS");
+    expect(reconciliationSql).toContain("FULL OUTER JOIN accounting_totals");
+    expect(reconciliationSql).toContain("le.reference_type AS source_type");
     expect(db.query.mock.calls[0][1]).toEqual([7]);
     expect(db.query.mock.calls[1][0]).toContain("le.id IS NULL");
     expect(db.query.mock.calls[1][1]).toEqual([7]);
