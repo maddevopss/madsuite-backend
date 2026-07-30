@@ -127,14 +127,16 @@ app.post(
   express.raw({ type: "application/json" }),
   stripeRoutes.webhookHandler
 );
-// Autres routes Stripe après express.json()
-app.use("/api/stripe", stripeRoutes.router);
-app.use("/api/expenses", auth, requireModule("expenses"), expenseReceiptsRoutes);
+
 const swaggerDocument = yaml.load(path.join(__dirname, "../swagger.yaml"));
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
 app.use(express.json());
 app.use(apiResponseMiddleware);
+
+// Routes Stripe ordinaires après express.json()
+app.use("/api/stripe", stripeRoutes.router);
+app.use("/api/expenses", auth, requireModule("expenses"), expenseReceiptsRoutes);
 app.use(express.static(path.join(__dirname, "../../frontend/build")));
 
 app.get("/api/health", async (req, res) => {

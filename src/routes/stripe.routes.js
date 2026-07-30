@@ -1,3 +1,4 @@
+
 const express = require("express");
 const router = express.Router();
 const stripeService = require("../services/stripe.service");
@@ -101,12 +102,6 @@ async function webhookHandler(req, res) {
       res.status(500).json({ error: "Internal Server Error" });
     }
 }
-
-router.post(
-  "/webhook",
-  express.raw({ type: "application/json" }),
-  webhookHandler
-);
 
 // Route pour créer une session d'abonnement (réservé aux admins de l'organisation)
 router.post("/create-checkout-session", auth, async (req, res, next) => {
