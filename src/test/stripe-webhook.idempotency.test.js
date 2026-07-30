@@ -18,8 +18,13 @@ const Stripe = require('stripe');
 const db = require('../../db');
 const crypto = require('crypto');
 
-const TEST_STRIPE_KEY = 'sk_test_dummy_key_for_tests_only';
-const TEST_WEBHOOK_SECRET = 'whsec_test_secret_12345';
+const TEST_STRIPE_KEY =
+  process.env.STRIPE_SECRET_KEY ||
+  "stripe-test-key-placeholder";
+
+const TEST_WEBHOOK_SECRET =
+  process.env.STRIPE_WEBHOOK_SECRET ||
+  "stripe-webhook-placeholder";
 
 // Créer une instance Stripe réelle AVANT le mock
 const stripeForSigning = new Stripe(TEST_STRIPE_KEY);
