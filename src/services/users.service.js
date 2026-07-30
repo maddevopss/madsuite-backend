@@ -232,21 +232,59 @@ async function updatePassword({ userId, data, organisationId }) {
 
   const hashedPassword = await bcrypt.hash(rawPassword, BCRYPT_SALT_ROUNDS);
 
-  const result = await db.query(
-    `UPDATE utilisateurs
-     SET mot_de_passe = $1
-     WHERE id = $2
-       AND organisation_id = $3
-       AND deleted_at IS NULL
-     RETURNING id`,
-    [hashedPassword, userId, organisationId],
-  );
+  const client = await db.pool.connect();
 
-  if (result.rows.length === 0) {
-    throw notFoundError();
+  try {
+    await client.query("BEGIN");
+
+    // Update password
+    const result = await client.query(
+      `UPDATE utilisateurs
+       SET mot_de_passe = $1
+       WHERE id = $2
+         AND organisation_id = $3
+         AND deleted_at IS NULL
+       RETURNING id`,
+      [hashedPassword, userId, organisationId],
+    );
+
+    if (result.rows.length === 0) {
+      await client.query("ROLLBACK");
+      throw notFoundError();
+    }
+
+    // Revoke all sessions for this user
+    await client.query(
+      `UPDATE user_sessions
+       SET active = false,
+           logout_time = COALESCE(logout_time, NOW()),
+           duration_seconds = CASE
+             WHEN login_time IS NOT NULL THEN EXTRACT(EPOCH FROM (COALESCE(logout_time, NOW()) - login_time))::int
+             ELSE duration_seconds
+           END
+       WHERE utilisateur_id = $1
+         AND active = true`,
+      [userId],
+    );
+
+    // Revoke all refresh tokens for this user
+    await client.query(
+      `UPDATE refresh_tokens
+       SET revoked_at = NOW()
+       WHERE utilisateur_id = $1
+         AND revoked_at IS NULL`,
+      [userId],
+    );
+
+    await client.query("COMMIT");
+
+    return result.rows[0];
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
   }
-
-  return result.rows[0];
 }
 
 module.exports = {
