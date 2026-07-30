@@ -347,4 +347,89 @@ describe('Stripe Webhook Idempotency', () => {
       expect(result.rows[0].status).toBe('processing');
     });
   });
+
+  describe('Reprise après échec', () => {
+    it('devrait reprendre un événement échoué et incrémenter attempts', async () => {
+      const eventId = `evt_test_${Date.now()}_${generateUniqueId()}`;
+      const event = {
+        id: eventId,
+        type: 'checkout.session.completed',
+        created: Math.floor(Date.now() / 1000),
+        data: {
+          object: {
+            id: 'cs_test_failed',
+            payment_status: 'paid',
+            amount_total: 5000,
+            currency: 'cad',
+            customer: 'cus_test_failed',
+            metadata: { organisation_id: '1' }
+          }
+        }
+      };
+
+      const { payload, signature } = createSignedPayload(event, TEST_WEBHOOK_SECRET);
+
+      // Première livraison : provoquer un échec
+      // Espionner le traitement métier pour le faire échouer une fois
+      const stripeService = require('../services/stripe.service');
+      const originalHandleWebhook = stripeService.handleWebhook;
+
+      let callCount = 0;
+      jest.spyOn(stripeService, 'handleWebhook').mockImplementation(async (evt) => {
+        callCount++;
+        if (callCount === 1) {
+          throw new Error('Controlled test failure for webhook processing');
+        }
+        // Deuxième appel : succès
+        return originalHandleWebhook.call(stripeService, evt);
+      });
+
+      // Première requête : doit échouer
+      const response1 = await request(app)
+        .post('/api/stripe/webhook')
+        .set('stripe-signature', signature)
+        .send(payload)
+        .set('Content-Type', 'application/json');
+
+      expect(response1.status).toBe(500);
+
+      // Vérifier l'état en base après l'échec
+      let result = await db.query(
+        `SELECT status, attempts, processed_at, failed_at, last_error FROM stripe_webhook_events WHERE stripe_event_id = $1`,
+        [eventId]
+      );
+
+      expect(result.rows.length).toBe(1);
+      expect(result.rows[0].status).toBe('failed');
+      expect(result.rows[0].attempts).toBe(1);
+      expect(result.rows[0].processed_at).toBeNull();
+      expect(result.rows[0].failed_at).not.toBeNull();
+      expect(result.rows[0].last_error).toEqual(expect.any(String));
+
+      // Deuxième livraison : doit réussir
+      const response2 = await request(app)
+        .post('/api/stripe/webhook')
+        .set('stripe-signature', signature)
+        .send(payload)
+        .set('Content-Type', 'application/json');
+
+      expect(response2.status).toBe(200);
+
+      // Vérifier l'état final en base
+      result = await db.query(
+        `SELECT status, attempts, processed_at, failed_at, last_error FROM stripe_webhook_events WHERE stripe_event_id = $1`,
+        [eventId]
+      );
+
+      expect(result.rows.length).toBe(1);
+      expect(result.rows[0].status).toBe('processed');
+      expect(result.rows[0].attempts).toBe(2);
+      expect(result.rows[0].processed_at).not.toBeNull();
+      expect(result.rows[0].failed_at).toBeNull();
+      expect(result.rows[0].last_error).toBeNull();
+
+      // Restaurer le mock
+      stripeService.handleWebhook.mockRestore();
+    });
+  });
 });
