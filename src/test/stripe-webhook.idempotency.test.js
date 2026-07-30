@@ -48,9 +48,6 @@ function createSignedPayload(event, secret = TEST_WEBHOOK_SECRET) {
   return { payload, signature };
 }
 
-// Mock Stripe APRÈS avoir créé l'instance réelle
-jest.mock('stripe');
-
 describe('Stripe Webhook Idempotency', () => {
   let app;
 
