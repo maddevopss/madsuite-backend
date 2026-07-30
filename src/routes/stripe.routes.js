@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const stripeService = require("../services/stripe.service");
 const stripeWebhookEventService = require("../services/stripeWebhookEvent.service");
+const stripeEventProcessor = require("../services/stripeEventProcessor.service");
 const auth = require("../middleware/auth");
 const analyticsService = require("../services/analytics.service");
 const logger = require("../config/logger");
@@ -10,10 +11,7 @@ const logger = require("../config/logger");
 // Ce middleware spécifique est généralement configuré au niveau de app.js, 
 // mais nous gérons la route ici. Assurez-vous que express.raw est utilisé
 // pour cette route avant express.json.
-router.post(
-  "/webhook",
-  express.raw({ type: "application/json" }),
-  async (req, res) => {
+async function webhookHandler(req, res) {
     const sig = req.headers["stripe-signature"];
     const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
 
@@ -22,10 +20,34 @@ router.post(
       return res.status(503).json({ error: "Webhook secret not configured" });
     }
 
+    // Vérifier que le corps est un Buffer brut
+    if (!Buffer.isBuffer(req.body)) {
+      console.error("Stripe webhook body is not a raw buffer", {
+        bodyType: typeof req.body,
+        isBuffer: Buffer.isBuffer(req.body),
+        contentType: req.headers["content-type"],
+        bodyLength: req.body ? req.body.length : "undefined",
+        bodyKeys: req.body ? Object.keys(req.body) : "undefined",
+      });
+      logger.error("Stripe webhook body is not a raw buffer");
+      return res.status(400).json({
+        error: "Invalid Stripe webhook payload",
+      });
+    }
+
+    // Obtenir l'instance Stripe
+    const stripe = stripeService.getStripe();
+    if (!stripe) {
+      logger.error("Stripe is not configured");
+      return res.status(503).json({
+        error: "Stripe is not configured",
+      });
+    }
+
     let event;
 
     try {
-      event = stripeService.stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
+      event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
     } catch (err) {
       logger.error("Webhook signature verification failed", { error: err.message });
       return res.status(400).json({ error: "Invalid Stripe webhook signature" });
@@ -59,8 +81,8 @@ router.post(
         }
       }
 
-      // Traiter l'événement
-      await stripeService.handleWebhook(event);
+      // Traiter l'événement avec le processeur consolidé
+      await stripeEventProcessor.processStripeEvent(event);
 
       // Marquer comme traité
       await stripeWebhookEventService.markProcessed(event.id);
@@ -78,7 +100,12 @@ router.post(
 
       res.status(500).json({ error: "Internal Server Error" });
     }
-  }
+}
+
+router.post(
+  "/webhook",
+  express.raw({ type: "application/json" }),
+  webhookHandler
 );
 
 // Route pour créer une session d'abonnement (réservé aux admins de l'organisation)
@@ -150,4 +177,7 @@ router.post("/reconcile", auth, async (req, res) => {
   }
 });
 
-module.exports = router;
+module.exports = {
+  router,
+  webhookHandler,
+};
