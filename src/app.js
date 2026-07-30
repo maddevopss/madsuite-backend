@@ -121,13 +121,22 @@ app.use(cookieParser());
 app.use(corsOptions);
 
 // Routes Stripe et preuves d'achat binaires avant express.json().
-app.use("/api/stripe", stripeRoutes);
-app.use("/api/expenses", auth, requireModule("expenses"), expenseReceiptsRoutes);
+// Webhook doit être monté AVANT express.json() avec express.raw()
+app.post(
+  "/api/stripe/webhook",
+  express.raw({ type: "application/json" }),
+  stripeRoutes.webhookHandler
+);
+
 const swaggerDocument = yaml.load(path.join(__dirname, "../swagger.yaml"));
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
 app.use(express.json());
 app.use(apiResponseMiddleware);
+
+// Routes Stripe ordinaires après express.json()
+app.use("/api/stripe", stripeRoutes.router);
+app.use("/api/expenses", auth, requireModule("expenses"), expenseReceiptsRoutes);
 app.use(express.static(path.join(__dirname, "../../frontend/build")));
 
 app.get("/api/health", async (req, res) => {

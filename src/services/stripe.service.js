@@ -327,6 +327,10 @@ async function handleWebhook(event) {
   }
 }
 
+function getStripe() {
+  return stripe;
+}
+
 module.exports = {
   createSubscriptionCheckoutSession,
   createAccountLink,
@@ -334,6 +338,6 @@ module.exports = {
   handleWebhook,
   resolvePlanTypeFromStripeSubscription,
   requireStripe,
+  getStripe,
   isStripeEnabled: () => Boolean(stripe),
-  stripe,
 };
