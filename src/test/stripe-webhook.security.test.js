@@ -53,23 +53,6 @@ describe('Stripe Webhook Security', () => {
 
     process.env.STRIPE_SECRET_KEY = TEST_STRIPE_KEY;
     process.env.STRIPE_WEBHOOK_SECRET = TEST_WEBHOOK_SECRET;
-
-    // Mock Stripe.webhooks.constructEvent to accept our test signatures
-    Stripe.webhooks = {
-      constructEvent: jest.fn((body, sig, secret) => {
-        // For test signatures in format "t=...,v1=test_signature_...", accept them
-        if (sig && sig.includes('test_signature_')) {
-          // body might be a Buffer, convert to string if needed
-          const bodyStr = typeof body === 'string' ? body : body.toString();
-          return JSON.parse(bodyStr);
-        }
-        // For invalid signatures, throw an error
-        throw new Error('Invalid signature');
-      }),
-      generateTestHeaderString: jest.fn((opts) => {
-        return `t=${Math.floor(Date.now() / 1000)},v1=test_signature_${opts.payload}`;
-      }),
-    };
   });
 
   afterAll(async () => {

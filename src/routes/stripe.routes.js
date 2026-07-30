@@ -1,8 +1,10 @@
 const express = require("express");
 const router = express.Router();
 const stripeService = require("../services/stripe.service");
+const stripeWebhookEventService = require("../services/stripeWebhookEvent.service");
 const auth = require("../middleware/auth");
 const analyticsService = require("../services/analytics.service");
+const logger = require("../config/logger");
 
 // Nécessaire pour Stripe Webhooks (doit parser le raw body)
 // Ce middleware spécifique est généralement configuré au niveau de app.js, 
@@ -14,23 +16,66 @@ router.post(
   async (req, res) => {
     const sig = req.headers["stripe-signature"];
     const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-if (!webhookSecret) {
-  throw new Error("STRIPE_WEBHOOK_SECRET must be set");
-}
+
+    if (!webhookSecret) {
+      logger.error("STRIPE_WEBHOOK_SECRET not configured");
+      return res.status(503).json({ error: "Webhook secret not configured" });
+    }
+
     let event;
 
     try {
       event = stripeService.stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
     } catch (err) {
-      console.error("Webhook signature verification failed.", err.message);
-      return res.status(400).send(`Webhook Error: ${err.message}`);
+      logger.error("Webhook signature verification failed", { error: err.message });
+      return res.status(400).json({ error: "Invalid Stripe webhook signature" });
+    }
+
+    // Valider que l'événement a un ID
+    if (!event || typeof event.id !== "string" || event.id.length === 0) {
+      logger.error("Webhook event missing valid ID");
+      return res.status(400).json({ error: "Invalid Stripe event identifier" });
     }
 
     try {
+      // Réserver l'événement de manière atomique
+      const reservation = await stripeWebhookEventService.reserveEvent(event.id, event.type);
+
+      // Gérer les doublons
+      if (reservation.action === "duplicate") {
+        if (reservation.status === "processed") {
+          logger.info("Stripe webhook duplicate already processed", { event_id: event.id });
+          return res.status(200).json({ received: true, duplicate: true });
+        } else if (reservation.status === "processing") {
+          logger.info("Stripe webhook duplicate currently processing", { event_id: event.id });
+          return res.status(200).json({ received: true, duplicate: true });
+        } else if (reservation.status === "failed") {
+          // Tenter une reprise
+          const retryResult = await stripeWebhookEventService.retryFailedEvent(event.id);
+          if (retryResult.action !== "retry") {
+            logger.info("Stripe webhook failed event not retried", { event_id: event.id });
+            return res.status(200).json({ received: true, duplicate: true });
+          }
+        }
+      }
+
+      // Traiter l'événement
       await stripeService.handleWebhook(event);
+
+      // Marquer comme traité
+      await stripeWebhookEventService.markProcessed(event.id);
+
       res.json({ received: true });
     } catch (err) {
-      console.error("Error handling webhook:", err);
+      logger.error("Error handling webhook", { event_id: event.id, error: err.message });
+
+      // Marquer comme échoué
+      try {
+        await stripeWebhookEventService.markFailed(event.id, err);
+      } catch (markErr) {
+        logger.error("Error marking webhook as failed", { event_id: event.id, error: markErr.message });
+      }
+
       res.status(500).json({ error: "Internal Server Error" });
     }
   }
