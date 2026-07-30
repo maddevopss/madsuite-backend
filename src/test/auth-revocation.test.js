@@ -227,13 +227,34 @@ describe("Révocation complète des tokens", () => {
     expect(sessionsBefore.rows.length).toBe(2);
     expect(sessionsBefore.rows.every((row) => row.active)).toBe(true);
 
-    // Changer le mot de passe (simulé)
-    const bcrypt = require("bcrypt");
-    const newPassword = await bcrypt.hash("NewPassword123!", 10);
-    await db.query(
-      `UPDATE utilisateurs SET mot_de_passe = $1 WHERE id = $2`,
-      [newPassword, user.id],
+    // Vérifier que les refresh tokens ne sont pas révoqués
+    const tokensBefore = await db.query(
+      `SELECT revoked_at FROM refresh_tokens WHERE utilisateur_id = $1`,
+      [user.id],
     );
+    expect(tokensBefore.rows.every((row) => row.revoked_at === null)).toBe(true);
+
+    // Changer le mot de passe via la route officielle
+    const changePasswordRes = await request(app)
+      .put(`/api/users/${user.id}/password`)
+      .set("Authorization", `Bearer ${accessToken}`)
+      .send({ password: "NewPassword123!" });
+
+    expect(changePasswordRes.statusCode).toBe(200);
+
+    // Vérifier que les deux sessions sont maintenant inactives
+    const sessionsAfter = await db.query(
+      `SELECT id, active FROM user_sessions WHERE utilisateur_id = $1 ORDER BY id`,
+      [user.id],
+    );
+    expect(sessionsAfter.rows.every((row) => !row.active)).toBe(true);
+
+    // Vérifier que tous les refresh tokens sont révoqués
+    const tokensAfter = await db.query(
+      `SELECT revoked_at FROM refresh_tokens WHERE utilisateur_id = $1`,
+      [user.id],
+    );
+    expect(tokensAfter.rows.every((row) => row.revoked_at !== null)).toBe(true);
 
     // Essayer d'utiliser les anciens tokens
     const refresh1 = await agent
@@ -244,9 +265,30 @@ describe("Révocation complète des tokens", () => {
       .post("/api/refresh")
       .send({});
 
-    // Les deux devraient être rejetés (car les sessions ne sont pas révoquées automatiquement)
-    // Note: Ce test montre que le changement de mot de passe ne révoque pas automatiquement
-    // C'est une amélioration à implémenter
+    // Les deux devraient être rejetés (401)
+    expect(refresh1.statusCode).toBe(401);
+    expect(refresh2.statusCode).toBe(401);
+
+    // Vérifier que la nouvelle connexion fonctionne avec le nouveau mot de passe
+    const newLoginRes = await request(app)
+      .post("/api/login")
+      .send({
+        email: user.email,
+        password: "NewPassword123!",
+      });
+
+    expect(newLoginRes.statusCode).toBe(200);
+    expect(newLoginRes.body.token).toBeDefined();
+
+    // Vérifier que l'ancien mot de passe est refusé
+    const oldLoginRes = await request(app)
+      .post("/api/login")
+      .send({
+        email: user.email,
+        password: "Test123!",
+      });
+
+    expect(oldLoginRes.statusCode).toBe(401);
   });
 
   // ─────────────────────────────────────────────────────────────────────────
