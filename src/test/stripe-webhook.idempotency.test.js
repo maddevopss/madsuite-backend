@@ -18,27 +18,46 @@ const Stripe = require('stripe');
 const db = require('../../db');
 const crypto = require('crypto');
 
-// Mock Stripe pour les tests
-jest.mock('stripe');
-
 const TEST_STRIPE_KEY = 'sk_test_dummy_key_for_tests_only';
 const TEST_WEBHOOK_SECRET = 'whsec_test_secret_12345';
+
+// Créer une instance Stripe réelle AVANT le mock
+const stripeForSigning = new Stripe(TEST_STRIPE_KEY);
 
 function generateUniqueId() {
   return crypto.randomBytes(8).toString('hex');
 }
 
-function createSignedPayload(event, secret) {
+function createSignedPayload(event, secret = TEST_WEBHOOK_SECRET) {
+  if (typeof secret !== 'string' || secret.length === 0) {
+    throw new Error('A Stripe webhook secret is required');
+  }
+
   const payload = JSON.stringify(event);
-  const signature = `t=${Math.floor(Date.now() / 1000)},v1=test_signature_${event.id}`;
+
+  // Utiliser l'instance Stripe réelle pour générer la signature
+  const signature = stripeForSigning.webhooks.generateTestHeaderString({
+    payload,
+    secret,
+  });
+
+  if (typeof signature !== 'string' || signature.length === 0) {
+    throw new Error('Stripe generated an invalid test signature');
+  }
+
   return { payload, signature };
 }
+
+// Mock Stripe APRÈS avoir créé l'instance réelle
+jest.mock('stripe');
 
 describe('Stripe Webhook Idempotency', () => {
   let app;
 
   beforeAll(async () => {
     app = require('../app');
+    // Réassigner stripeForSigning après le mock pour utiliser l'instance réelle
+    // (elle a été créée avant le mock)
   });
 
   beforeEach(() => {
@@ -61,12 +80,6 @@ describe('Stripe Webhook Idempotency', () => {
         return `t=${Math.floor(Date.now() / 1000)},v1=test_signature_${opts.payload}`;
       }),
     };
-  });
-
-  afterAll(async () => {
-    if (db.pool) {
-      await db.pool.end();
-    }
   });
 
   afterEach(async () => {

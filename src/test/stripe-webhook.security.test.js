@@ -12,21 +12,24 @@ const request = require('supertest');
 const Stripe = require('stripe');
 const db = require('../../db');
 
-// Mock Stripe pour les tests
-jest.mock('stripe');
-
 const TEST_STRIPE_KEY = 'sk_test_dummy_key_for_tests_only';
 const TEST_WEBHOOK_SECRET = 'whsec_test_secret_12345';
 
-function createSignedPayload(event, secret) {
+// Créer une instance Stripe réelle AVANT le mock
+const stripeForSigning = new Stripe(TEST_STRIPE_KEY);
+
+function createSignedPayload(event, secret = TEST_WEBHOOK_SECRET) {
   if (typeof secret !== 'string' || secret.length === 0) {
     throw new Error('A Stripe webhook secret is required');
   }
 
   const payload = JSON.stringify(event);
 
-  // Mock Stripe.webhooks.generateTestHeaderString to return a valid signature
-  const signature = `t=${Math.floor(Date.now() / 1000)},v1=test_signature_${event.id}`;
+  // Utiliser l'instance Stripe réelle pour générer la signature
+  const signature = stripeForSigning.webhooks.generateTestHeaderString({
+    payload,
+    secret,
+  });
 
   if (typeof signature !== 'string' || signature.length === 0) {
     throw new Error('Stripe generated an invalid test signature');
@@ -38,9 +41,11 @@ function createSignedPayload(event, secret) {
   };
 }
 
+// Mock Stripe APRÈS avoir créé l'instance réelle
+jest.mock('stripe');
+
 describe('Stripe Webhook Security', () => {
   let app;
-  let stripeInstance;
 
   beforeAll(async () => {
     // Charger l'app
@@ -56,9 +61,14 @@ describe('Stripe Webhook Security', () => {
   });
 
   afterAll(async () => {
-    // Fermer les connexions
-    if (db.pool) {
-      await db.pool.end();
+    // Ne pas fermer le pool ici : setup.js gère la fermeture globale
+    // Nettoyer uniquement les données de test
+    try {
+      await db.query(
+        `DELETE FROM stripe_webhook_events WHERE stripe_event_id LIKE 'evt_test_%'`
+      );
+    } catch (err) {
+      // Ignorer les erreurs de nettoyage
     }
   });
 
@@ -128,7 +138,11 @@ describe('Stripe Webhook Security', () => {
 
       // Vérifier que la réponse est 400
       expect(response.status).toBe(400);
-      expect(response.text).toContain('Webhook Error');
+      expect(response.body).toEqual(
+        expect.objectContaining({
+          error: 'Invalid Stripe webhook signature',
+        })
+      );
     });
   });
 
@@ -172,8 +186,13 @@ describe('Stripe Webhook Security', () => {
           .send(payload)
           .set('Content-Type', 'application/json');
 
-        // Vérifier que la réponse est 400 ou 500
-        expect([400, 500]).toContain(response.status);
+        // Vérifier que la réponse est 503 (service unavailable)
+        expect(response.status).toBe(503);
+        expect(response.body).toEqual(
+          expect.objectContaining({
+            error: expect.any(String),
+          })
+        );
       } finally {
         // Restaurer le secret
         if (originalSecret) {
