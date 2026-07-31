@@ -62,6 +62,11 @@ async function executeTransaction(definition) {
   const transactionId = createTransactionId();
   try {
     await client.query("BEGIN");
+    // Les tables métier (accounting_*, payroll_*...) sont sous RLS : le GUC doit être
+    // fixé sur cette transaction avant toute lecture/écriture via `client`.
+    await client.query("SELECT set_config('app.current_organisation_id', $1, true)", [
+      String(organisationId),
+    ]);
     const context = { client, transactionId, correlationId, type, organisationId, actorUserId, idempotencyKey, input: definition.input || {} };
     const policyResults = await evaluatePolicies(policyRefs, context);
     if (validate) await validate(context);

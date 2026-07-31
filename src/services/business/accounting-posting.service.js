@@ -7,6 +7,9 @@ async function postExpense({ expenseId, organisationId, createdBy }) {
   const client = await db.pool.connect();
   try {
     await client.query("BEGIN");
+    await client.query("SELECT set_config('app.current_organisation_id', $1, true)", [
+      String(organisationId),
+    ]);
     const result = await client.query(
       `SELECT * FROM expenses
        WHERE id = $1 AND organisation_id = $2 AND deleted_at IS NULL

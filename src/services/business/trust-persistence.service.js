@@ -38,7 +38,7 @@ async function persistTrustAssessment(client, {
         check.passed,
         check.severity,
         check.explanation,
-        check.evidence,
+        JSON.stringify(check.evidence ?? null),
       ],
     );
   }
@@ -73,7 +73,7 @@ async function persistGraphEdges(client, {
         edge.relation,
         edge.to.type,
         edge.to.id,
-        edge.provenance || {},
+        JSON.stringify(edge.provenance || {}),
       ],
     );
     if (rows[0]) persisted.push(rows[0]);
