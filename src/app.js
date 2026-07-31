@@ -1,4 +1,5 @@
 const express = require("express");
+const fs = require("fs");
 const cookieParser = require("cookie-parser");
 const corsOptions = require("./config/cors");
 const helmet = require("helmet");
@@ -6,7 +7,7 @@ const path = require("path");
 const pool = require("../db");
 const { buildContentSecurityPolicy } = require("./config/security");
 const swaggerUi = require("swagger-ui-express");
-const yaml = require("yamljs");
+const yaml = require("yaml");
 const ApiResponse = require("./utils/apiResponse");
 
 const auth = require("./middleware/auth");
@@ -128,7 +129,7 @@ app.post(
   stripeRoutes.webhookHandler
 );
 
-const swaggerDocument = yaml.load(path.join(__dirname, "../swagger.yaml"));
+const swaggerDocument = yaml.parse(fs.readFileSync(path.join(__dirname, "../swagger.yaml"), "utf8"));
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
 app.use(express.json());
