@@ -23,6 +23,16 @@ const { applyStripePlanUpdate } = require("./organisation.service");
 const analyticsService = require("./analytics.service");
 const { recordLedgerEntry } = require("./invoice/invoice-ledger.service");
 const { recordBusinessAudit } = require("./auditLog.service");
+const stripeReconciliationService = require("./stripeReconciliation.service");
+
+const PAYMENT_RECONCILIATION_EVENTS = new Set([
+  "payment_intent.succeeded",
+  "charge.succeeded",
+  "invoice.payment_succeeded",
+  "payment_intent.payment_failed",
+  "charge.failed",
+  "invoice.payment_failed",
+]);
 
 /**
  * Résout l'organisation de manière sûre.
@@ -765,6 +775,16 @@ async function processStripeEvent(event, context = {}) {
   let businessStep = "initialization";
 
   try {
+    if (PAYMENT_RECONCILIATION_EVENTS.has(event.type)) {
+      businessStep = "handle_payment_reconciliation";
+      const result = await stripeReconciliationService.processWebhookEvent(event);
+      return {
+        handled: result.status !== "ignored",
+        action: "payment_reconciliation",
+        reconciliationStatus: result.status,
+      };
+    }
+
     switch (event.type) {
       case "checkout.session.completed": {
         const session = event.data.object;
