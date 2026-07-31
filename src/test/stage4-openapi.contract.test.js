@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const YAML = require('yamljs');
+const YAML = require('yaml');
 
 const contractPath = path.join(__dirname, '../../openapi/stage4-contracts.yaml');
 const document = YAML.parse(fs.readFileSync(contractPath, 'utf8'));

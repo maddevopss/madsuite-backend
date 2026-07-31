@@ -26,7 +26,7 @@ async function findExistingInvoice({ organisationId, estimateId, idempotencyKey,
 
 async function convertToInvoice({ estimateId, organisationId, billedBy, idempotencyKey }) {
   const txClient = await db.pool.connect();
-  let committedInvoice = null;
+  let committedInvoice;
   try {
     await txClient.query("BEGIN");
     const sameCommand = await txClient.query(
