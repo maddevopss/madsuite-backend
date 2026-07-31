@@ -46,6 +46,7 @@ const { Server } = require("socket.io");
 const validateEnv = require("./src/config/validateEnv");
 const app = require("./src/app");
 const pool = require("./db");
+const { assertRoleNotSuperuser } = require("./db");
 const { startSchedulers } = require("./src/jobs/scheduler");
 const { runMigrations } = require("./src/migrate/runMigrations");
 const { initRetentionJob } = require("./src/jobs/dataRetention");
@@ -178,10 +179,15 @@ async function start() {
       console.log("⏭️  Migrations de démarrage désactivées");
     }
 
-    // 2. Create HTTP server
+    // 2. Check database role security
+    console.log("🔐 Vérification du rôle de connexion...");
+    await assertRoleNotSuperuser(pool.pool);
+    console.log("✅ Rôle de connexion sécurisé");
+
+    // 3. Create HTTP server
     const server = http.createServer(app);
 
-    // 3. Initialize Socket.IO
+    // 4. Initialize Socket.IO
     initializeSocket(server);
 
     // 4. Start listening

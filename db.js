@@ -37,6 +37,55 @@ function assertSafeTestDatabase(config) {
   }
 }
 
+async function assertRoleNotSuperuser(pool) {
+  // Skip check in test environment — tests need to create controlled roles
+  if (process.env.NODE_ENV === "test") return;
+
+  try {
+    const result = await pool.query(
+      "SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = current_user",
+    );
+
+    if (!result.rows[0]) {
+      throw new Error("Could not determine current database role");
+    }
+
+    const { rolsuper, rolbypassrls } = result.rows[0];
+
+    if (rolsuper || rolbypassrls) {
+      const logger = require("./src/config/logger");
+      const reason =
+        rolsuper && rolbypassrls
+          ? "SUPERUSER + BYPASSRLS"
+          : rolsuper
+            ? "SUPERUSER"
+            : "BYPASSRLS";
+
+      logger.error(
+        `FATAL: Database connection role has ${reason} privilege. ` +
+          "FORCE ROW LEVEL SECURITY does not protect against superuser or BYPASSRLS roles. " +
+          "This is a critical security violation. Server startup blocked.",
+        {
+          rolname: result.rows[0].rolname,
+          rolsuper,
+          rolbypassrls,
+          NODE_ENV: process.env.NODE_ENV,
+        },
+      );
+
+      // Give async Winston transports a short blocking window before startup aborts.
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      throw new Error(`Unsafe database role: ${reason}`);
+    }
+  } catch (err) {
+    if (err.code === "ECONNREFUSED" || err.code === "ENOTFOUND") {
+      // Database not available yet — will fail later in normal flow
+      return;
+    }
+    throw err;
+  }
+}
+
 const poolConfig = connectionString
   ? {
       connectionString,
@@ -114,3 +163,4 @@ if (process.env.NODE_ENV !== "test") {
 }
 
 module.exports = db;
+module.exports.assertRoleNotSuperuser = assertRoleNotSuperuser;
