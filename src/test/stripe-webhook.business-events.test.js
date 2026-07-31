@@ -464,6 +464,7 @@ describe("Stripe Webhook Business Events", () => {
       expect(inv.status).toBe("paid");
       
       // Nettoyer
+      await db.query("DELETE FROM payment_events WHERE invoice_id = $1", [invoiceId]);
       await db.query("DELETE FROM invoices WHERE id = $1", [invoiceId]);
     });
   });
@@ -517,6 +518,7 @@ describe("Stripe Webhook Business Events", () => {
       expect(res.body.received).toBe(true);
       
       // Nettoyer
+      await db.query("DELETE FROM payment_events WHERE invoice_id = $1", [invoiceId]);
       await db.query("DELETE FROM invoices WHERE id = $1", [invoiceId]);
     });
   });
@@ -570,6 +572,7 @@ describe("Stripe Webhook Business Events", () => {
       expect(res.body.received).toBe(true);
       
       // Nettoyer
+      await db.query("DELETE FROM payment_events WHERE invoice_id = $1", [invoiceId]);
       await db.query("DELETE FROM invoices WHERE id = $1", [invoiceId]);
     });
   });

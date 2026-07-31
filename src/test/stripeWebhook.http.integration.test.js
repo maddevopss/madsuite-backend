@@ -31,6 +31,20 @@ function buildPaymentEvent({ eventId, invoiceId, amount = 12500, currency = "cad
   };
 }
 
+function buildIgnoredEvent({ eventId }) {
+  return {
+    id: eventId,
+    object: "event",
+    type: "product.created",
+    data: {
+      object: {
+        id: `prod_${eventId}`,
+        object: "product",
+      },
+    },
+  };
+}
+
 function signPayload(payload) {
   const stripe = stripeService.getStripe();
   return stripe.webhooks.generateTestHeaderString({
@@ -85,9 +99,8 @@ describe("Stripe webhook HTTP signé — preuve financière P0", () => {
 
     const eventId = `evt_http_signed_${Date.now()}`;
     const payload = JSON.stringify(
-      buildPaymentEvent({
+      buildIgnoredEvent({
         eventId,
-        invoiceId: 999999,
       }),
     );
     const signature = signPayload(payload);
