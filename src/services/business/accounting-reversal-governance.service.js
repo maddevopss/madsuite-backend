@@ -151,11 +151,15 @@ async function reversePostedEntry({ organisationId, entryId, reversalDate, reaso
       }
 
       const validated = await loadReversedLines(client, orgId, original.id);
+      // accounting_lines_immutable_when_posted interdit tout INSERT de ligne dès que
+      // l'écriture parente est déjà 'posted' : l'écriture de renversement doit donc
+      // naître 'draft', recevoir ses lignes, puis être postée (comme le flux normal
+      // création → lignes → post), avant de lier l'écriture d'origine.
       const inserted = await client.query(
         `INSERT INTO accounting_entries
-         (organisation_id,journal_id,entry_number,entry_date,description,source_type,source_id,status,posted_at,created_by,
+         (organisation_id,journal_id,entry_number,entry_date,description,source_type,source_id,status,created_by,
           idempotency_key,adjustment_kind,reversal_of_entry_id,reversal_reason)
-         VALUES ($1,$2,$3,$4,$5,'accounting_reversal',$6,'posted',NOW(),$7,$8,'reversal',$9,$10)
+         VALUES ($1,$2,$3,$4,$5,'accounting_reversal',$6,'draft',$7,$8,'reversal',$9,$10)
          RETURNING *`,
         [orgId, original.journal_id, `REV-${original.entry_number}-${Date.now()}`, input.reversalDate,
           input.reason, String(original.id), actorUserId || null, String(key).trim(), original.id, input.reason],
@@ -168,8 +172,13 @@ async function reversePostedEntry({ organisationId, entryId, reversalDate, reaso
           [orgId, reversal.id, line.accountId, line.description || `Renversement de ${original.entry_number}`, line.debit, line.credit],
         );
       }
+      const postedReversal = await client.query(
+        `UPDATE accounting_entries SET status='posted', posted_at=NOW() WHERE organisation_id=$1 AND id=$2 RETURNING *`,
+        [orgId, reversal.id],
+      );
+      Object.assign(reversal, postedReversal.rows[0]);
       await client.query(
-        `UPDATE accounting_entries SET reversed_by_entry_id=$3, reversal_reason=$4
+        `UPDATE accounting_entries SET status='reversed', reversed_by_entry_id=$3, reversal_reason=$4
          WHERE organisation_id=$1 AND id=$2`,
         [orgId, original.id, reversal.id, input.reason],
       );

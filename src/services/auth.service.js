@@ -17,29 +17,19 @@ const logger = require("../config/logger");
 // P1-8 fix: Utiliser BCRYPT_SALT_ROUNDS depuis config/security.js (12 en prod, 10 en dev)
 const { BCRYPT_SALT_ROUNDS } = require("../config/security");
 
+// La RLS sur utilisateurs exige organisation_id = app.current_organisation_id,
+// or c'est précisément l'organisation qu'on cherche à découvrir au login/refresh :
+// le GUC ne peut pas être fixé à l'avance. On passe donc par des fonctions
+// SECURITY DEFINER étroites (auth_find_user_by_email/id) plutôt que de contourner
+// RLS pour le rôle applicatif — voir 20260731_fix_utilisateurs_rls_missing_ok.sql.
 async function findUserByEmail(email) {
-  const result = await db.query(
-    `
-    SELECT id, nom, email, mot_de_passe, role, organisation_id, deleted_at
-    FROM utilisateurs
-    WHERE email = $1
-      AND deleted_at IS NULL
-    `,
-    [email],
-  );
+  const result = await db.query(`SELECT * FROM auth_find_user_by_email($1)`, [email]);
 
   return result.rows[0] || null;
 }
 
 async function findUserById(client, userId) {
-  const result = await client.query(
-    `
-    SELECT id, nom, email, role, organisation_id, deleted_at
-    FROM utilisateurs
-    WHERE id = $1
-    `,
-    [userId],
-  );
+  const result = await client.query(`SELECT * FROM auth_find_user_by_id($1)`, [userId]);
 
   return result.rows[0] || null;
 }
@@ -102,6 +92,12 @@ async function loginUser({ email, password, req }) {
 
   try {
     await client.query("BEGIN");
+
+    // createAuthSession écrit dans user_sessions (RLS) : fixer le GUC maintenant
+    // qu'on connaît l'organisation de l'utilisateur authentifié.
+    await client.query("SELECT set_config('app.current_organisation_id', $1, true)", [
+      String(user.organisation_id),
+    ]);
 
     const session = await createAuthSession(client, user, req);
 
@@ -245,6 +241,12 @@ async function refreshSession({ refreshToken, req }) {
       throw err;
     }
 
+    // rotateRefreshToken joint refresh_tokens à utilisateurs/user_sessions (RLS) :
+    // le GUC doit être fixé maintenant qu'on connaît l'organisation de l'utilisateur.
+    await client.query("SELECT set_config('app.current_organisation_id', $1, true)", [
+      String(user.organisation_id),
+    ]);
+
     const rotated = await rotateRefreshToken(client, user, decoded.session_id, refreshToken, req);
 
     if (!rotated) {
@@ -279,6 +281,19 @@ async function refreshSession({ refreshToken, req }) {
   } finally {
     client.release();
   }
+}
+
+function getOrganisationIdFromAnyToken(token, refreshToken) {
+  for (const candidate of [token, refreshToken]) {
+    if (!candidate) continue;
+    try {
+      const decoded = verifyJwt(candidate);
+      if (decoded.organisation_id != null) return decoded.organisation_id;
+    } catch {
+      // Token invalide/expiré : on essaie le suivant.
+    }
+  }
+  return null;
 }
 
 function getSessionIdFromAccessToken(token) {
@@ -320,6 +335,15 @@ async function logoutSession({ token, refreshToken }) {
     if (!sessionId) {
       await client.query("COMMIT");
       return true;
+    }
+
+    // UPDATE user_sessions est soumis à la RLS : fixer le GUC à partir de
+    // l'organisation portée par le token (déjà connue, pas de requête nécessaire).
+    const organisationIdFromToken = getOrganisationIdFromAnyToken(token, refreshToken);
+    if (organisationIdFromToken != null) {
+      await client.query("SELECT set_config('app.current_organisation_id', $1, true)", [
+        String(organisationIdFromToken),
+      ]);
     }
 
     await client.query(
@@ -378,6 +402,12 @@ async function signupUser({ organisation_nom, user_nom, email, password, req }) 
     );
 
     const organisation = orgResult.rows[0];
+
+    // La RLS exige que app.current_organisation_id soit fixé avant toute
+    // écriture soumise à une policy WITH CHECK (ex. utilisateurs, user_sessions).
+    await client.query("SELECT set_config('app.current_organisation_id', $1, true)", [
+      String(organisation.id),
+    ]);
 
     // 2. Hash password — P1-8 fix: utiliser BCRYPT_SALT_ROUNDS (12 en prod)
     const passwordHash = await bcrypt.hash(password, BCRYPT_SALT_ROUNDS);
