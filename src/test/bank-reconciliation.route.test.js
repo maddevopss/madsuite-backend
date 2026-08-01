@@ -71,4 +71,24 @@ describe("Permissions HTTP — rapprochement bancaire (domaine 1.G)", () => {
     expect(res.status).toBe(201);
     expect(res.body.statement.status).toBe("open");
   });
+
+  test("un employé peut consulter les suggestions de correspondance mais pas les appliquer", async () => {
+    const created = await request(app)
+      .post("/api/accounting/bank-reconciliation/statements")
+      .set("x-test-role", "admin")
+      .send({ accountId: bankAccountId, periodStart: "2026-02-01", periodEnd: "2026-02-28", openingBalance: 0, closingBalance: 0 });
+    const statementId = created.body.statement.id;
+
+    const suggestions = await request(app)
+      .get(`/api/accounting/bank-reconciliation/statements/${statementId}/suggested-matches`)
+      .set("x-test-role", "employe");
+    expect(suggestions.status).toBe(200);
+    expect(suggestions.body.suggestions).toEqual([]);
+
+    const apply = await request(app)
+      .post(`/api/accounting/bank-reconciliation/statements/${statementId}/apply-suggested-matches`)
+      .set("x-test-role", "employe")
+      .send({ confirmedByHuman: true });
+    expect(apply.status).toBe(403);
+  });
 });
