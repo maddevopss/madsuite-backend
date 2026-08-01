@@ -45,16 +45,14 @@ async function logConsistencyResult(invariantName, status, details = null) {
 async function runSystemConsistencyCheck() {
   logger.info("Starting System Consistency Check...");
 
+  // time_entries/expenses/invoices sont sous RLS FORCE : ces vérifications sont
+  // intentionnellement cross-tenant (détection à l'échelle de la plateforme),
+  // résolues via des fonctions SECURITY DEFINER étroites plutôt qu'une lecture
+  // directe qui retournerait toujours 0 ligne sur une connexion non scopée.
+
   // 1. invoice_immutability_lock
   try {
-    const res1 = await pool.query(`
-      SELECT t.id FROM time_entries t 
-      WHERE t.invoice_id IS NOT NULL AND t.is_billed = false
-      UNION
-      SELECT e.id FROM expenses e
-      WHERE e.invoice_id IS NOT NULL AND e.is_billed = false
-      LIMIT 10
-    `);
+    const res1 = await pool.query(`SELECT * FROM check_invoice_immutability_violations() LIMIT 10`);
     if (res1.rows.length > 0) {
       await logConsistencyResult("invoice_immutability_lock", "FAIL", { violations: res1.rows });
     } else {
@@ -66,14 +64,7 @@ async function runSystemConsistencyCheck() {
 
   // 2. invoice_idempotency
   try {
-    const res2 = await pool.query(`
-      SELECT idempotency_key, count(*) as count 
-      FROM invoices 
-      WHERE idempotency_key IS NOT NULL 
-      GROUP BY idempotency_key 
-      HAVING count(*) > 1
-      LIMIT 10
-    `);
+    const res2 = await pool.query(`SELECT * FROM check_invoice_idempotency_violations() LIMIT 10`);
     if (res2.rows.length > 0) {
       await logConsistencyResult("invoice_idempotency", "FAIL", { violations: res2.rows });
     } else {
@@ -108,13 +99,7 @@ async function runSystemConsistencyCheck() {
 
   // 5. invoice_paid_implies_ledger_entry
   try {
-    const res5 = await pool.query(`
-      SELECT i.id 
-      FROM invoices i 
-      LEFT JOIN ledger_entries le ON le.reference_id = i.id::text AND le.reference_type = 'invoice' 
-      WHERE i.status = 'paid' AND le.id IS NULL
-      LIMIT 10
-    `);
+    const res5 = await pool.query(`SELECT * FROM check_invoice_ledger_violations() LIMIT 10`);
     if (res5.rows.length > 0) {
       await logConsistencyResult("invoice_paid_implies_ledger_entry", "FAIL", { violations: res5.rows });
     } else {
@@ -144,14 +129,11 @@ async function runSystemConsistencyCheck() {
   }
 
   // 7. stripe_payment_propagation
+  // Corrigé : référençait pe.reference_id/reference_type/status, des colonnes
+  // qui n'existent pas sur payment_events (invoice_id/type) — ce check
+  // échouait systématiquement en erreur depuis toujours, jamais fonctionnel.
   try {
-    const res7 = await pool.query(`
-      SELECT pe.id 
-      FROM payment_events pe 
-      JOIN invoices i ON i.id::text = pe.reference_id AND pe.reference_type = 'invoice' 
-      WHERE pe.status = 'succeeded' AND i.status != 'paid'
-      LIMIT 10
-    `);
+    const res7 = await pool.query(`SELECT * FROM check_stripe_payment_status_drift() LIMIT 10`);
     if (res7.rows.length > 0) {
       await logConsistencyResult("stripe_payment_propagation", "FAIL", { violations: res7.rows });
     } else {
