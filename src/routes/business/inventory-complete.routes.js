@@ -1,7 +1,5 @@
 const router = require('express').Router();
 const {
-  calculateAvailableQuantity,
-  validateReservation,
   calculateCountVariance,
   validateCycleCountApproval,
   validateLotDisposition,
@@ -9,26 +7,17 @@ const {
 } = require('../../services/business/inventory-complete.service');
 
 const actor = (req) => req.user?.id || req.user?.userId || null;
-const key = (req) => req.get('Idempotency-Key') || req.body?.idempotencyKey;
 
-router.get('/reservations', async (req, res, next) => {
-  try {
-    const { rows } = await req.db.query('SELECT * FROM inventory_reservations WHERE organisation_id=$1 ORDER BY created_at DESC', [req.organisationId]);
-    return res.json({ reservations: rows });
-  } catch (error) { return next(error); }
-});
-
-router.post('/reservations', async (req, res, next) => {
-  try {
-    const balance = (await req.db.query('SELECT COALESCE(SUM(quantity),0)::numeric quantity_on_hand FROM inventory_balances WHERE organisation_id=$1 AND item_id=$2 AND ($3::bigint IS NULL OR location_id=$3)', [req.organisationId, req.body.itemId, req.body.locationId || null])).rows[0];
-    const reserved = (await req.db.query("SELECT COALESCE(SUM(quantity),0)::numeric reserved FROM inventory_reservations WHERE organisation_id=$1 AND item_id=$2 AND status='active' AND ($3::bigint IS NULL OR location_id=$3)", [req.organisationId, req.body.itemId, req.body.locationId || null])).rows[0];
-    const availableQuantity = calculateAvailableQuantity({ quantityOnHand: balance.quantity_on_hand, reservedQuantity: reserved.reserved });
-    const decision = validateReservation({ quantity: req.body.quantity, availableQuantity, evidence: req.body.evidence || [] });
-    if (!decision.allowed) return res.status(400).json(decision);
-    const { rows } = await req.db.query(`INSERT INTO inventory_reservations (organisation_id,item_id,location_id,quantity,reference_type,reference_id,expires_at,reason,evidence,idempotency_key,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`, [req.organisationId,req.body.itemId,req.body.locationId||null,req.body.quantity,req.body.referenceType,req.body.referenceId||null,req.body.expiresAt||null,req.body.reason,req.body.evidence||[],key(req),actor(req)]);
-    return res.status(201).json({ reservation: rows[0], availableQuantity });
-  } catch (error) { return next(error); }
-});
+// GET/POST /reservations sont servies par inventory-control.routes.js
+// (inventory-control.service.js::reserveStock) : verrouillage transactionnel
+// réel (BEGIN/FOR UPDATE/COMMIT) du solde avant réservation, idempotence, et
+// accès en écriture réservé aux admins. L'implémentation qui vivait ici
+// faisait 3 requêtes non transactionnelles (condition de course sur des
+// réservations concurrentes) sans aucun contrôle de rôle, et — parce que ce
+// routeur était monté avant inventory-control.routes.js — masquait
+// silencieusement la version correcte pour tout le monde. Supprimée plutôt
+// que fusionnée : aucune capacité n'est perdue, inventory-control.routes.js
+// couvre déjà GET/POST /reservations et /reservations/:id/{release,consume,cancel}.
 
 router.get('/cycle-counts', async (req, res, next) => {
   try {
