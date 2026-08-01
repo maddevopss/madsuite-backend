@@ -117,13 +117,13 @@ async function checkStaleJobs() {
         logger.warn(`Cron en retard: ${job.job_name} (Criticité: ${criticality})`);
         
         // Notify admins for HIGH/MEDIUM criticality
+        // utilisateurs est sous RLS FORCE : la résolution "tous les admins"
+        // est intentionnellement cross-tenant et passe par la fonction
+        // SECURITY DEFINER déjà utilisée par jobResultAggregator.js.
         if (criticality === 'HIGH' || criticality === 'MEDIUM') {
-          await pool.query(`
-            INSERT INTO notifications (organisation_id, utilisateur_id, type, message)
-            SELECT organisation_id, id, 'system_alert', $1 
-            FROM utilisateurs 
-            WHERE role = 'admin'
-          `, [`ALERTE CRON: Le job ${job.job_name} n'a pas tourné avec succès depuis plus de ${frequencyHours}h.`]);
+          await pool.query(`SELECT notify_all_admins_system_alert($1)`, [
+            `ALERTE CRON: Le job ${job.job_name} n'a pas tourné avec succès depuis plus de ${frequencyHours}h.`,
+          ]);
         }
 
         // Audit log

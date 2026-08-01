@@ -66,15 +66,13 @@ router.get(
       // - DB state (Y)
       // Full Stripe Z available via manual reconcile or future daily job extension.
       // In production, the daily systemReconciliationJob produces detailed REVENUE_*_TRUTH_DRIFT anomalies.
+      // analytics_events/invoices sont sous RLS FORCE : ce snapshot est
+      // intentionnellement cross-tenant (comparaison plateforme), résolu via
+      // fonction SECURITY DEFINER plutôt qu'une lecture directe qui
+      // retournerait toujours 0 pour les compteurs RLS-protégés.
       let revenueTruth = null;
       try {
-        const truthRes = await db.query(`
-          SELECT 
-            (SELECT COUNT(DISTINCT organisation_id) FROM analytics_events WHERE event_name = 'subscription_active' AND created_at >= NOW() - INTERVAL '90 days') as analytics_subscription_active,
-            (SELECT COUNT(*) FROM organisations WHERE plan_type = 'pro' OR subscription_status = 'active') as db_pro_orgs,
-            (SELECT COUNT(DISTINCT organisation_id) FROM analytics_events WHERE event_name IN ('first_invoice_created', 'invoice_created') AND created_at >= NOW() - INTERVAL '90 days') as analytics_first_invoices,
-            (SELECT COUNT(DISTINCT organisation_id) FROM invoices) as db_orgs_with_invoices
-        `);
+        const truthRes = await db.query(`SELECT * FROM compute_revenue_truth_snapshot()`);
         revenueTruth = truthRes.rows[0];
       } catch (e) {
         revenueTruth = { error: 'truth query failed' };

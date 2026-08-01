@@ -232,7 +232,11 @@ async function updateCache(dbClient, organisationId, suggestions) {
 
   try {
     if (shouldReleaseClient) {
-      // Si on a pris une nouvelle connexion, on doit configurer la RLS manuellement
+      // Si on a pris une nouvelle connexion, on doit configurer la RLS manuellement.
+      // set_config(..., true) est local à la transaction : sans BEGIN explicite,
+      // la valeur serait perdue dès la fin de cette requête (autocommit), et
+      // l'INSERT suivant serait bloqué par RLS FORCE.
+      await clientToUse.query("BEGIN");
       await clientToUse.query(`SELECT set_config('app.current_organisation_id', $1, true)`, [organisationId.toString()]);
     }
 

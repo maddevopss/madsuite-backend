@@ -4,10 +4,16 @@ const { z } = require("zod");
 const ApiResponse = require("../utils/apiResponse");
 const { getOrganisationId } = require("../utils/organisationScope");
 const { handleServiceError } = require("../utils/routeError");
+const { requireOrganisation } = require("../middleware/organization.middleware");
 const paymentService = require("../services/invoice/invoice-payment-record.service");
 const customerReversalService = require("../services/business/customer-reversal.service");
 
 const router = express.Router();
+// listInvoicePayments()/loadInvoiceBalance() lisent invoices/invoice_payments
+// (RLS FORCE) via db.query() direct : sans ce middleware, l'historique des
+// paiements retourne toujours "Facture introuvable", même pour une facture
+// existante.
+router.use(requireOrganisation);
 
 const invoiceParamSchema = z.object({ id: z.coerce.number().int().positive() });
 const paymentParamSchema = z.object({ paymentId: z.coerce.number().int().positive() });
