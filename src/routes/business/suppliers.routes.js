@@ -5,6 +5,7 @@ const accountingPostingService = require("../../services/business/accounting-pos
 const supplierPaymentService = require("../../services/business/supplier-payment.service");
 const paymentReversalService = require("../../services/business/payment-reversal.service");
 const supplierBillLifecycleService = require("../../services/business/supplier-bill-lifecycle.service");
+const { computeAccountsPayableAging } = require("../../services/business/accounts-payable-aging.service");
 const supplierMasterRoutes = require("./supplier-master.routes");
 
 router.use(requireOrganisation);
@@ -84,6 +85,18 @@ router.get("/bills", async (req, res, next) => {
     res.json({ bills: rows });
   } catch (error) {
     next(error);
+  }
+});
+
+router.get("/aging", async (req, res, next) => {
+  try {
+    const report = await computeAccountsPayableAging(req.db, req.organisationId, {
+      asOf: req.query.asOf,
+      supplierId: req.query.supplierId,
+    });
+    return res.json(report);
+  } catch (error) {
+    return next(error);
   }
 });
 
