@@ -10,6 +10,7 @@ const accountingExportService = require("../../services/business/accounting-expo
 const accountingTrialBalanceService = require("../../services/business/accounting-trial-balance.service");
 const accountingReconciliationService = require("../../services/business/accounting-reconciliation.service");
 const accountingRemediationService = require("../../services/business/accounting-remediation.service");
+const accountingFixedAssetsService = require("../../services/business/accounting-fixed-assets.service");
 const businessEventService = require("../../services/business/business-event.service");
 const financialProjectionService = require("../../services/business/financial-projection.service");
 const accountingStatementsComparativeService = require("../../services/business/accounting-statements-comparative.service");
@@ -222,6 +223,68 @@ router.post("/reconciliation/remediation/apply", requireRole("admin"), async (re
   try {
     const result = await accountingRemediationService.applyControlledAdjustment({ db: req.db, organisationId: req.organisationId, userId: req.user?.id, command: req.body });
     return res.status(result.adjustment?.duplicate ? 200 : 201).json(result);
+  } catch (error) { return next(error); }
+});
+
+router.get("/fixed-assets", async (req, res, next) => {
+  try {
+    const assets = await accountingFixedAssetsService.listFixedAssets(req.db, req.organisationId);
+    return res.json({ assets });
+  } catch (error) { return next(error); }
+});
+
+router.get("/fixed-assets/:id", async (req, res, next) => {
+  try {
+    const asset = await accountingFixedAssetsService.getFixedAsset(req.db, req.organisationId, Number(req.params.id));
+    if (!asset) return res.status(404).json({ message: "Immobilisation introuvable." });
+    return res.json({ asset });
+  } catch (error) { return next(error); }
+});
+
+router.post("/fixed-assets", requireRole("admin"), async (req, res, next) => {
+  try {
+    const asset = await accountingFixedAssetsService.registerAsset(req.db, req.organisationId, req.body);
+    await businessEventService.appendEvent(req.db, {
+      organisationId: req.organisationId,
+      eventType: "accounting.fixed_asset.registered",
+      aggregateType: "accounting_fixed_asset",
+      aggregateId: asset.id,
+      actorUserId: req.user?.id,
+      payload: { assetNumber: asset.asset_number, acquisitionCost: asset.acquisition_cost },
+    });
+    return res.status(201).json({ asset });
+  } catch (error) { return next(error); }
+});
+
+router.get("/fixed-assets/depreciation-runs", async (req, res, next) => {
+  try {
+    const { rows } = await req.db.query(
+      `SELECT * FROM accounting_depreciation_runs WHERE organisation_id=$1 ORDER BY run_date DESC, id DESC`,
+      [req.organisationId],
+    );
+    return res.json({ runs: rows });
+  } catch (error) { return next(error); }
+});
+
+router.post("/fixed-assets/depreciation-runs", requireRole("admin"), async (req, res, next) => {
+  try {
+    const result = await accountingFixedAssetsService.runDepreciation(req.db, req.organisationId, {
+      runDate: req.body.runDate,
+      periodId: req.body.periodId,
+      idempotencyKey: req.body.idempotencyKey,
+      createdBy: req.user?.id,
+    });
+    if (!result.duplicate) {
+      await businessEventService.appendEvent(req.db, {
+        organisationId: req.organisationId,
+        eventType: "accounting.fixed_asset.depreciation_posted",
+        aggregateType: "accounting_depreciation_run",
+        aggregateId: result.run.id,
+        actorUserId: req.user?.id,
+        payload: { runDate: req.body.runDate, totals: result.totals, entryId: result.entryId },
+      });
+    }
+    return res.status(result.duplicate ? 200 : 201).json(result);
   } catch (error) { return next(error); }
 });
 
