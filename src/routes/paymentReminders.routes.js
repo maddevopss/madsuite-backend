@@ -4,10 +4,16 @@ const { z } = require("zod");
 const ApiResponse = require("../utils/apiResponse");
 const { getOrganisationId } = require("../utils/organisationScope");
 const { handleServiceError } = require("../utils/routeError");
+const { requireOrganisation } = require("../middleware/organization.middleware");
 const reminderService = require("../services/payment-reminder.service");
 const reminderPreviewService = require("../services/payment-reminder-preview.service");
 
 const router = express.Router();
+// getSettings/updateSettings/listCandidates/listHistory lisent des tables
+// sous RLS FORCE via db.query() direct : sans ce middleware, ces requêtes
+// retournent toujours vide (settings jamais lues/écrites, historique et
+// candidats toujours vides).
+router.use(requireOrganisation);
 
 const invoiceParamSchema = z.object({ id: z.coerce.number().int().positive() });
 const settingsSchema = z.object({ automatic_enabled: z.boolean() });

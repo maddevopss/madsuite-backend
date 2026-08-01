@@ -1,9 +1,14 @@
 const express = require("express");
 const pool = require("../../../db");
+const { requireOrganisation } = require("../../middleware/organization.middleware");
 const { organisationValue } = require("../../utils/organisationScope");
 const { createHazard, reportIncident, transitionCorrectiveAction } = require("../../services/business/sst-transaction.service");
 
 const router = express.Router();
+// hr_employee_competencies (jointe dans /alerts) est sous RLS FORCE : sans
+// ce middleware, pool.query() (alias de db.query()) n'a jamais de contexte
+// ALS et retourne toujours 0 ligne pour cette jointure.
+router.use(requireOrganisation);
 const orgId = (req) => organisationValue(req.user?.organisation_id || req.organisation_id);
 const actorId = (req) => req.user?.id || null;
 const key = (req) => req.get("Idempotency-Key") || req.body?.idempotencyKey;
