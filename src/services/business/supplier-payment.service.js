@@ -72,11 +72,11 @@ async function executeSupplierPayment({
 
   const billResult = await client.query(
     `SELECT b.*,
-            COALESCE(SUM(p.amount) FILTER (WHERE p.reversed_at IS NULL), 0) paid_total
+            COALESCE((SELECT SUM(p.amount) FROM supplier_payments p
+                      WHERE p.supplier_bill_id = b.id AND p.organisation_id = b.organisation_id
+                        AND p.reversed_at IS NULL), 0) AS paid_total
      FROM supplier_bills b
-     LEFT JOIN supplier_payments p ON p.supplier_bill_id = b.id AND p.organisation_id = b.organisation_id
      WHERE b.id = $1 AND b.organisation_id = $2
-     GROUP BY b.id
      FOR UPDATE OF b`,
     [input.billId, organisationId],
   );
