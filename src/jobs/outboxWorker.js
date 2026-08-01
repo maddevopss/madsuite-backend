@@ -28,6 +28,7 @@ async function processOutboxEvents() {
 
   for (const event of events) {
     const reminderAttemptId = event.payload?.reminderAttemptId || null;
+    const reminderOrganisationId = event.payload?.invoice?.organisation_id || null;
 
     try {
       await outboxService.markEventProcessing(event.id);
@@ -42,7 +43,7 @@ async function processOutboxEvents() {
         } else if (subType === "gentle") {
           await emailService.sendGentleReminder(email, invoice, event.id);
         }
-        await paymentReminderDelivery.markAttemptSent(reminderAttemptId);
+        await paymentReminderDelivery.markAttemptSent(reminderAttemptId, reminderOrganisationId);
       } else if (event_type === "estimate_reminder") {
         const { email, estimate } = payload;
         const link = await createEstimatePublicLink({
@@ -79,7 +80,7 @@ async function processOutboxEvents() {
       logger.error(`Failed to process outbox event ${event.id}:`, error);
       await tracker.recordFailure(error, { eventId: event.id });
       try {
-        await paymentReminderDelivery.markAttemptFailed(reminderAttemptId, error);
+        await paymentReminderDelivery.markAttemptFailed(reminderAttemptId, error, reminderOrganisationId);
         await outboxService.markEventFailed(event.id, error.message || String(error), 3);
       } catch (err) {
         logger.error(`Failed to mark outbox event ${event.id} as failed:`, err);
