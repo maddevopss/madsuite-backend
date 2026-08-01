@@ -4,6 +4,7 @@ const { requireOrganisation } = require("../../middleware/organization.middlewar
 const requireRole = require("../../middleware/requireRole");
 const payrollService = require("../../services/business/payroll-transaction.service");
 const { buildPayrollJournal, postPayrollJournal } = require("../../services/business/payroll-accounting.service");
+const { reversePostedEntry } = require("../../services/business/accounting-reversal-governance.service");
 const { buildPayStub, buildPayrollRegister } = require("../../services/business/payroll-documents.service");
 const payrollRemittancesRoutes = require("./payroll-remittances.routes");
 const payrollLifecycleRoutes = require("./payroll-lifecycle.routes");
@@ -130,6 +131,50 @@ router.post("/runs/:id/post-accounting", async (req, res, next) => {
       contributionLiabilityAccountId: req.body?.contributionLiabilityAccountId,
     });
     return res.status(result.duplicate ? 200 : 201).json(result);
+  } catch (error) { return next(error); }
+});
+
+// Un cycle payé ne peut plus être annulé par /void (réservé à avant paiement) : sa
+// correction renverse son écriture comptable publiée de façon non destructive (même
+// gouvernance que /accounting/entries/:id/reverse) et marque le cycle 'corrected'
+// plutôt que de le laisser 'paid' avec une écriture renversée en silence.
+router.post("/runs/:id/correct", async (req, res, next) => {
+  try {
+    const id = positiveId(req.params.id, "Cycle");
+    const idempotencyKey = req.body?.idempotencyKey;
+    if (!idempotencyKey || String(idempotencyKey).trim().length < 8) {
+      return res.status(400).json({ message: "Une clé d’idempotence valide est obligatoire." });
+    }
+
+    const existing = await req.db.query(
+      "SELECT * FROM payroll_runs WHERE organisation_id=$1 AND id=$2 AND correction_idempotency_key=$3",
+      [req.organisationId, id, idempotencyKey],
+    );
+    if (existing.rows[0]) return res.status(200).json({ duplicate: true, run: existing.rows[0] });
+
+    const { rows } = await req.db.query("SELECT * FROM payroll_runs WHERE organisation_id=$1 AND id=$2 FOR UPDATE", [req.organisationId, id]);
+    const run = rows[0];
+    if (!run) return res.status(404).json({ message: "Cycle de paie introuvable." });
+    if (run.status !== "paid") return res.status(409).json({ message: "Seul un cycle payé peut faire l’objet d’une correction." });
+    if (!run.accounting_entry_id) return res.status(409).json({ message: "Ce cycle n’a pas d’écriture comptable publiée à renverser." });
+
+    const reversal = await reversePostedEntry({
+      organisationId: req.organisationId,
+      entryId: run.accounting_entry_id,
+      reversalDate: req.body?.reversalDate || new Date().toISOString().slice(0, 10),
+      reason: req.body?.reason,
+      idempotencyKey: `payroll-correction:${req.organisationId}:${run.id}:${idempotencyKey}`,
+      confirmedByHuman: req.body?.confirmedByHuman,
+      reversedBy: req.user?.id,
+    });
+    if (!reversal) return res.status(409).json({ message: "Écriture comptable introuvable pour ce cycle." });
+
+    const { rows: corrected } = await req.db.query(
+      `UPDATE payroll_runs SET status='corrected', corrected_at=NOW(), corrected_by=$3, correction_reason=$4, correction_idempotency_key=$5
+       WHERE organisation_id=$1 AND id=$2 RETURNING *`,
+      [req.organisationId, id, req.user?.id || null, req.body?.reason, idempotencyKey],
+    );
+    return res.status(201).json({ run: corrected[0], reversal });
   } catch (error) { return next(error); }
 });
 
