@@ -52,16 +52,15 @@ async function calculateSystemHealthScore() {
     'outbox_stuck_event_recovery'
   ];
 
+  // invoices est sous RLS FORCE : ces vérifications sont intentionnellement
+  // cross-tenant (dérive à l'échelle de la plateforme), donc résolues via des
+  // fonctions SECURITY DEFINER étroites plutôt qu'une lecture directe qui
+  // retournerait toujours 0 ligne sur une connexion non scopée par organisation.
   let ledgerViolations = 0;
   let ledgerQueryFailed = false;
   try {
-    const sampleRes = await pool.query(`
-      SELECT COUNT(*) as violations 
-      FROM invoices i 
-      LEFT JOIN ledger_entries le ON le.reference_id = i.id::text AND le.reference_type = 'invoice' 
-      WHERE i.status = 'paid' AND le.id IS NULL
-    `);
-    ledgerViolations = parseInt(sampleRes.rows[0].violations, 10);
+    const sampleRes = await pool.query(`SELECT * FROM check_invoice_ledger_violations()`);
+    ledgerViolations = sampleRes.rows.length;
   } catch (err) {
     ledgerQueryFailed = true;
   }
@@ -69,14 +68,8 @@ async function calculateSystemHealthScore() {
   let stripeViolations = 0;
   let stripeQueryFailed = false;
   try {
-    const externalRes = await pool.query(`
-      SELECT COUNT(*) as violations
-      FROM payment_events pe
-      JOIN invoices i ON i.id = pe.invoice_id
-      WHERE pe.type IN ('payment_intent.succeeded', 'charge.succeeded', 'invoice.payment_succeeded')
-      AND i.status != 'paid'
-    `);
-    stripeViolations = parseInt(externalRes.rows[0].violations, 10);
+    const externalRes = await pool.query(`SELECT * FROM check_stripe_payment_status_drift()`);
+    stripeViolations = externalRes.rows.length;
   } catch(err) {
     stripeQueryFailed = true;
   }
