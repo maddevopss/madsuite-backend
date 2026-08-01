@@ -1,5 +1,6 @@
 const router = require('express').Router();
 const requireRole = require('../../middleware/requireRole');
+const inventoryTransactionService = require('../../services/business/inventory-transaction.service');
 const {
   calculateCountVariance,
   validateCycleCountApproval,
@@ -46,6 +47,68 @@ router.get('/lots', async (req, res, next) => {
   try {
     const { rows } = await req.db.query('SELECT * FROM inventory_lots WHERE organisation_id=$1 ORDER BY expires_at NULLS LAST,created_at DESC', [req.organisationId]);
     return res.json({ lots: rows });
+  } catch (error) { return next(error); }
+});
+
+// Créer un lot est, du point de vue comptable et du solde, une réception
+// d'inventaire ordinaire — elle réutilise donc postInventoryTransaction
+// (déjà couverte par des tests réels, cf. domaine 3 micro-bloc 1) pour
+// augmenter inventory_balances et publier l'écriture comptable au lieu de
+// dupliquer cette logique. La réception se publie dans sa propre
+// transaction (executeTransaction ouvre sa propre connexion) et est
+// commitée dès son retour ; l'enregistrement du lot est une étape
+// distincte qui suit. Si le numéro de lot entre en collision (contrainte
+// UNIQUE) sur une tentative qui n'était PAS une relecture idempotente, la
+// réception réelle du stock reste acquise — seul le classement par lot
+// échoue, avec un 409 explicite plutôt qu'une perte silencieuse du
+// mouvement de stock déjà publié.
+router.post('/lots', requireRole('admin'), async (req, res, next) => {
+  try {
+    const body = req.body || {};
+    if (!body.itemId || !body.locationId) return res.status(400).json({ message: 'L’article et l’emplacement sont obligatoires.' });
+    const lotNumber = String(body.lotNumber || '').trim();
+    if (!lotNumber) return res.status(400).json({ message: 'Le numéro de lot est obligatoire.' });
+    const quantity = Number(body.quantity);
+    if (!Number.isFinite(quantity) || quantity <= 0) return res.status(400).json({ message: 'La quantité doit être supérieure à zéro.' });
+    const unitCost = Number(body.unitCost);
+    if (!Number.isFinite(unitCost) || unitCost <= 0) return res.status(400).json({ message: 'Le coût unitaire doit être supérieur à zéro.' });
+
+    const receipt = await inventoryTransactionService.postInventoryTransaction({
+      organisationId: req.organisationId,
+      actorUserId: req.user?.id,
+      type: 'receipt',
+      itemId: body.itemId,
+      locationId: body.locationId,
+      quantity,
+      unitCost,
+      referenceType: 'inventory_lot',
+      referenceId: lotNumber,
+      idempotencyKey: body.idempotencyKey,
+      occurredAt: body.receivedAt,
+    });
+    if (!receipt) return res.status(404).json({ message: 'Article ou emplacement d’inventaire introuvable.' });
+
+    if (receipt.duplicate) {
+      const existing = await req.db.query(
+        `SELECT * FROM inventory_lots WHERE organisation_id=$1 AND item_id=$2 AND lot_number=$3 AND COALESCE(serial_number,'')=COALESCE($4,'')`,
+        [req.organisationId, body.itemId, lotNumber, body.serialNumber || null],
+      );
+      if (existing.rows[0]) return res.status(200).json({ lot: existing.rows[0], receipt, duplicate: true });
+    }
+
+    try {
+      const { rows } = await req.db.query(
+        `INSERT INTO inventory_lots (organisation_id,item_id,location_id,lot_number,serial_number,manufactured_at,expires_at,unit_cost,quantity,status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'available') RETURNING *`,
+        [req.organisationId, body.itemId, body.locationId, lotNumber, body.serialNumber || null, body.manufacturedAt || null, body.expiresAt || null, unitCost, quantity],
+      );
+      return res.status(201).json({ lot: rows[0], receipt, duplicate: false });
+    } catch (error) {
+      if (error.code === '23505') {
+        return next(Object.assign(new Error('Un lot avec ce numéro (et numéro de série) existe déjà pour cet article.'), { statusCode: 409 }));
+      }
+      throw error;
+    }
   } catch (error) { return next(error); }
 });
 
