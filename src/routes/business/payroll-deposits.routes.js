@@ -3,6 +3,7 @@
 const crypto = require('crypto');
 const router = require('express').Router();
 const { requireOrganisation } = require('../../middleware/organization.middleware');
+const requireRole = require('../../middleware/requireRole');
 
 router.use(requireOrganisation);
 
@@ -73,7 +74,14 @@ router.post('/', async (req, res, next) => {
   }
 });
 
-router.post('/:id/:action', async (req, res, next) => {
+// Approbation, export et confirmation d'un lot de dépôt direct sont des
+// actions de gouvernance financière (le fichier exporté et confirmé
+// déclenche un mouvement de fonds réel) — réservées admin, cohérent avec
+// les routes soeurs de ce même groupe (remises, fins d'emploi, feuillets
+// fiscaux) qui restreignent déjà leurs transitions à ce rôle. Cette route
+// en était l'unique exception : sans ce contrôle, un manager pouvait
+// approuver, exporter et confirmer un lot de dépôt direct.
+router.post('/:id/:action', requireRole('admin'), async (req, res, next) => {
   try {
     const id = positiveId(req.params.id, 'Lot de dépôts');
     const transitions = {
