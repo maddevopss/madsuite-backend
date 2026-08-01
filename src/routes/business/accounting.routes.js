@@ -11,6 +11,8 @@ const accountingTrialBalanceService = require("../../services/business/accountin
 const accountingReconciliationService = require("../../services/business/accounting-reconciliation.service");
 const accountingRemediationService = require("../../services/business/accounting-remediation.service");
 const bankReconciliationService = require("../../services/business/bank-reconciliation.service");
+const accountingFixedAssetsService = require("../../services/business/accounting-fixed-assets.service");
+const taxCodesService = require("../../services/business/tax-codes.service");
 const businessEventService = require("../../services/business/business-event.service");
 const financialProjectionService = require("../../services/business/financial-projection.service");
 const accountingStatementsComparativeService = require("../../services/business/accounting-statements-comparative.service");
@@ -36,6 +38,52 @@ router.post("/accounts", requireRole("admin"), async (req, res, next) => {
     const account = await accountingMasterdataService.createAccount(req.db, req.organisationId, req.body);
     res.status(201).json({ account });
   } catch (error) { next(error); }
+});
+
+router.get("/tax-codes", async (req, res, next) => {
+  try {
+    const taxCodes = await taxCodesService.listTaxCodes(req.db, req.organisationId);
+    return res.json({ taxCodes });
+  } catch (error) { return next(error); }
+});
+
+router.post("/tax-codes", requireRole("admin"), async (req, res, next) => {
+  try {
+    const taxCode = await taxCodesService.createTaxCode(req.db, req.organisationId, { ...req.body, createdBy: req.user?.id });
+    await businessEventService.appendEvent(req.db, {
+      organisationId: req.organisationId,
+      eventType: "accounting.tax_code.created",
+      aggregateType: "tax_code",
+      aggregateId: taxCode.id,
+      actorUserId: req.user?.id,
+      payload: { code: taxCode.code, rate: taxCode.rate, taxType: taxCode.tax_type },
+    });
+    return res.status(201).json({ taxCode });
+  } catch (error) { return next(error); }
+});
+
+router.post("/tax-codes/:id/activate", requireRole("admin"), async (req, res, next) => {
+  try {
+    const taxCode = await taxCodesService.activateTaxCode(req.db, req.organisationId, Number(req.params.id), req.user?.id);
+    await businessEventService.appendEvent(req.db, {
+      organisationId: req.organisationId,
+      eventType: "accounting.tax_code.activated",
+      aggregateType: "tax_code",
+      aggregateId: taxCode.id,
+      actorUserId: req.user?.id,
+      payload: { code: taxCode.code, rate: taxCode.rate },
+    });
+    return res.json({ taxCode });
+  } catch (error) { return next(error); }
+});
+
+router.get("/tax-codes/resolve", async (req, res, next) => {
+  try {
+    if (!req.query.code || !req.query.date) return res.status(400).json({ message: "Le code et la date sont obligatoires." });
+    const taxCode = await taxCodesService.resolveActiveTaxCode(req.db, req.organisationId, req.query.code, req.query.date);
+    if (!taxCode) return res.status(404).json({ message: "Aucun profil de taxe actif pour ce code à cette date." });
+    return res.json({ taxCode });
+  } catch (error) { return next(error); }
 });
 
 router.get("/periods", async (req, res, next) => {
@@ -329,6 +377,68 @@ router.post("/bank-reconciliation/statements/:id/lock", requireRole("admin"), as
         aggregateId: result.statement.id,
         actorUserId: req.user?.id,
         payload: {},
+      });
+    }
+    return res.status(result.duplicate ? 200 : 201).json(result);
+  } catch (error) { return next(error); }
+});
+
+router.get("/fixed-assets", async (req, res, next) => {
+  try {
+    const assets = await accountingFixedAssetsService.listFixedAssets(req.db, req.organisationId);
+    return res.json({ assets });
+  } catch (error) { return next(error); }
+});
+
+router.get("/fixed-assets/:id", async (req, res, next) => {
+  try {
+    const asset = await accountingFixedAssetsService.getFixedAsset(req.db, req.organisationId, Number(req.params.id));
+    if (!asset) return res.status(404).json({ message: "Immobilisation introuvable." });
+    return res.json({ asset });
+  } catch (error) { return next(error); }
+});
+
+router.post("/fixed-assets", requireRole("admin"), async (req, res, next) => {
+  try {
+    const asset = await accountingFixedAssetsService.registerAsset(req.db, req.organisationId, req.body);
+    await businessEventService.appendEvent(req.db, {
+      organisationId: req.organisationId,
+      eventType: "accounting.fixed_asset.registered",
+      aggregateType: "accounting_fixed_asset",
+      aggregateId: asset.id,
+      actorUserId: req.user?.id,
+      payload: { assetNumber: asset.asset_number, acquisitionCost: asset.acquisition_cost },
+    });
+    return res.status(201).json({ asset });
+  } catch (error) { return next(error); }
+});
+
+router.get("/fixed-assets/depreciation-runs", async (req, res, next) => {
+  try {
+    const { rows } = await req.db.query(
+      `SELECT * FROM accounting_depreciation_runs WHERE organisation_id=$1 ORDER BY run_date DESC, id DESC`,
+      [req.organisationId],
+    );
+    return res.json({ runs: rows });
+  } catch (error) { return next(error); }
+});
+
+router.post("/fixed-assets/depreciation-runs", requireRole("admin"), async (req, res, next) => {
+  try {
+    const result = await accountingFixedAssetsService.runDepreciation(req.db, req.organisationId, {
+      runDate: req.body.runDate,
+      periodId: req.body.periodId,
+      idempotencyKey: req.body.idempotencyKey,
+      createdBy: req.user?.id,
+    });
+    if (!result.duplicate) {
+      await businessEventService.appendEvent(req.db, {
+        organisationId: req.organisationId,
+        eventType: "accounting.fixed_asset.depreciation_posted",
+        aggregateType: "accounting_depreciation_run",
+        aggregateId: result.run.id,
+        actorUserId: req.user?.id,
+        payload: { runDate: req.body.runDate, totals: result.totals, entryId: result.entryId },
       });
     }
     return res.status(result.duplicate ? 200 : 201).json(result);

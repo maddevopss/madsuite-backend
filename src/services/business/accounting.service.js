@@ -120,100 +120,6 @@ async function postEntry(db, organisationId, id) {
   return result.rows[0] || null;
 }
 
-async function reverseEntry(db, organisationId, userId, id, reversalDate, reason) {
-  await db.query("BEGIN");
-  try {
-    const original = await db.query(
-      `SELECT e.*, j.code AS journal_code
-       FROM accounting_entries e
-       JOIN accounting_journals j ON j.id = e.journal_id
-       WHERE e.organisation_id = $1 AND e.id = $2 AND e.status = 'posted'
-       FOR UPDATE`,
-      [organisationId, id],
-    );
-    if (!original.rowCount) {
-      throw Object.assign(new Error("Écriture publiée introuvable."), { status: 404 });
-    }
-
-    const lines = await db.query(
-      `SELECT account_id AS "accountId", description, credit AS debit, debit AS credit
-       FROM accounting_entry_lines
-       WHERE organisation_id = $1 AND entry_id = $2
-       ORDER BY id`,
-      [organisationId, id],
-    );
-
-    const reversal = await createEntryWithinTransaction(db, organisationId, userId, {
-      journalId: original.rows[0].journal_id,
-      entryNumber: `REV-${original.rows[0].entry_number}-${Date.now()}`,
-      entryDate: reversalDate,
-      description: reason || `Renversement de ${original.rows[0].entry_number}`,
-      sourceType: "accounting_reversal",
-      sourceId: String(id),
-      lines: lines.rows,
-    });
-
-    await db.query(
-      "UPDATE accounting_entries SET status = 'reversed' WHERE organisation_id = $1 AND id = $2",
-      [organisationId, id],
-    );
-    await db.query(
-      "UPDATE accounting_entries SET status = 'posted', posted_at = NOW() WHERE organisation_id = $1 AND id = $2",
-      [organisationId, reversal.id],
-    );
-
-    await db.query("COMMIT");
-    return reversal;
-  } catch (error) {
-    await db.query("ROLLBACK");
-    throw error;
-  }
-}
-
-async function createEntryWithinTransaction(db, organisationId, userId, payload) {
-  const validated = validateEntryLines(payload.lines);
-  const entry = await db.query(
-    `INSERT INTO accounting_entries
-     (organisation_id, journal_id, entry_number, entry_date, description, source_type, source_id, created_by)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-     RETURNING *`,
-    [organisationId, payload.journalId, payload.entryNumber, payload.entryDate, payload.description,
-      payload.sourceType || null, payload.sourceId || null, userId || null],
-  );
-  for (const line of validated.lines) {
-    await db.query(
-      `INSERT INTO accounting_entry_lines
-       (organisation_id, entry_id, account_id, description, debit, credit)
-       VALUES ($1,$2,$3,$4,$5,$6)`,
-      [organisationId, entry.rows[0].id, line.accountId, line.description || null, line.debit, line.credit],
-    );
-  }
-  return entry.rows[0];
-}
-
-async function ledger(db, organisationId, filters = {}) {
-  const { rows } = await db.query(
-    `SELECT a.code, a.name AS account_name, e.id AS entry_id, e.entry_number, e.entry_date,
-            e.description AS entry_description, l.description AS line_description,
-            l.debit::numeric, l.credit::numeric,
-            SUM(l.debit - l.credit) OVER (
-              PARTITION BY a.id ORDER BY e.entry_date, e.id, l.id
-              ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-            )::numeric AS running_balance
-     FROM accounting_entry_lines l
-     JOIN accounting_entries e ON e.id = l.entry_id AND e.organisation_id = l.organisation_id
-     JOIN accounting_accounts a ON a.id = l.account_id AND a.organisation_id = l.organisation_id
-     WHERE l.organisation_id = $1
-       AND e.status IN ('posted','reversed')
-       AND ($2::bigint IS NULL OR a.id = $2::bigint)
-       AND ($3::date IS NULL OR e.entry_date >= $3::date)
-       AND ($4::date IS NULL OR e.entry_date <= $4::date)
-     ORDER BY a.code, e.entry_date, e.id, l.id`,
-    [organisationId, filters.accountId || null, filters.startDate || null, filters.endDate || null],
-  );
-  return rows;
-}
-
 async function trialBalance(db, organisationId, startDate, endDate) {
   const { rows } = await db.query(
     `SELECT a.id, a.code, a.name, a.account_type,
@@ -253,8 +159,6 @@ module.exports = {
   seedDefaultChart,
   createEntry,
   postEntry,
-  reverseEntry,
-  ledger,
   trialBalance,
   statements,
 };
