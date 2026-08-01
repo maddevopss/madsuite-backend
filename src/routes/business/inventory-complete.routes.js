@@ -1,4 +1,5 @@
 const router = require('express').Router();
+const requireRole = require('../../middleware/requireRole');
 const {
   calculateCountVariance,
   validateCycleCountApproval,
@@ -26,21 +27,19 @@ router.get('/cycle-counts', async (req, res, next) => {
   } catch (error) { return next(error); }
 });
 
-router.post('/cycle-counts/:id/approve', async (req, res, next) => {
-  const client = await req.db.connect();
+router.post('/cycle-counts/:id/approve', requireRole('admin'), async (req, res, next) => {
   try {
-    await client.query('BEGIN');
-    const count = (await client.query('SELECT * FROM inventory_cycle_counts WHERE organisation_id=$1 AND id=$2 FOR UPDATE', [req.organisationId, Number(req.params.id)])).rows[0];
-    if (!count) { await client.query('ROLLBACK'); return res.status(404).json({ code: 'inventory.count.not_found' }); }
-    const items = (await client.query('SELECT * FROM inventory_cycle_count_items WHERE organisation_id=$1 AND cycle_count_id=$2 ORDER BY id', [req.organisationId, count.id])).rows.map((row) => ({ ...row, expectedQuantity: row.expected_quantity, countedQuantity: row.counted_quantity }));
+    const count = (await req.db.query('SELECT * FROM inventory_cycle_counts WHERE organisation_id=$1 AND id=$2 FOR UPDATE', [req.organisationId, Number(req.params.id)])).rows[0];
+    if (!count) return res.status(404).json({ code: 'inventory.count.not_found' });
+    const items = (await req.db.query('SELECT * FROM inventory_cycle_count_items WHERE organisation_id=$1 AND cycle_count_id=$2 ORDER BY id', [req.organisationId, count.id])).rows.map((row) => ({ ...row, expectedQuantity: row.expected_quantity, countedQuantity: row.counted_quantity }));
     const decision = validateCycleCountApproval({ status: count.status, items, evidence: req.body.evidence || [], decisionReason: req.body.decisionReason });
-    if (!decision.allowed) { await client.query('ROLLBACK'); return res.status(400).json(decision); }
+    if (!decision.allowed) return res.status(400).json(decision);
     const varianceValue = items.reduce((sum, item) => sum + calculateCountVariance({ expectedQuantity: item.expected_quantity, countedQuantity: item.counted_quantity, unitCost: item.unit_cost }).varianceValue, 0);
-    const updated = (await client.query("UPDATE inventory_cycle_counts SET status='approved',approved_by=$3,approved_at=NOW(),variance_value=$4,evidence=$5,decision_reason=$6 WHERE organisation_id=$1 AND id=$2 RETURNING *", [req.organisationId,count.id,actor(req),varianceValue,req.body.evidence||[],req.body.decisionReason||null])).rows[0];
-    await client.query(`INSERT INTO inventory_status_events (organisation_id,aggregate_type,aggregate_id,from_status,to_status,reason,evidence,created_by) VALUES ($1,'cycle_count',$2,$3,'approved',$4,$5,$6)`, [req.organisationId,count.id,count.status,req.body.decisionReason||null,req.body.evidence||[],actor(req)]);
-    await client.query('COMMIT');
+    const evidenceJson = JSON.stringify(req.body.evidence || []);
+    const updated = (await req.db.query("UPDATE inventory_cycle_counts SET status='approved',approved_by=$3,approved_at=NOW(),variance_value=$4,evidence=$5,decision_reason=$6 WHERE organisation_id=$1 AND id=$2 RETURNING *", [req.organisationId,count.id,actor(req),varianceValue,evidenceJson,req.body.decisionReason||null])).rows[0];
+    await req.db.query(`INSERT INTO inventory_status_events (organisation_id,aggregate_type,aggregate_id,from_status,to_status,reason,evidence,created_by) VALUES ($1,'cycle_count',$2,$3,'approved',$4,$5,$6)`, [req.organisationId,count.id,count.status,req.body.decisionReason||null,evidenceJson,actor(req)]);
     return res.json({ cycleCount: updated });
-  } catch (error) { await client.query('ROLLBACK'); return next(error); } finally { client.release(); }
+  } catch (error) { return next(error); }
 });
 
 router.get('/lots', async (req, res, next) => {
