@@ -288,6 +288,36 @@ router.post("/bank-reconciliation/lines/:id/unmatch", requireRole("admin"), asyn
   } catch (error) { return next(error); }
 });
 
+router.get("/bank-reconciliation/statements/:id/suggested-matches", async (req, res, next) => {
+  try {
+    const suggestions = await bankReconciliationService.suggestMatches(req.db, req.organisationId, Number(req.params.id), {
+      dateWindowDays: req.query.dateWindowDays ? Number(req.query.dateWindowDays) : undefined,
+    });
+    return res.json({ suggestions });
+  } catch (error) { return next(error); }
+});
+
+router.post("/bank-reconciliation/statements/:id/apply-suggested-matches", requireRole("admin"), async (req, res, next) => {
+  try {
+    const result = await bankReconciliationService.applySuggestedMatches(req.db, req.organisationId, Number(req.params.id), {
+      confirmedByHuman: req.body.confirmedByHuman,
+      matchedBy: req.user?.id,
+      dateWindowDays: req.body.dateWindowDays,
+    });
+    if (result.appliedCount > 0) {
+      await businessEventService.appendEvent(req.db, {
+        organisationId: req.organisationId,
+        eventType: "accounting.bank_statement.auto_matched",
+        aggregateType: "bank_statement",
+        aggregateId: Number(req.params.id),
+        actorUserId: req.user?.id,
+        payload: { appliedCount: result.appliedCount, skippedCount: result.skippedCount },
+      });
+    }
+    return res.json(result);
+  } catch (error) { return next(error); }
+});
+
 router.post("/bank-reconciliation/statements/:id/lock", requireRole("admin"), async (req, res, next) => {
   try {
     const result = await bankReconciliationService.lockStatement(req.db, req.organisationId, Number(req.params.id), req.user?.id);
