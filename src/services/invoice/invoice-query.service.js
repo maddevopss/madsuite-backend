@@ -59,9 +59,9 @@ async function listUnbilledExpenses({ clientId, organisationId }) {
     `
     SELECT
       e.id,
-      e.montant as amount,
+      e.amount,
       e.description,
-      e.date_depense as date,
+      e.expense_date as date,
       p.nom AS projet_nom
     FROM expenses e
     JOIN projets p ON p.id = e.projet_id
@@ -69,7 +69,7 @@ async function listUnbilledExpenses({ clientId, organisationId }) {
       AND e.is_billed = FALSE
       AND e.deleted_at IS NULL
       ${orgFilter}
-    ORDER BY e.date_depense ASC
+    ORDER BY e.expense_date ASC
     `,
     params,
   );

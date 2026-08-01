@@ -3,13 +3,26 @@ const router = require("express").Router();
 const { requireOrganisation } = require("../../middleware/organization.middleware");
 const requireRole = require("../../middleware/requireRole");
 const payrollService = require("../../services/business/payroll-transaction.service");
-const { buildPayrollJournal } = require("../../services/business/payroll-accounting.service");
+const { buildPayrollJournal, postPayrollJournal } = require("../../services/business/payroll-accounting.service");
+const { reversePostedEntry } = require("../../services/business/accounting-reversal-governance.service");
 const { buildPayStub, buildPayrollRegister } = require("../../services/business/payroll-documents.service");
+const { registerCsv, payStubsCsv } = require("../../services/business/payroll-export.service");
 const payrollRemittancesRoutes = require("./payroll-remittances.routes");
+const payrollLifecycleRoutes = require("./payroll-lifecycle.routes");
+const { checksumRules } = require("../../services/business/payroll-run-lifecycle.service");
+const { appendEvent, listEvents } = require("../../services/business/business-event.service");
 
 router.use(requireOrganisation);
-router.use(requireRole("admin"));
 router.use("/remittances", payrollRemittancesRoutes);
+router.use("/", payrollLifecycleRoutes);
+
+// Séparation préparateur/approbateur (#318, #363) : la préparation (saisie,
+// calcul) reste ouverte à admin/manager, mais les actions de gouvernance
+// (verrouillage de période, approbation, paiement, comptabilisation,
+// correction) exigent le rôle admin — un manager qui prépare un cycle ne
+// peut pas se l'auto-approuver.
+const preparer = requireRole("admin", "manager");
+const approver = requireRole("admin");
 
 function positiveId(value, label) {
   const id = Number(value);
@@ -17,26 +30,36 @@ function positiveId(value, label) {
   return id;
 }
 
-router.get("/employees", async (req, res, next) => {
+// legal_first_name/legal_last_name sont NOT NULL en base mais l'UI ne collecte
+// qu'un seul champ "nom légal" (legalName) : on le scinde côté serveur.
+function splitLegalName(legalName) {
+  const trimmed = String(legalName || "").trim();
+  const spaceIndex = trimmed.indexOf(" ");
+  if (spaceIndex === -1) return { firstName: trimmed, lastName: trimmed };
+  return { firstName: trimmed.slice(0, spaceIndex), lastName: trimmed.slice(spaceIndex + 1).trim() };
+}
+
+router.get("/employees", preparer, async (req, res, next) => {
   try {
     const { rows } = await req.db.query("SELECT * FROM payroll_employees WHERE organisation_id=$1 ORDER BY legal_name", [req.organisationId]);
     return res.json({ employees: rows });
   } catch (error) { return next(error); }
 });
 
-router.post("/employees", async (req, res, next) => {
+router.post("/employees", preparer, async (req, res, next) => {
   try {
     const body = req.body || {};
     if (!body.employeeNumber || !body.legalName || !body.hireDate || !["hourly", "salary"].includes(body.payType)) return res.status(400).json({ message: "Les renseignements essentiels de l’employé sont invalides." });
     if (body.payType === "hourly" && Number(body.hourlyRate) <= 0) return res.status(400).json({ message: "Le taux horaire doit être supérieur à zéro." });
     if (body.payType === "salary" && Number(body.annualSalary) <= 0) return res.status(400).json({ message: "Le salaire annuel doit être supérieur à zéro." });
-    const { rows } = await req.db.query(`INSERT INTO payroll_employees (organisation_id,user_id,employee_number,legal_name,hire_date,pay_type,hourly_rate,annual_salary,province,tax_profile,employment_status,pay_frequency,expense_account_id,payable_account_id,effective_from) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$5) RETURNING *`, [req.organisationId, body.userId || null, body.employeeNumber, body.legalName, body.hireDate, body.payType, body.hourlyRate || null, body.annualSalary || null, body.province || "QC", body.taxProfile || {}, body.employmentStatus || "active", body.payFrequency || "biweekly", body.expenseAccountId || null, body.payableAccountId || null]);
-    await req.db.query(`INSERT INTO payroll_compensation_history (organisation_id,employee_id,effective_from,pay_type,hourly_rate,annual_salary,pay_frequency,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [req.organisationId, rows[0].id, body.hireDate, body.payType, body.hourlyRate || null, body.annualSalary || null, body.payFrequency || "biweekly", req.user?.id || null]);
+    const { firstName, lastName } = splitLegalName(body.legalName);
+    const { rows } = await req.db.query(`INSERT INTO payroll_employees (organisation_id,user_id,employee_number,legal_name,legal_first_name,legal_last_name,hire_date,pay_type,hourly_rate,annual_salary,province,tax_profile,employment_status,pay_frequency,expense_account_id,payable_account_id,compensation_effective_from) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$7) RETURNING *`, [req.organisationId, body.userId || null, body.employeeNumber, body.legalName, firstName, lastName, body.hireDate, body.payType, body.hourlyRate || null, body.annualSalary || null, body.province || "QC", body.taxProfile || {}, body.employmentStatus || "active", body.payFrequency || "biweekly", body.expenseAccountId || null, body.payableAccountId || null]);
+    await req.db.query(`INSERT INTO payroll_compensation_history (organisation_id,employee_id,effective_from,pay_type,hourly_rate,annual_salary,pay_frequency,reason,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [req.organisationId, rows[0].id, body.hireDate, body.payType, body.hourlyRate || null, body.annualSalary || null, body.payFrequency || "biweekly", "Embauche", req.user?.id || null]);
     return res.status(201).json({ employee: rows[0] });
   } catch (error) { return next(error); }
 });
 
-router.patch("/employees/:id", async (req, res, next) => {
+router.patch("/employees/:id", preparer, async (req, res, next) => {
   try {
     const id = positiveId(req.params.id, "Employé");
     const body = req.body || {};
@@ -48,16 +71,16 @@ router.patch("/employees/:id", async (req, res, next) => {
     if (payType === "hourly" && Number(hourlyRate) <= 0) return res.status(400).json({ message: "Le taux horaire doit être supérieur à zéro." });
     if (payType === "salary" && Number(annualSalary) <= 0) return res.status(400).json({ message: "Le salaire annuel doit être supérieur à zéro." });
     const effectiveFrom = body.effectiveFrom || new Date().toISOString().slice(0, 10);
-    const { rows } = await req.db.query(`UPDATE payroll_employees SET legal_name=COALESCE($3,legal_name),employment_status=COALESCE($4,employment_status),termination_date=COALESCE($5,termination_date),pay_type=$6,hourly_rate=$7,annual_salary=$8,pay_frequency=COALESCE($9,pay_frequency),expense_account_id=COALESCE($10,expense_account_id),payable_account_id=COALESCE($11,payable_account_id),effective_from=$12,updated_at=NOW() WHERE organisation_id=$1 AND id=$2 RETURNING *`, [req.organisationId, id, body.legalName || null, body.employmentStatus || null, body.terminationDate || null, payType, payType === "hourly" ? hourlyRate : null, payType === "salary" ? annualSalary : null, body.payFrequency || null, body.expenseAccountId || null, body.payableAccountId || null, effectiveFrom]);
-    await req.db.query(`INSERT INTO payroll_compensation_history (organisation_id,employee_id,effective_from,pay_type,hourly_rate,annual_salary,pay_frequency,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, [req.organisationId, id, effectiveFrom, payType, payType === "hourly" ? hourlyRate : null, payType === "salary" ? annualSalary : null, rows[0].pay_frequency, req.user?.id || null]);
+    const { rows } = await req.db.query(`UPDATE payroll_employees SET legal_name=COALESCE($3,legal_name),employment_status=COALESCE($4,employment_status),termination_date=COALESCE($5,termination_date),pay_type=$6,hourly_rate=$7,annual_salary=$8,pay_frequency=COALESCE($9,pay_frequency),expense_account_id=COALESCE($10,expense_account_id),payable_account_id=COALESCE($11,payable_account_id),compensation_effective_from=$12,updated_at=NOW() WHERE organisation_id=$1 AND id=$2 RETURNING *`, [req.organisationId, id, body.legalName || null, body.employmentStatus || null, body.terminationDate || null, payType, payType === "hourly" ? hourlyRate : null, payType === "salary" ? annualSalary : null, body.payFrequency || null, body.expenseAccountId || null, body.payableAccountId || null, effectiveFrom]);
+    await req.db.query(`INSERT INTO payroll_compensation_history (organisation_id,employee_id,effective_from,pay_type,hourly_rate,annual_salary,pay_frequency,reason,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [req.organisationId, id, effectiveFrom, payType, payType === "hourly" ? hourlyRate : null, payType === "salary" ? annualSalary : null, rows[0].pay_frequency, "Mise à jour de la rémunération", req.user?.id || null]);
     return res.json({ employee: rows[0] });
   } catch (error) { return next(error); }
 });
 
-router.get("/periods", async (req, res, next) => {
+router.get("/periods", preparer, async (req, res, next) => {
   try { const { rows } = await req.db.query("SELECT * FROM payroll_periods WHERE organisation_id=$1 ORDER BY period_start DESC", [req.organisationId]); return res.json({ periods: rows }); } catch (error) { return next(error); }
 });
-router.post("/periods", async (req, res, next) => {
+router.post("/periods", preparer, async (req, res, next) => {
   try {
     const body = req.body || {};
     if (!["weekly", "biweekly", "semimonthly", "monthly"].includes(body.frequency) || !body.periodStart || !body.periodEnd || !body.payDate) return res.status(400).json({ message: "La fréquence et les dates de la période sont obligatoires." });
@@ -65,14 +88,14 @@ router.post("/periods", async (req, res, next) => {
     return res.status(201).json({ period: rows[0] });
   } catch (error) { return next(error); }
 });
-router.post("/periods/:id/lock", async (req, res, next) => {
+router.post("/periods/:id/lock", approver, async (req, res, next) => {
   try { const id = positiveId(req.params.id, "Période"); const { rows } = await req.db.query(`UPDATE payroll_periods SET status='locked',locked_at=NOW(),locked_by=$3 WHERE organisation_id=$1 AND id=$2 AND status='open' RETURNING *`, [req.organisationId, id, req.user?.id || null]); if (!rows[0]) return res.status(409).json({ message: "La période est introuvable ou déjà verrouillée." }); return res.json({ period: rows[0] }); } catch (error) { return next(error); }
 });
 
-router.get("/periods/:id/inputs", async (req, res, next) => {
+router.get("/periods/:id/inputs", preparer, async (req, res, next) => {
   try { const id = positiveId(req.params.id, "Période"); const { rows } = await req.db.query(`SELECT i.*,e.employee_number,e.legal_name FROM payroll_variable_inputs i JOIN payroll_employees e ON e.id=i.employee_id AND e.organisation_id=i.organisation_id WHERE i.organisation_id=$1 AND i.payroll_period_id=$2 ORDER BY e.legal_name,i.id`, [req.organisationId, id]); return res.json({ inputs: rows }); } catch (error) { return next(error); }
 });
-router.post("/periods/:id/inputs", async (req, res, next) => {
+router.post("/periods/:id/inputs", preparer, async (req, res, next) => {
   try {
     const periodId = positiveId(req.params.id, "Période"); const employeeId = positiveId(req.body?.employeeId, "Employé");
     const type = req.body?.inputType; const allowed = ["regular_hours", "overtime_hours", "paid_leave", "unpaid_leave", "bonus", "commission", "taxable_benefit", "reimbursement", "adjustment"];
@@ -83,23 +106,161 @@ router.post("/periods/:id/inputs", async (req, res, next) => {
   } catch (error) { return next(error); }
 });
 
-router.get("/rulesets", async (req, res, next) => { try { const { rows } = await req.db.query(`SELECT id,version,province,effective_from,effective_to,status,checksum,created_at FROM payroll_rulesets WHERE organisation_id=$1 ORDER BY effective_from DESC`, [req.organisationId]); return res.json({ rulesets: rows }); } catch (error) { return next(error); } });
-router.post("/rulesets", async (req, res, next) => { try { const body = req.body || {}; if (!body.version || !body.effectiveFrom || !body.rules || typeof body.rules !== "object") return res.status(400).json({ message: "Version, date d’effet et règles sont obligatoires." }); const checksum = crypto.createHash("sha256").update(JSON.stringify(body.rules)).digest("hex"); const { rows } = await req.db.query(`INSERT INTO payroll_rulesets (organisation_id,version,province,effective_from,effective_to,rules,checksum,status,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`, [req.organisationId, body.version, body.province || "QC", body.effectiveFrom, body.effectiveTo || null, body.rules, checksum, body.status || "draft", req.user?.id || null]); return res.status(201).json({ ruleset: rows[0] }); } catch (error) { return next(error); } });
+router.get("/rulesets", preparer, async (req, res, next) => { try { const { rows } = await req.db.query(`SELECT id,version,province,effective_from,effective_to,status,checksum,created_at FROM payroll_rulesets WHERE organisation_id=$1 ORDER BY effective_from DESC`, [req.organisationId]); return res.json({ rulesets: rows }); } catch (error) { return next(error); } });
+router.post("/rulesets", preparer, async (req, res, next) => { try { const body = req.body || {}; if (!body.version || !body.effectiveFrom || !body.rules || typeof body.rules !== "object") return res.status(400).json({ message: "Version, date d’effet et règles sont obligatoires." }); const checksum = checksumRules(body.rules); const { rows } = await req.db.query(`INSERT INTO payroll_rulesets (organisation_id,version,province,effective_from,effective_to,rules,checksum,status,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`, [req.organisationId, body.version, body.province || "QC", body.effectiveFrom, body.effectiveTo || null, body.rules, checksum, body.status || "draft", req.user?.id || null]); return res.status(201).json({ ruleset: rows[0] }); } catch (error) { return next(error); } });
 
-router.get("/runs", async (req, res, next) => { try { const { rows } = await req.db.query(`SELECT r.*,rs.version AS ruleset_version FROM payroll_runs r LEFT JOIN payroll_rulesets rs ON rs.id=r.ruleset_id AND rs.organisation_id=r.organisation_id WHERE r.organisation_id=$1 ORDER BY r.period_end DESC`, [req.organisationId]); return res.json({ runs: rows }); } catch (error) { return next(error); } });
-router.post("/runs", async (req, res, next) => { try { const body = req.body || {}; if (!body.periodStart || !body.periodEnd || !body.payDate || !body.rulesetId) return res.status(400).json({ message: "La période, la date de paiement et le jeu de règles sont obligatoires." }); const { rows } = await req.db.query(`INSERT INTO payroll_runs (organisation_id,period_start,period_end,pay_date,ruleset_id,ruleset_version) SELECT $1,$2,$3,$4,id,version FROM payroll_rulesets WHERE organisation_id=$1 AND id=$5 AND status='active' RETURNING *`, [req.organisationId, body.periodStart, body.periodEnd, body.payDate, body.rulesetId]); if (!rows[0]) return res.status(409).json({ message: "Le jeu de règles doit être actif." }); return res.status(201).json({ run: rows[0] }); } catch (error) { return next(error); } });
-router.get("/runs/:id", async (req, res, next) => { try { const id = positiveId(req.params.id, "Cycle"); const run = await req.db.query(`SELECT * FROM payroll_runs WHERE organisation_id=$1 AND id=$2`, [req.organisationId, id]); if (!run.rows[0]) return res.status(404).json({ message: "Cycle de paie introuvable." }); const lines = await req.db.query(`SELECT l.*,e.employee_number,e.legal_name FROM payroll_run_lines l JOIN payroll_employees e ON e.id=l.employee_id AND e.organisation_id=l.organisation_id WHERE l.organisation_id=$1 AND l.payroll_run_id=$2 ORDER BY e.legal_name`, [req.organisationId, id]); return res.json({ run: run.rows[0], lines: lines.rows }); } catch (error) { return next(error); } });
-router.post("/runs/:id/calculate", async (req, res, next) => { try { const result = await payrollService.calculateRun({ organisationId: req.organisationId, runId: positiveId(req.params.id, "Cycle"), entries: req.body?.entries || [], idempotencyKey: req.body?.idempotencyKey, createdBy: req.user?.id }); if (!result) return res.status(404).json({ message: "Cycle de paie introuvable." }); return res.status(result.duplicate ? 200 : 201).json(result); } catch (error) { return next(error); } });
-for (const action of ["approve", "pay", "void"]) router.post(`/runs/:id/${action}`, async (req, res, next) => { try { const result = await payrollService.transitionRun({ organisationId: req.organisationId, runId: positiveId(req.params.id, "Cycle"), action, reason: req.body?.reason, idempotencyKey: req.body?.idempotencyKey, createdBy: req.user?.id }); if (!result) return res.status(404).json({ message: "Cycle de paie introuvable." }); return res.status(201).json(result); } catch (error) { return next(error); } });
+router.get("/runs", preparer, async (req, res, next) => { try { const { rows } = await req.db.query(`SELECT r.*,rs.version AS ruleset_version FROM payroll_runs r LEFT JOIN payroll_rulesets rs ON rs.id=r.ruleset_id AND rs.organisation_id=r.organisation_id WHERE r.organisation_id=$1 ORDER BY r.period_end DESC`, [req.organisationId]); return res.json({ runs: rows }); } catch (error) { return next(error); } });
+router.post("/runs", preparer, async (req, res, next) => { try { const body = req.body || {}; if (!body.periodStart || !body.periodEnd || !body.payDate || !body.rulesetId) return res.status(400).json({ message: "La période, la date de paiement et le jeu de règles sont obligatoires." }); const { rows } = await req.db.query(`INSERT INTO payroll_runs (organisation_id,period_start,period_end,pay_date,ruleset_id,ruleset_version) SELECT $1,$2,$3,$4,id,version FROM payroll_rulesets WHERE organisation_id=$1 AND id=$5 AND status='active' RETURNING *`, [req.organisationId, body.periodStart, body.periodEnd, body.payDate, body.rulesetId]); if (!rows[0]) return res.status(409).json({ message: "Le jeu de règles doit être actif." }); return res.status(201).json({ run: rows[0] }); } catch (error) { return next(error); } });
+router.get("/runs/:id", preparer, async (req, res, next) => { try { const id = positiveId(req.params.id, "Cycle"); const run = await req.db.query(`SELECT * FROM payroll_runs WHERE organisation_id=$1 AND id=$2`, [req.organisationId, id]); if (!run.rows[0]) return res.status(404).json({ message: "Cycle de paie introuvable." }); const lines = await req.db.query(`SELECT l.*,e.employee_number,e.legal_name FROM payroll_run_lines l JOIN payroll_employees e ON e.id=l.employee_id AND e.organisation_id=l.organisation_id WHERE l.organisation_id=$1 AND l.payroll_run_id=$2 ORDER BY e.legal_name`, [req.organisationId, id]); return res.json({ run: run.rows[0], lines: lines.rows }); } catch (error) { return next(error); } });
+router.post("/runs/:id/calculate", preparer, async (req, res, next) => { try { const result = await payrollService.calculateRun({ organisationId: req.organisationId, runId: positiveId(req.params.id, "Cycle"), entries: req.body?.entries || [], idempotencyKey: req.body?.idempotencyKey, createdBy: req.user?.id }); if (!result) return res.status(404).json({ message: "Cycle de paie introuvable." }); return res.status(result.duplicate ? 200 : 201).json(result); } catch (error) { return next(error); } });
+for (const action of ["approve", "pay", "void"]) router.post(`/runs/:id/${action}`, approver, async (req, res, next) => { try { const result = await payrollService.transitionRun({ organisationId: req.organisationId, runId: positiveId(req.params.id, "Cycle"), action, reason: req.body?.reason, idempotencyKey: req.body?.idempotencyKey, createdBy: req.user?.id }); if (!result) return res.status(404).json({ message: "Cycle de paie introuvable." }); return res.status(201).json(result); } catch (error) { return next(error); } });
 
-router.get("/runs/:id/pay-stubs", async (req, res, next) => {
-  try { const id = positiveId(req.params.id, "Cycle"); const run = await req.db.query("SELECT * FROM payroll_runs WHERE organisation_id=$1 AND id=$2", [req.organisationId, id]); if (!run.rows[0]) return res.status(404).json({ message: "Cycle de paie introuvable." }); const lines = await req.db.query(`SELECT l.*,e.employee_number,e.legal_name FROM payroll_run_lines l JOIN payroll_employees e ON e.id=l.employee_id AND e.organisation_id=l.organisation_id WHERE l.organisation_id=$1 AND l.payroll_run_id=$2 ORDER BY e.legal_name`, [req.organisationId, id]); return res.json({ payStubs: lines.rows.map((line) => buildPayStub({ run: run.rows[0], employee: line, line, canViewSensitive: true })) }); } catch (error) { return next(error); }
+// Un employé (rôle 'employe') peut consulter ses propres talons de paie, jamais
+// ceux d'un collègue : contrairement aux autres routes, ni admin/manager ni
+// employe n'est bloqué en amont — le filtrage par payroll_employees.user_id se
+// fait après la requête, dans le handler.
+function allowPreparerOrSelf(req, res, next) {
+  if (["admin", "manager", "employe"].includes(req.user?.role)) return next();
+  return res.status(403).json({ message: "Permissions insuffisantes" });
+}
+
+router.get("/runs/:id/pay-stubs", allowPreparerOrSelf, async (req, res, next) => {
+  try {
+    const id = positiveId(req.params.id, "Cycle");
+    const run = await req.db.query("SELECT * FROM payroll_runs WHERE organisation_id=$1 AND id=$2", [req.organisationId, id]);
+    if (!run.rows[0]) return res.status(404).json({ message: "Cycle de paie introuvable." });
+    const lines = await req.db.query(`SELECT l.*,e.employee_number,e.legal_name,e.user_id FROM payroll_run_lines l JOIN payroll_employees e ON e.id=l.employee_id AND e.organisation_id=l.organisation_id WHERE l.organisation_id=$1 AND l.payroll_run_id=$2 ORDER BY e.legal_name`, [req.organisationId, id]);
+    const isSelfService = !["admin", "manager"].includes(req.user?.role);
+    const visibleLines = isSelfService ? lines.rows.filter((line) => String(line.user_id) === String(req.user.id)) : lines.rows;
+    if (isSelfService && visibleLines.length === 0) return res.status(403).json({ message: "Vous ne pouvez consulter que votre propre talon de paie." });
+    return res.json({ payStubs: visibleLines.map((line) => buildPayStub({ organisationId: req.organisationId, run: run.rows[0], employee: line, line })) });
+  } catch (error) { return next(error); }
 });
-router.get("/runs/:id/register", async (req, res, next) => {
-  try { const id = positiveId(req.params.id, "Cycle"); const run = await req.db.query("SELECT * FROM payroll_runs WHERE organisation_id=$1 AND id=$2", [req.organisationId, id]); if (!run.rows[0]) return res.status(404).json({ message: "Cycle de paie introuvable." }); const lines = await req.db.query(`SELECT l.*,e.employee_number,e.legal_name FROM payroll_run_lines l JOIN payroll_employees e ON e.id=l.employee_id AND e.organisation_id=l.organisation_id WHERE l.organisation_id=$1 AND l.payroll_run_id=$2 ORDER BY e.legal_name`, [req.organisationId, id]); return res.json({ register: buildPayrollRegister({ run: run.rows[0], lines: lines.rows }) }); } catch (error) { return next(error); }
+router.get("/runs/:id/register", preparer, async (req, res, next) => {
+  try { const id = positiveId(req.params.id, "Cycle"); const run = await req.db.query("SELECT * FROM payroll_runs WHERE organisation_id=$1 AND id=$2", [req.organisationId, id]); if (!run.rows[0]) return res.status(404).json({ message: "Cycle de paie introuvable." }); const lines = await req.db.query(`SELECT l.*,e.employee_number,e.legal_name FROM payroll_run_lines l JOIN payroll_employees e ON e.id=l.employee_id AND e.organisation_id=l.organisation_id WHERE l.organisation_id=$1 AND l.payroll_run_id=$2 ORDER BY e.legal_name`, [req.organisationId, id]); return res.json({ register: buildPayrollRegister({ organisationId: req.organisationId, run: run.rows[0], lines: lines.rows }) }); } catch (error) { return next(error); }
 });
-router.post("/runs/:id/accounting-preview", async (req, res, next) => {
+
+// Export contrôlé (#318, Sprint 7) : réservé au palier préparateur/approbateur, jamais
+// au libre-service employé — un CSV regroupe les talons de tout le monde sur le cycle.
+router.get("/runs/:id/register/export.csv", preparer, async (req, res, next) => {
+  try {
+    const id = positiveId(req.params.id, "Cycle");
+    const run = await req.db.query("SELECT * FROM payroll_runs WHERE organisation_id=$1 AND id=$2", [req.organisationId, id]);
+    if (!run.rows[0]) return res.status(404).json({ message: "Cycle de paie introuvable." });
+    const lines = await req.db.query(`SELECT l.*,e.employee_number,e.legal_name FROM payroll_run_lines l JOIN payroll_employees e ON e.id=l.employee_id AND e.organisation_id=l.organisation_id WHERE l.organisation_id=$1 AND l.payroll_run_id=$2 ORDER BY e.legal_name`, [req.organisationId, id]);
+    const register = buildPayrollRegister({ organisationId: req.organisationId, run: run.rows[0], lines: lines.rows });
+    return res.type("text/csv").set("Content-Disposition", "attachment; filename=registre-paie.csv").send(registerCsv(register));
+  } catch (error) { return next(error); }
+});
+router.get("/runs/:id/pay-stubs/export.csv", preparer, async (req, res, next) => {
+  try {
+    const id = positiveId(req.params.id, "Cycle");
+    const run = await req.db.query("SELECT * FROM payroll_runs WHERE organisation_id=$1 AND id=$2", [req.organisationId, id]);
+    if (!run.rows[0]) return res.status(404).json({ message: "Cycle de paie introuvable." });
+    const lines = await req.db.query(`SELECT l.*,e.employee_number,e.legal_name FROM payroll_run_lines l JOIN payroll_employees e ON e.id=l.employee_id AND e.organisation_id=l.organisation_id WHERE l.organisation_id=$1 AND l.payroll_run_id=$2 ORDER BY e.legal_name`, [req.organisationId, id]);
+    const payStubs = lines.rows.map((line) => buildPayStub({ organisationId: req.organisationId, run: run.rows[0], employee: line, line }));
+    return res.type("text/csv").set("Content-Disposition", "attachment; filename=talons-paie.csv").send(payStubsCsv(payStubs));
+  } catch (error) { return next(error); }
+});
+router.post("/runs/:id/accounting-preview", preparer, async (req, res, next) => {
   try { const id = positiveId(req.params.id, "Cycle"); const { rows } = await req.db.query("SELECT * FROM payroll_runs WHERE organisation_id=$1 AND id=$2 AND status IN ('approved','paid')", [req.organisationId, id]); if (!rows[0]) return res.status(409).json({ message: "Le cycle doit être approuvé avant sa comptabilisation." }); return res.json({ journal: buildPayrollJournal({ run: rows[0], expenseAccountId: req.body?.expenseAccountId, payableAccountId: req.body?.payableAccountId, deductionLiabilityAccountId: req.body?.deductionLiabilityAccountId, contributionExpenseAccountId: req.body?.contributionExpenseAccountId, contributionLiabilityAccountId: req.body?.contributionLiabilityAccountId }) }); } catch (error) { return next(error); }
+});
+router.post("/runs/:id/post-accounting", approver, async (req, res, next) => {
+  try {
+    const id = positiveId(req.params.id, "Cycle");
+    const { rows } = await req.db.query("SELECT * FROM payroll_runs WHERE organisation_id=$1 AND id=$2 AND status IN ('approved','paid')", [req.organisationId, id]);
+    if (!rows[0]) return res.status(409).json({ message: "Le cycle doit être approuvé avant sa comptabilisation." });
+    const result = await postPayrollJournal(req.db, {
+      organisationId: req.organisationId,
+      run: rows[0],
+      userId: req.user?.id,
+      expenseAccountId: req.body?.expenseAccountId,
+      payableAccountId: req.body?.payableAccountId,
+      deductionLiabilityAccountId: req.body?.deductionLiabilityAccountId,
+      contributionExpenseAccountId: req.body?.contributionExpenseAccountId,
+      contributionLiabilityAccountId: req.body?.contributionLiabilityAccountId,
+    });
+    return res.status(result.duplicate ? 200 : 201).json(result);
+  } catch (error) { return next(error); }
+});
+
+// Un cycle payé ne peut plus être annulé par /void (réservé à avant paiement) : sa
+// correction renverse son écriture comptable publiée de façon non destructive (même
+// gouvernance que /accounting/entries/:id/reverse) et marque le cycle 'corrected'
+// plutôt que de le laisser 'paid' avec une écriture renversée en silence.
+router.post("/runs/:id/correct", approver, async (req, res, next) => {
+  try {
+    const id = positiveId(req.params.id, "Cycle");
+    const idempotencyKey = req.body?.idempotencyKey;
+    if (!idempotencyKey || String(idempotencyKey).trim().length < 8) {
+      return res.status(400).json({ message: "Une clé d’idempotence valide est obligatoire." });
+    }
+
+    const existing = await req.db.query(
+      "SELECT * FROM payroll_runs WHERE organisation_id=$1 AND id=$2 AND correction_idempotency_key=$3",
+      [req.organisationId, id, idempotencyKey],
+    );
+    if (existing.rows[0]) return res.status(200).json({ duplicate: true, run: existing.rows[0] });
+
+    const { rows } = await req.db.query("SELECT * FROM payroll_runs WHERE organisation_id=$1 AND id=$2 FOR UPDATE", [req.organisationId, id]);
+    const run = rows[0];
+    if (!run) return res.status(404).json({ message: "Cycle de paie introuvable." });
+    if (run.status !== "paid") return res.status(409).json({ message: "Seul un cycle payé peut faire l’objet d’une correction." });
+    if (!run.accounting_entry_id) return res.status(409).json({ message: "Ce cycle n’a pas d’écriture comptable publiée à renverser." });
+
+    const reversal = await reversePostedEntry({
+      organisationId: req.organisationId,
+      entryId: run.accounting_entry_id,
+      reversalDate: req.body?.reversalDate || new Date().toISOString().slice(0, 10),
+      reason: req.body?.reason,
+      idempotencyKey: `payroll-correction:${req.organisationId}:${run.id}:${idempotencyKey}`,
+      confirmedByHuman: req.body?.confirmedByHuman,
+      reversedBy: req.user?.id,
+    });
+    if (!reversal) return res.status(409).json({ message: "Écriture comptable introuvable pour ce cycle." });
+
+    const { rows: corrected } = await req.db.query(
+      `UPDATE payroll_runs SET status='corrected', corrected_at=NOW(), corrected_by=$3, correction_reason=$4, correction_idempotency_key=$5
+       WHERE organisation_id=$1 AND id=$2 RETURNING *`,
+      [req.organisationId, id, req.user?.id || null, req.body?.reason, idempotencyKey],
+    );
+    if (!reversal.duplicate) {
+      await appendEvent(req.db, {
+        organisationId: req.organisationId,
+        eventType: "payroll.run.corrected",
+        aggregateType: "payroll_run",
+        aggregateId: id,
+        actorUserId: req.user?.id,
+        payload: { reason: req.body?.reason, reversalEntryId: reversal.reversal?.id || null },
+      });
+    }
+    return res.status(201).json({ run: corrected[0], reversal });
+  } catch (error) { return next(error); }
+});
+
+// Journal d'approbation (#318, Sprint 7) : historique horodaté des transitions
+// (calcul, approbation, paiement, correction) d'un cycle, reconstitué depuis les
+// événements métier déjà émis par calculateRun/transitionRun/la correction ci-dessus.
+router.get("/runs/:id/events", preparer, async (req, res, next) => {
+  try {
+    const id = positiveId(req.params.id, "Cycle");
+    const events = await listEvents(req.db, req.organisationId, { aggregateType: "payroll_run", aggregateId: id });
+    return res.json({ events });
+  } catch (error) { return next(error); }
+});
+
+// Historique des modifications de rémunération (#318, Sprint 7) : chaque
+// embauche/ajustement salarial laisse une trace en base depuis POST/PATCH
+// /employees, mais n'était jusqu'ici consultable par aucune route.
+router.get("/employees/:id/compensation-history", preparer, async (req, res, next) => {
+  try {
+    const id = positiveId(req.params.id, "Employé");
+    const { rows } = await req.db.query(
+      `SELECT * FROM payroll_compensation_history WHERE organisation_id=$1 AND employee_id=$2 ORDER BY effective_from DESC, id DESC`,
+      [req.organisationId, id],
+    );
+    return res.json({ history: rows });
+  } catch (error) { return next(error); }
 });
 
 module.exports = router;

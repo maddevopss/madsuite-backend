@@ -8,12 +8,29 @@ function badRequest(message) {
   return Object.assign(new Error(message), { statusCode: 400 });
 }
 
+// JSONB ne préserve pas l'ordre des clés : un JSON.stringify direct sur l'objet
+// tel que soumis puis sur l'objet relu depuis la base ne produit pas la même
+// chaîne. Stringify canonique (clés triées, récursif) pour que le checksum
+// survive à l'aller-retour PostgreSQL.
+function canonicalStringify(value) {
+  if (Array.isArray(value)) return `[${value.map(canonicalStringify).join(",")}]`;
+  if (value && typeof value === "object") {
+    const keys = Object.keys(value).sort();
+    return `{${keys.map((key) => `${JSON.stringify(key)}:${canonicalStringify(value[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function checksumRules(rules) {
+  return crypto.createHash("sha256").update(canonicalStringify(rules || {})).digest("hex");
+}
+
 function validateRulesetForActivation(ruleset) {
   if (!ruleset) throw badRequest("Jeu de règles introuvable.");
   if (!ruleset.version || !ruleset.province || !ruleset.effective_from) {
     throw badRequest("Le jeu de règles est incomplet.");
   }
-  const expected = crypto.createHash("sha256").update(JSON.stringify(ruleset.rules || {})).digest("hex");
+  const expected = checksumRules(ruleset.rules);
   if (!ruleset.checksum || ruleset.checksum !== expected) {
     throw badRequest("L’empreinte du jeu de règles est invalide.");
   }
@@ -95,4 +112,4 @@ async function createRunFromPeriod(db, { organisationId, periodId, idempotencyKe
   return { duplicate: false, run: created.rows[0] };
 }
 
-module.exports = { validateRulesetForActivation, activateRuleset, createRunFromPeriod };
+module.exports = { validateRulesetForActivation, activateRuleset, createRunFromPeriod, checksumRules };

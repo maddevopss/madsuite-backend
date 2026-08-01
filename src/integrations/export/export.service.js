@@ -66,11 +66,11 @@ async function exportExpensesToCSV(organisationId, { startDate, endDate } = {}) 
 
   if (startDate) {
     params.push(startDate);
-    conditions.push(`e.date_depense >= $${params.length}::date`);
+    conditions.push(`e.expense_date >= $${params.length}::date`);
   }
   if (endDate) {
     params.push(endDate);
-    conditions.push(`e.date_depense <= $${params.length}::date`);
+    conditions.push(`e.expense_date <= $${params.length}::date`);
   }
 
   const query = `
@@ -78,8 +78,8 @@ async function exportExpensesToCSV(organisationId, { startDate, endDate } = {}) 
       e.id AS "ExpenseID",
       p.nom AS "ProjectName",
       c.nom AS "CustomerName",
-      e.date_depense AS "Date",
-      e.montant AS "Amount",
+      e.expense_date AS "Date",
+      e.amount AS "Amount",
       e.description AS "Description",
       e.is_billed AS "IsBilled",
       e.invoice_id AS "InvoiceID",
@@ -88,7 +88,7 @@ async function exportExpensesToCSV(organisationId, { startDate, endDate } = {}) 
     LEFT JOIN projets p ON e.projet_id = p.id AND p.organisation_id = $1
     LEFT JOIN clients c ON p.client_id = c.id AND c.organisation_id = $1
     WHERE ${conditions.join(" AND ")}
-    ORDER BY e.date_depense DESC, e.id DESC
+    ORDER BY e.expense_date DESC, e.id DESC
   `;
 
   const result = await db.query(query, params);

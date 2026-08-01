@@ -73,7 +73,11 @@ async function calculateRun({ organisationId, runId, entries = [], idempotencyKe
       if (run.status !== "draft") throw Object.assign(new Error("Seul un cycle en brouillon peut être calculé."), { statusCode: 409 });
 
       const employees = await client.query(`SELECT * FROM payroll_employees WHERE organisation_id=$1 AND is_active=TRUE AND hire_date <= $2 AND (termination_date IS NULL OR termination_date >= $3)`, [orgId, run.period_end, run.period_start]);
-      const storedInputs = await client.query(`SELECT i.* FROM payroll_variable_inputs i JOIN payroll_periods p ON p.id=i.payroll_period_id AND p.organisation_id=i.organisation_id WHERE i.organisation_id=$1 AND p.period_start=$2 AND p.period_end=$3 ORDER BY i.employee_id,i.id`, [orgId, run.period_start, run.period_end]);
+      // Préfère la référence explicite payroll_period_id (créée via /periods/:id/runs) ;
+      // se rabat sur l'égalité de dates pour les cycles créés par l'ancienne route POST /runs.
+      const storedInputs = run.payroll_period_id
+        ? await client.query(`SELECT i.* FROM payroll_variable_inputs i WHERE i.organisation_id=$1 AND i.payroll_period_id=$2 ORDER BY i.employee_id,i.id`, [orgId, run.payroll_period_id])
+        : await client.query(`SELECT i.* FROM payroll_variable_inputs i JOIN payroll_periods p ON p.id=i.payroll_period_id AND p.organisation_id=i.organisation_id WHERE i.organisation_id=$1 AND p.period_start=$2 AND p.period_end=$3 ORDER BY i.employee_id,i.id`, [orgId, run.period_start, run.period_end]);
       const byEmployee = new Map();
       for (const row of storedInputs.rows) {
         const key = Number(row.employee_id); const list = byEmployee.get(key) || []; list.push(row); byEmployee.set(key, list);
@@ -90,12 +94,12 @@ async function calculateRun({ organisationId, runId, entries = [], idempotencyKe
         deductions += Object.values(line.deductions).reduce((a, b) => a + Number(b), 0);
         employer += Object.values(line.employerContributions).reduce((a, b) => a + Number(b), 0);
         const trace = { employeeId: employee.id, rulesetVersion: run.ruleset_version, source, result: line };
-        await client.query(`INSERT INTO payroll_run_lines (organisation_id,payroll_run_id,employee_id,regular_hours,overtime_hours,gross_pay,deductions,employer_contributions,net_pay,calculation_trace,source_snapshot,ruleset_version,calculation_checksum) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT (organisation_id,payroll_run_id,employee_id) DO UPDATE SET regular_hours=EXCLUDED.regular_hours,overtime_hours=EXCLUDED.overtime_hours,gross_pay=EXCLUDED.gross_pay,deductions=EXCLUDED.deductions,employer_contributions=EXCLUDED.employer_contributions,net_pay=EXCLUDED.net_pay,calculation_trace=EXCLUDED.calculation_trace,source_snapshot=EXCLUDED.source_snapshot,ruleset_version=EXCLUDED.ruleset_version,calculation_checksum=EXCLUDED.calculation_checksum`, [orgId, run.id, employee.id, line.regularHours, line.overtimeHours, line.grossPay, line.deductions, line.employerContributions, line.netPay, trace, source, run.ruleset_version, checksum(trace)]);
+        await client.query(`INSERT INTO payroll_run_lines (organisation_id,payroll_run_id,employee_id,regular_hours,overtime_hours,gross_pay,deductions,employer_contributions,net_pay,calculation_trace,source_snapshot,ruleset_version,calculation_checksum) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT (organisation_id,payroll_run_id,employee_id) DO UPDATE SET regular_hours=EXCLUDED.regular_hours,overtime_hours=EXCLUDED.overtime_hours,gross_pay=EXCLUDED.gross_pay,deductions=EXCLUDED.deductions,employer_contributions=EXCLUDED.employer_contributions,net_pay=EXCLUDED.net_pay,calculation_trace=EXCLUDED.calculation_trace,source_snapshot=EXCLUDED.source_snapshot,ruleset_version=EXCLUDED.ruleset_version,calculation_checksum=EXCLUDED.calculation_checksum`, [orgId, run.id, employee.id, line.regularHours, line.overtimeHours, line.grossPay, JSON.stringify(line.deductions), JSON.stringify(line.employerContributions), line.netPay, JSON.stringify(trace), JSON.stringify(source), run.ruleset_version, checksum(trace)]);
       }
       if (!employees.rows.length) throw Object.assign(new Error("Aucun employé actif pour cette période."), { statusCode: 409 });
 
       const totals = { gross: money(gross), reimbursements: money(reimbursements), deductions: money(deductions), employerContributions: money(employer), net: money(net) };
-      const updated = await client.query(`UPDATE payroll_runs SET status='calculated',totals=$1,idempotency_key=$2,calculated_at=NOW(),ct_mad_transaction_id=$3,correlation_id=$4 WHERE organisation_id=$5 AND id=$6 RETURNING *`, [totals, idempotencyKey, transactionId, correlationId, orgId, run.id]);
+      const updated = await client.query(`UPDATE payroll_runs SET status='calculated',totals=$1,idempotency_key=$2,calculated_at=NOW(),ct_mad_transaction_id=$3,correlation_id=$4 WHERE organisation_id=$5 AND id=$6 RETURNING *`, [JSON.stringify(totals), idempotencyKey, transactionId, correlationId, orgId, run.id]);
       await client.query(`UPDATE payroll_periods SET status='locked',locked_at=NOW(),locked_by=$1 WHERE organisation_id=$2 AND period_start=$3 AND period_end=$4 AND status='open'`, [actorUserId, orgId, run.period_start, run.period_end]);
       const event = await appendEvent(client, { organisationId: orgId, eventType: "payroll.run.calculated", aggregateType: "payroll_run", aggregateId: run.id, actorUserId, correlationId, payload: { totals, rulesetVersion: run.ruleset_version } });
       const trust = await persistTrustAssessment(client, { organisationId: orgId, transactionId, correlationId, checks: [{ code: "payroll.ruleset_versioned", passed: Boolean(run.ruleset_version), evidence: [{ version: run.ruleset_version }] }, { code: "payroll.lines_calculated", passed: employees.rows.length > 0, evidence: [{ employeeCount: employees.rows.length }] }, { code: "payroll.inputs_locked", passed: true, evidence: [{ periodStart: run.period_start, periodEnd: run.period_end }] }] });
@@ -114,7 +118,10 @@ async function transitionRun({ organisationId, runId, action, reason, idempotenc
     if (expected && run.status !== expected) throw Object.assign(new Error(`Le cycle doit être ${expected}.`), { statusCode: 409 });
     if (action === "void" && run.status === "paid") throw Object.assign(new Error("Un cycle payé doit être renversé par un processus de paiement distinct."), { statusCode: 409 });
     const status = action === "approve" ? "approved" : action === "pay" ? "paid" : "void";
-    const fields = action === "approve" ? "approved_at=NOW(),approved_by=$1" : action === "pay" ? "paid_at=NOW(),paid_by=$1" : "voided_at=NOW(),voided_by=$1,void_reason=$5";
+    // $5 (reason) doit être référencé dans les trois branches : sinon Postgres
+    // ne peut pas déterminer son type de paramètre puisque $6/$7 sont utilisés
+    // plus loin ("could not determine data type of parameter $5").
+    const fields = action === "approve" ? "approved_at=NOW(),approved_by=$1,void_reason=COALESCE($5,void_reason)" : action === "pay" ? "paid_at=NOW(),paid_by=$1,void_reason=COALESCE($5,void_reason)" : "voided_at=NOW(),voided_by=$1,void_reason=$5";
     const updated = await client.query(`UPDATE payroll_runs SET status=$2,${fields},ct_mad_transaction_id=$3,correlation_id=$4 WHERE organisation_id=$6 AND id=$7 RETURNING *`, [actorUserId, status, transactionId, correlationId, reason || null, orgId, runId]);
     const event = await appendEvent(client, { organisationId: orgId, eventType: `payroll.run.${status}`, aggregateType: "payroll_run", aggregateId: runId, actorUserId, correlationId, payload: { reason: reason || null, totals: run.totals } });
     const trust = await persistTrustAssessment(client, { organisationId: orgId, transactionId, correlationId, checks: [{ code: `payroll.${status}`, passed: updated.rows[0].status === status, evidence: [{ status }] }] });

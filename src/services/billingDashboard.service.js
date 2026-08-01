@@ -43,7 +43,18 @@ function mapBillableGroupRows(rows, idKey, nameKey) {
 async function getBillingDashboard({ organisationId, userId, role }) {
   const timezone = await getTimezone(organisationId);
   const isAdmin = role === "admin";
-  const localToday = `(NOW() AT TIME ZONE '${timezone}')::date`;
+  // issue_date/due_date sont des colonnes DATE (sans heure) : elles sont saisies/
+  // comparées sans notion de fuseau, donc calées sur CURRENT_DATE (date locale du
+  // serveur), jamais sur NOW() AT TIME ZONE tz — sinon, dans la fenêtre où le
+  // fuseau de l'organisation et celui de la session PostgreSQL ne s'accordent pas
+  // sur le jour courant, une facture datée d'aujourd'hui tombe dans un mois
+  // différent de celui généré par la série glissante ci-dessous et disparaît
+  // silencieusement du rapport mensuel.
+  const localToday = "CURRENT_DATE";
+  const dateMonthStart = "date_trunc('month', CURRENT_DATE)::date";
+  const dateNextMonthStart = `(${dateMonthStart} + INTERVAL '1 month')::date`;
+  // created_at est un timestamptz : là, la conversion au fuseau de l'organisation
+  // reste légitime pour délimiter "ce mois-ci" du point de vue de l'utilisateur.
   const monthStart = `(date_trunc('month', NOW() AT TIME ZONE '${timezone}') AT TIME ZONE '${timezone}')`;
   const nextMonthStart = `(${monthStart} + INTERVAL '1 month')`;
 
@@ -99,8 +110,8 @@ async function getBillingDashboard({ organisationId, userId, role }) {
   const outstandingInvoices = buildInvoiceQuery(["i.status = 'sent'"]);
   const financialTopClients = buildInvoiceQuery(["i.status IN ('sent', 'paid')"]);
   const monthlyRevenue = buildInvoiceQuery(["i.status = 'paid'"]);
-  monthlyRevenue.conditions.push(`i.issue_date >= (${monthStart} - INTERVAL '5 months')`);
-  monthlyRevenue.conditions.push(`i.issue_date < ${nextMonthStart}`);
+  monthlyRevenue.conditions.push(`i.issue_date >= (${dateMonthStart} - INTERVAL '5 months')`);
+  monthlyRevenue.conditions.push(`i.issue_date < ${dateNextMonthStart}`);
 
   const amountExpression = `
     (EXTRACT(EPOCH FROM (te.end_time - te.start_time)) / 3600)
@@ -300,8 +311,8 @@ async function getBillingDashboard({ organisationId, userId, role }) {
       `
       WITH months AS (
         SELECT generate_series(
-          date_trunc('month', NOW() AT TIME ZONE '${timezone}') - INTERVAL '5 months',
-          date_trunc('month', NOW() AT TIME ZONE '${timezone}'),
+          ${dateMonthStart} - INTERVAL '5 months',
+          ${dateMonthStart},
           INTERVAL '1 month'
         )::date AS month
       ), paid AS (
