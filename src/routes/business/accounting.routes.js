@@ -12,6 +12,7 @@ const accountingReconciliationService = require("../../services/business/account
 const accountingRemediationService = require("../../services/business/accounting-remediation.service");
 const accountingFixedAssetsService = require("../../services/business/accounting-fixed-assets.service");
 const taxCodesService = require("../../services/business/tax-codes.service");
+const taxRemittanceService = require("../../services/business/tax-remittance.service");
 const businessEventService = require("../../services/business/business-event.service");
 const financialProjectionService = require("../../services/business/financial-projection.service");
 const accountingStatementsComparativeService = require("../../services/business/accounting-statements-comparative.service");
@@ -82,6 +83,44 @@ router.get("/tax-codes/resolve", async (req, res, next) => {
     const taxCode = await taxCodesService.resolveActiveTaxCode(req.db, req.organisationId, req.query.code, req.query.date);
     if (!taxCode) return res.status(404).json({ message: "Aucun profil de taxe actif pour ce code à cette date." });
     return res.json({ taxCode });
+  } catch (error) { return next(error); }
+});
+
+router.get("/tax-filing-periods", async (req, res, next) => {
+  try {
+    const periods = await taxRemittanceService.listTaxFilingPeriods(req.db, req.organisationId);
+    return res.json({ periods });
+  } catch (error) { return next(error); }
+});
+
+router.post("/tax-filing-periods", requireRole("admin"), async (req, res, next) => {
+  try {
+    const period = await taxRemittanceService.createTaxFilingPeriod(req.db, req.organisationId, { ...req.body, createdBy: req.user?.id });
+    return res.status(201).json({ period });
+  } catch (error) { return next(error); }
+});
+
+router.get("/tax-filing-periods/:id/remittance-report", async (req, res, next) => {
+  try {
+    const result = await taxRemittanceService.getTaxRemittanceReport(req.db, req.organisationId, Number(req.params.id));
+    return res.json(result);
+  } catch (error) { return next(error); }
+});
+
+router.post("/tax-filing-periods/:id/file", requireRole("admin"), async (req, res, next) => {
+  try {
+    const result = await taxRemittanceService.fileTaxPeriod(req.db, req.organisationId, Number(req.params.id), req.user?.id);
+    if (!result.duplicate) {
+      await businessEventService.appendEvent(req.db, {
+        organisationId: req.organisationId,
+        eventType: "accounting.tax_filing_period.filed",
+        aggregateType: "tax_filing_period",
+        aggregateId: result.period.id,
+        actorUserId: req.user?.id,
+        payload: { netAmount: result.period.net_amount, periodStart: result.period.period_start, periodEnd: result.period.period_end },
+      });
+    }
+    return res.status(result.duplicate ? 200 : 201).json(result);
   } catch (error) { return next(error); }
 });
 
