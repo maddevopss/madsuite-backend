@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 
 const db = require("../../../db");
+const dbStore = require("../../utils/dbStore");
 const { organisationValue } = require("../../utils/organisationScope");
 const { getEstimateById } = require("./estimate-query.service");
 const { recordBusinessAudit } = require("../auditLog.service");
@@ -61,6 +62,7 @@ async function createEstimatePublicLink({ estimateId, organisationId, createdBy,
   const client = await db.pool.connect();
   try {
     await client.query("BEGIN");
+    await client.query("SELECT set_config('app.current_organisation_id', $1, true)", [String(organisationValue(organisationId))]);
     const estimateResult = await client.query(
       `SELECT id, status, estimate_number
        FROM estimates
@@ -161,41 +163,65 @@ async function getEstimatePublicLinkStatus({ estimateId, organisationId }) {
 
 async function getPublicEstimateContextByToken(token) {
   if (!isValidPublicEstimateToken(token)) return null;
-  const result = await db.query(
-    `SELECT l.id AS link_id, l.organisation_id, l.estimate_id, l.expires_at,
-            o.nom AS organisation_name, d.decision, d.signer_name, d.decided_at
-     FROM estimate_public_links l
-     JOIN estimates e ON e.id = l.estimate_id AND e.organisation_id = l.organisation_id
-     JOIN organisations o ON o.id = l.organisation_id
-     LEFT JOIN estimate_public_decisions d
-       ON d.estimate_id = l.estimate_id AND d.organisation_id = l.organisation_id
-     WHERE l.token_hash = $1
-       AND l.revoked_at IS NULL
-       AND l.expires_at > NOW()
-       AND e.deleted_at IS NULL
-       AND e.status IN ('sent', 'accepted', 'rejected', 'invoiced')
-     LIMIT 1`,
-    [hashPublicToken(token)],
-  );
-  const row = result.rows[0];
-  if (!row) return null;
-  const estimate = await getEstimateById(row.estimate_id, row.organisation_id);
-  if (!estimate) return null;
-  db.query("UPDATE estimate_public_links SET last_accessed_at = NOW() WHERE id = $1", [row.link_id]).catch(() => {});
-  const decision = row.decision ? {
-    decision: row.decision,
-    signer_name: row.signer_name,
-    decided_at: row.decided_at,
-  } : null;
-  return {
-    type: "estimate",
-    linkId: row.link_id,
-    organisationId: row.organisation_id,
-    organisationName: row.organisation_name,
-    expiresAt: row.expires_at,
-    estimate,
-    publicDocument: buildPublicEstimateDocument(estimate, decision),
-  };
+
+  // Même principe que le portail facture : résolution jeton → organisation
+  // via une fonction SECURITY DEFINER étroite, jamais par une lecture directe
+  // bloquée par RLS FORCE.
+  const resolved = await db.query(`SELECT * FROM resolve_estimate_public_link($1)`, [hashPublicToken(token)]);
+  const link = resolved.rows[0];
+  if (!link) return null;
+
+  const client = await db.pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT set_config('app.current_organisation_id', $1, true)", [String(link.organisation_id)]);
+
+    const detail = await client.query(
+      `SELECT o.nom AS organisation_name, d.decision, d.signer_name, d.decided_at
+       FROM estimates e
+       JOIN organisations o ON o.id = e.organisation_id
+       LEFT JOIN estimate_public_decisions d ON d.estimate_id = e.id AND d.organisation_id = e.organisation_id
+       WHERE e.id = $1 AND e.organisation_id = $2 AND e.deleted_at IS NULL
+         AND e.status IN ('sent', 'accepted', 'rejected', 'invoiced')`,
+      [link.estimate_id, link.organisation_id],
+    );
+    const row = detail.rows[0];
+    if (!row) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+
+    const estimate = await dbStore.run(
+      { dbClient: client, organisationId: link.organisation_id },
+      () => getEstimateById(link.estimate_id, link.organisation_id),
+    );
+    if (!estimate) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+
+    await client.query("COMMIT");
+
+    const decision = row.decision ? {
+      decision: row.decision,
+      signer_name: row.signer_name,
+      decided_at: row.decided_at,
+    } : null;
+    return {
+      type: "estimate",
+      linkId: link.link_id,
+      organisationId: link.organisation_id,
+      organisationName: row.organisation_name,
+      expiresAt: link.expires_at,
+      estimate,
+      publicDocument: buildPublicEstimateDocument(estimate, decision),
+    };
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch (_) {}
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 async function decidePublicEstimate({ token, decision, signerName, consentConfirmed, clientIp }) {
@@ -221,6 +247,7 @@ async function decidePublicEstimate({ token, decision, signerName, consentConfir
   const client = await db.pool.connect();
   try {
     await client.query("BEGIN");
+    await client.query("SELECT set_config('app.current_organisation_id', $1, true)", [String(context.organisationId)]);
     const locked = await client.query(
       `SELECT id, status FROM estimates
        WHERE id = $1 AND organisation_id = $2 AND deleted_at IS NULL

@@ -50,7 +50,7 @@ router.get('/', (req, res, next) => handle(res, next, async () => {
   addCommonPaginationClauses({ clauses, values, page, alias: 'l' });
   values.push(page.limit + 1);
 
-  const rows = (await db.pool.query(`
+  const rows = (await db.query(`
     SELECT l.*, r.risk_number, r.title AS risk_title,
            p.process_number, p.name AS process_name,
            cp.plan_number, cp.title AS plan_title

@@ -67,6 +67,17 @@ class StripeReconciliationService {
         return { status: "invoice_not_found" };
       }
 
+      // invoices est sous RLS FORCE : le webhook ne connaît que l'invoice_id, pas
+      // encore l'organisation. Résolution cross-tenant étroite via fonction
+      // SECURITY DEFINER, puis set_config avant toute lecture applicative.
+      const orgRes = await txClient.query(`SELECT resolve_invoice_organisation($1) AS org_id`, [invoiceId]);
+      const resolvedOrgId = orgRes.rows[0]?.org_id;
+      if (!resolvedOrgId) {
+        await txClient.query("COMMIT");
+        return { status: "invoice_not_found" };
+      }
+      await txClient.query("SELECT set_config('app.current_organisation_id', $1, true)", [String(resolvedOrgId)]);
+
       const invoiceRes = await txClient.query(
         `SELECT id, organisation_id, total, status
          FROM invoices

@@ -29,6 +29,7 @@ async function convertToInvoice({ estimateId, organisationId, billedBy, idempote
   let committedInvoice;
   try {
     await txClient.query("BEGIN");
+    await txClient.query("SELECT set_config('app.current_organisation_id', $1, true)", [String(organisationValue(organisationId))]);
     const sameCommand = await txClient.query(
       `SELECT * FROM invoices
         WHERE organisation_id = $1 AND idempotency_key = $2

@@ -87,7 +87,11 @@ if (service && !service.includes("BCRYPT_SALT_ROUNDS")) {
   violations.push("masteradmin service must hash password with configured BCRYPT_SALT_ROUNDS.");
 }
 
-if (service && !service.includes("WHERE email = $1 AND deleted_at IS NULL")) {
+if (
+  service &&
+  !service.includes("WHERE email = $1 AND deleted_at IS NULL") &&
+  !service.includes("auth_find_user_by_email")
+) {
   violations.push("masteradmin service must check duplicate active emails.");
 }
 

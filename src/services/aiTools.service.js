@@ -278,6 +278,9 @@ async function createInvoiceTool(organisationId, args) {
   const clientTx = await db.pool.connect();
   try {
     await clientTx.query("BEGIN");
+    // invoices/invoice_items sont sous RLS FORCE : sans ce GUC, l'INSERT échoue sa
+    // politique WITH CHECK (organisation_id doit correspondre au GUC de session).
+    await clientTx.query("SELECT set_config('app.current_organisation_id', $1, true)", [String(organisationId)]);
     const invoiceNumber = await invoiceService.getNextInvoiceNumber(organisationId, clientTx);
     const subtotal = parseFloat(amount);
     

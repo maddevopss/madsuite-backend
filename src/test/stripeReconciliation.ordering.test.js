@@ -57,11 +57,15 @@ describe("StripeReconciliationService — ordre des événements P0", () => {
       // failed event
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ rowCount: 1 })
+      .mockResolvedValueOnce({ rowCount: 1, rows: [{ org_id: 5 }] })
+      .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ rows: [invoice("sent")] })
       .mockResolvedValueOnce({})
       // succeeded event
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ rowCount: 1 })
+      .mockResolvedValueOnce({ rowCount: 1, rows: [{ org_id: 5 }] })
+      .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ rows: [invoice("sent")] })
       .mockResolvedValueOnce({ rowCount: 1, rows: [{ id: 77 }] })
       .mockResolvedValueOnce({ rowCount: 1 })
@@ -94,6 +98,8 @@ describe("StripeReconciliationService — ordre des événements P0", () => {
     mockQuery
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ rowCount: 1 })
+      .mockResolvedValueOnce({ rowCount: 1, rows: [{ org_id: 5 }] })
+      .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ rows: [invoice("paid")] })
       .mockResolvedValueOnce({});
 
@@ -119,6 +125,8 @@ describe("StripeReconciliationService — ordre des événements P0", () => {
     mockQuery
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ rowCount: 1 })
+      .mockResolvedValueOnce({ rowCount: 1, rows: [{ org_id: 5 }] })
+      .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ rows: [invoice("paid")] })
       .mockResolvedValueOnce({});
 

@@ -36,6 +36,7 @@ async function decideApproval({ organisationId, approvalId, decision, reason, ac
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
+    await client.query("SELECT set_config('app.current_organisation_id', $1, true)", [String(organisationId)]);
     const approval = (await client.query(`SELECT a.*,p.require_distinct_requester FROM supplier_bill_approvals a
       JOIN supplier_approval_policies p ON p.organisation_id=a.organisation_id AND p.id=a.policy_id
       WHERE a.organisation_id=$1 AND a.id=$2 FOR UPDATE`, [organisationId,approvalId])).rows[0];
@@ -54,6 +55,7 @@ async function createPaymentBatch({ organisationId, payload, actorUserId }) {
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
+    await client.query("SELECT set_config('app.current_organisation_id', $1, true)", [String(organisationId)]);
     const duplicate = (await client.query('SELECT * FROM supplier_payment_batches WHERE organisation_id=$1 AND idempotency_key=$2', [organisationId,payload.idempotencyKey])).rows[0];
     if (duplicate) { await client.query('COMMIT'); return { duplicate: true, batch: duplicate }; }
     const batch = (await client.query(`INSERT INTO supplier_payment_batches

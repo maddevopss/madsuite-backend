@@ -22,34 +22,11 @@ async function processSecurityBuffer() {
   try {
     await client.query("BEGIN");
 
-    const result = await client.query(`
-      WITH locked_incidents AS (
-        SELECT
-          sib.id,
-          sib.utilisateur_id,
-          sib.type,
-          sib.details
-        FROM security_incidents_buffer sib
-        WHERE sib.notified_at IS NULL
-        ORDER BY sib.id
-        FOR UPDATE OF sib SKIP LOCKED
-      )
-      SELECT
-        li.utilisateur_id,
-        u.email,
-        u.nom,
-        array_agg(li.id ORDER BY li.id) AS incident_ids,
-        json_agg(
-          json_build_object(
-            'type', li.type,
-            'details', li.details
-          )
-          ORDER BY li.id
-        ) AS incidents
-      FROM locked_incidents li
-      JOIN utilisateurs u ON u.id = li.utilisateur_id
-      GROUP BY li.utilisateur_id, u.email, u.nom
-    `);
+    // utilisateurs est sous RLS FORCE : ce job traite les incidents de toutes
+    // les organisations en lot, sans contexte d'organisation unique.
+    // Résolution + verrouillage via fonction SECURITY DEFINER dédiée plutôt
+    // qu'une jointure directe bloquée par RLS.
+    const result = await client.query(`SELECT * FROM lock_pending_security_incidents()`);
 
     if (result.rowCount === 0) {
       await client.query("COMMIT");
@@ -89,9 +66,8 @@ async function processSecurityBuffer() {
 
       await client.query(
         `INSERT INTO business_audit_logs (organisation_id, action, entity_type, entity_id, details)
-         SELECT organisation_id, 'system.security_summary_sent', 'utilisateur', id, $2::jsonb
-         FROM utilisateurs WHERE id = $1`,
-        [row.utilisateur_id, JSON.stringify({ count: row.incidents.length })],
+         VALUES ($1, 'system.security_summary_sent', 'utilisateur', $2, $3::jsonb)`,
+        [row.organisation_id, row.utilisateur_id, JSON.stringify({ count: row.incidents.length })],
       );
     }
 

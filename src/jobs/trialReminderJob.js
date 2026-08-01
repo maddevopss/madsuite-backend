@@ -17,14 +17,10 @@ async function checkAndSendTrialReminders() {
     }
 
     // 2. Near expiry (2 days)
-    const nearResult = await client.query(`
-      SELECT o.id as org_id, o.nom as org_nom, o.trial_ends_at, u.email as admin_email, u.nom as admin_nom
-      FROM organisations o
-      JOIN utilisateurs u ON u.organisation_id = o.id AND u.role_org = 'admin'
-      WHERE o.trial_ends_at IS NOT NULL
-        AND o.trial_ends_at::date = (NOW() + INTERVAL '2 days')::date
-        AND u.deleted_at IS NULL
-    `);
+    // utilisateurs est sous RLS FORCE : ce job traite toutes les organisations
+    // en lot, sans contexte d'organisation unique. Résolution via fonction
+    // SECURITY DEFINER dédiée plutôt qu'une jointure directe bloquée par RLS.
+    const nearResult = await client.query(`SELECT * FROM list_trial_reminder_admins()`);
 
     for (const row of nearResult.rows) {
       logger.info(`Envoi de l'alerte de fin d'essai à ${row.admin_email} pour l'organisation ${row.org_nom}`);

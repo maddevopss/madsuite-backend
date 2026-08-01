@@ -61,6 +61,8 @@ describe("StripeReconciliationService — validation montant et devise P0", () =
     mockQuery
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ rowCount: 1 })
+      .mockResolvedValueOnce({ rowCount: 1, rows: [{ org_id: 7 }] })
+      .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ rowCount: 1, rows: [invoice()] })
       .mockResolvedValueOnce({});
 
@@ -91,6 +93,8 @@ describe("StripeReconciliationService — validation montant et devise P0", () =
     mockQuery
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ rowCount: 1 })
+      .mockResolvedValueOnce({ rowCount: 1, rows: [{ org_id: 7 }] })
+      .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ rowCount: 1, rows: [invoice()] })
       .mockResolvedValueOnce({});
 

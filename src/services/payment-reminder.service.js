@@ -130,6 +130,7 @@ async function sendReminder({ invoiceId, organisationId, stage, mode = "manual",
   const client = await db.pool.connect();
   try {
     await client.query("BEGIN");
+    await client.query("SELECT set_config('app.current_organisation_id', $1, true)", [String(organisationValue(organisationId))]);
     const invoice = await getInvoiceCandidate({ invoiceId, organisationId, client });
     if (!invoice) {
       await client.query("ROLLBACK");

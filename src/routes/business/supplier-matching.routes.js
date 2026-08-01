@@ -1,8 +1,11 @@
 const router = require('express').Router();
 const db = require('../../../db');
+const { requireOrganisation } = require('../../middleware/organization.middleware');
 const requireRole = require('../../middleware/requireRole');
 const service = require('../../services/business/supplier-matching.service');
 const supplierApprovalPaymentRoutes = require('./supplier-approval-payment.routes');
+
+router.use(requireOrganisation);
 
 router.use('/approval-payments', supplierApprovalPaymentRoutes);
 
@@ -40,7 +43,7 @@ router.post('/exceptions/:exceptionId/resolve', requireRole('admin'), async (req
 router.get('/exceptions', async (req, res, next) => {
   try {
     const status = req.query.status || 'open';
-    const { rows } = await db.pool.query(`SELECT e.*, b.bill_number, s.name supplier_name FROM supplier_matching_exceptions e
+    const { rows } = await db.query(`SELECT e.*, b.bill_number, s.name supplier_name FROM supplier_matching_exceptions e
       JOIN supplier_bills b ON b.organisation_id=e.organisation_id AND b.id=e.supplier_bill_id
       JOIN suppliers s ON s.organisation_id=b.organisation_id AND s.id=b.supplier_id
       WHERE e.organisation_id=$1 AND ($2='' OR e.status=$2) ORDER BY e.created_at DESC`, [req.organisationId, status]);
