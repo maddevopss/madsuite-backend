@@ -29,6 +29,7 @@ const db = require("../../db");
 const { createTestOrganisation } = require("./helpers/testData");
 const { activateRuleset, createRunFromPeriod, checksumRules } = require("../services/business/payroll-run-lifecycle.service");
 const { calculateRun, transitionRun } = require("../services/business/payroll-transaction.service");
+const { buildPaymentBatch } = require("../services/business/payroll-direct-deposit.service");
 
 jest.mock("../services/business/trust-persistence.service", () => ({
   persistTrustAssessment: jest.fn().mockResolvedValue({ assessmentId: 1 }),
@@ -118,6 +119,20 @@ async function setupApprovedRun(suffix) {
   return { orgId: org.id, run: approved.run };
 }
 
+// Reproduit exactement la canonicalisation serveur (payroll-deposits.routes.js)
+// pour soumettre une empreinte de fichier réellement valide dans les tests.
+async function computeExpectedFileHash(organisationId, payrollRunId) {
+  const lines = await db.pool.query(
+    `SELECT employee_id, net_pay FROM payroll_run_lines
+      WHERE organisation_id=$1 AND payroll_run_id=$2
+      ORDER BY employee_id`,
+    [organisationId, payrollRunId],
+  );
+  return buildPaymentBatch(
+    lines.rows.map((line) => ({ employeeId: Number(line.employee_id), amount: line.net_pay })),
+  ).fileHash;
+}
+
 describe("Dépôt direct — cycle complet (domaine 4)", () => {
   let app;
 
@@ -189,6 +204,9 @@ describe("Dépôt direct — cycle complet (domaine 4)", () => {
     const managerApprove = await request(app).post(`/api/payroll/remittances/deposits/${id}/approve`).set("x-test-role", "manager");
     expect(managerApprove.status).toBe(403);
 
+    // 409 ici même si le lot n'est pas encore approuvé : la vérification
+    // d'empreinte s'exécute avant la transition d'état et "abc123" ne
+    // correspond de toute façon pas aux paiements réels du lot.
     const exportBeforeApprove = await request(app).post(`/api/payroll/remittances/deposits/${id}/export`).set("x-test-role", "admin")
       .send({ fileHash: "abc123" });
     expect(exportBeforeApprove.status).toBe(409);
@@ -200,11 +218,21 @@ describe("Dépôt direct — cycle complet (domaine 4)", () => {
     const exportWithoutHash = await request(app).post(`/api/payroll/remittances/deposits/${id}/export`).set("x-test-role", "admin").send({});
     expect(exportWithoutHash.status).toBe(400);
 
+    // Une empreinte qui ne correspond pas aux paiements réels du lot
+    // (fichier corrompu, tronqué ou substitué) doit être refusée, et le lot
+    // doit rester "approved" — l'export ne doit pas avoir eu lieu.
+    const exportWithWrongHash = await request(app).post(`/api/payroll/remittances/deposits/${id}/export`).set("x-test-role", "admin")
+      .send({ fileHash: "sha256:wrong-hash-does-not-match" });
+    expect(exportWithWrongHash.status).toBe(409);
+    const stillApproved = await db.pool.query("SELECT status FROM payroll_payment_batches WHERE id=$1", [id]);
+    expect(stillApproved.rows[0].status).toBe("approved");
+
+    const realFileHash = await computeExpectedFileHash(orgId, run.id);
     const exported = await request(app).post(`/api/payroll/remittances/deposits/${id}/export`).set("x-test-role", "admin")
-      .send({ fileHash: "sha256:abc123" });
+      .send({ fileHash: realFileHash });
     expect(exported.status).toBe(200);
     expect(exported.body.batch.status).toBe("exported");
-    expect(exported.body.batch.file_hash).toBe("sha256:abc123");
+    expect(exported.body.batch.file_hash).toBe(realFileHash);
 
     const confirmWithoutNumber = await request(app).post(`/api/payroll/remittances/deposits/${id}/confirm`).set("x-test-role", "admin").send({});
     expect(confirmWithoutNumber.status).toBe(400);
