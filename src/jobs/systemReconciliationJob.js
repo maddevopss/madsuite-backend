@@ -14,36 +14,17 @@ async function runSystemReconciliation() {
   try {
     const anomalies = [];
 
+    // invoices/analytics_events sont sous RLS FORCE : ce moteur scanne
+    // intentionnellement toutes les organisations (audit financier
+    // plateforme), résolu via des fonctions SECURITY DEFINER étroites
+    // (mêmes requêtes) plutôt qu'une lecture directe sur une connexion non
+    // scopée, qui retournerait toujours 0 ligne — masquant silencieusement
+    // toute dérive Stripe/ledger réelle.
+
     // 1. Paid invoice total vs Stripe-backed ledger total.
     // Payments created by Stripe reconciliation are linked through:
     // invoice -> payment_events.invoice_id -> ledger_entries.reference_id = stripe_event_id.
-    const ledgerImbalanceRes = await pool.query(`
-      WITH paid_ledger AS (
-        SELECT
-          pe.invoice_id,
-          COALESCE(SUM(le.amount), 0) AS ledger_total
-        FROM payment_events pe
-        JOIN ledger_entries le
-          ON le.reference_id = pe.stripe_event_id
-         AND le.reference_type = 'stripe_webhook'
-         AND le.type = 'payment_received'
-        WHERE pe.type IN (
-          'payment_intent.succeeded',
-          'charge.succeeded',
-          'invoice.payment_succeeded'
-        )
-        GROUP BY pe.invoice_id
-      )
-      SELECT
-        i.id AS invoice_id,
-        i.organisation_id,
-        i.total AS invoice_total,
-        pl.ledger_total
-      FROM invoices i
-      JOIN paid_ledger pl ON pl.invoice_id = i.id
-      WHERE i.status = 'paid'
-        AND ROUND(i.total::numeric, 2) != ROUND(pl.ledger_total::numeric, 2)
-    `);
+    const ledgerImbalanceRes = await pool.query(`SELECT * FROM reconcile_ledger_imbalance()`);
 
     for (const row of ledgerImbalanceRes.rows) {
       anomalies.push({
@@ -57,35 +38,7 @@ async function runSystemReconciliation() {
     }
 
     // 2. Stripe event amount vs its exact ledger entry.
-    const webhookMismatchRes = await pool.query(`
-      SELECT
-        pe.invoice_id,
-        pe.stripe_event_id,
-        i.organisation_id,
-        CASE
-          WHEN pe.type = 'invoice.payment_succeeded'
-            THEN (pe.payload->'data'->'object'->>'amount_paid')::numeric / 100
-          ELSE (pe.payload->'data'->'object'->>'amount')::numeric / 100
-        END AS stripe_total,
-        SUM(le.amount) AS ledger_total
-      FROM payment_events pe
-      JOIN invoices i ON i.id = pe.invoice_id
-      JOIN ledger_entries le
-        ON le.reference_id = pe.stripe_event_id
-       AND le.reference_type = 'stripe_webhook'
-       AND le.type = 'payment_received'
-      WHERE pe.type IN (
-        'payment_intent.succeeded',
-        'charge.succeeded',
-        'invoice.payment_succeeded'
-      )
-      GROUP BY pe.invoice_id, pe.stripe_event_id, i.organisation_id, pe.type, pe.payload
-      HAVING ROUND((CASE
-        WHEN pe.type = 'invoice.payment_succeeded'
-          THEN (pe.payload->'data'->'object'->>'amount_paid')::numeric / 100
-        ELSE (pe.payload->'data'->'object'->>'amount')::numeric / 100
-      END), 2) != ROUND(SUM(le.amount)::numeric, 2)
-    `);
+    const webhookMismatchRes = await pool.query(`SELECT * FROM reconcile_webhook_mismatch()`);
 
     for (const row of webhookMismatchRes.rows) {
       anomalies.push({
@@ -100,25 +53,7 @@ async function runSystemReconciliation() {
     }
 
     // 3. Invoice marked paid but no successful Stripe event with a ledger effect.
-    const dataDriftRes = await pool.query(`
-      SELECT i.id AS invoice_id, i.organisation_id, i.status
-      FROM invoices i
-      WHERE i.status = 'paid'
-        AND NOT EXISTS (
-          SELECT 1
-          FROM payment_events pe
-          JOIN ledger_entries le
-            ON le.reference_id = pe.stripe_event_id
-           AND le.reference_type = 'stripe_webhook'
-           AND le.type = 'payment_received'
-          WHERE pe.invoice_id = i.id
-            AND pe.type IN (
-              'payment_intent.succeeded',
-              'charge.succeeded',
-              'invoice.payment_succeeded'
-            )
-        )
-    `);
+    const dataDriftRes = await pool.query(`SELECT * FROM reconcile_data_drift()`);
 
     for (const row of dataDriftRes.rows) {
       anomalies.push({
@@ -132,25 +67,7 @@ async function runSystemReconciliation() {
     }
 
     // 4. Successful payment exists while invoice is still not paid.
-    const paymentStateDriftRes = await pool.query(`
-      SELECT DISTINCT
-        i.id AS invoice_id,
-        i.organisation_id,
-        i.status,
-        pe.stripe_event_id
-      FROM invoices i
-      JOIN payment_events pe ON pe.invoice_id = i.id
-      JOIN ledger_entries le
-        ON le.reference_id = pe.stripe_event_id
-       AND le.reference_type = 'stripe_webhook'
-       AND le.type = 'payment_received'
-      WHERE i.status != 'paid'
-        AND pe.type IN (
-          'payment_intent.succeeded',
-          'charge.succeeded',
-          'invoice.payment_succeeded'
-        )
-    `);
+    const paymentStateDriftRes = await pool.query(`SELECT * FROM reconcile_payment_state_drift()`);
 
     for (const row of paymentStateDriftRes.rows) {
       anomalies.push({
@@ -165,27 +82,7 @@ async function runSystemReconciliation() {
     }
 
     // 5. Subscription analytics consistency.
-    const subTruthRes = await pool.query(`
-      WITH analytics_subs AS (
-        SELECT DISTINCT organisation_id
-        FROM analytics_events
-        WHERE event_name = 'subscription_active'
-          AND created_at >= NOW() - INTERVAL '90 days'
-      ),
-      db_pro AS (
-        SELECT id FROM organisations
-        WHERE plan_type = 'pro' OR subscription_status = 'active'
-      )
-      SELECT
-        (SELECT COUNT(*) FROM analytics_subs) AS analytics_count,
-        (SELECT COUNT(*) FROM db_pro) AS db_count,
-        (SELECT COUNT(*) FROM analytics_subs a
-          LEFT JOIN db_pro d ON a.organisation_id = d.id
-          WHERE d.id IS NULL) AS analytics_without_db,
-        (SELECT COUNT(*) FROM db_pro d
-          LEFT JOIN analytics_subs a ON d.id = a.organisation_id
-          WHERE a.organisation_id IS NULL) AS db_without_analytics
-    `);
+    const subTruthRes = await pool.query(`SELECT * FROM reconcile_subscription_truth()`);
 
     const subRow = subTruthRes.rows[0];
     if (
@@ -203,23 +100,7 @@ async function runSystemReconciliation() {
     }
 
     // 6. First-invoice analytics consistency.
-    const invoiceTruthRes = await pool.query(`
-      WITH analytics_first AS (
-        SELECT DISTINCT organisation_id
-        FROM analytics_events
-        WHERE event_name = 'first_invoice_created'
-          AND created_at >= NOW() - INTERVAL '90 days'
-      ),
-      actual_invoices AS (
-        SELECT DISTINCT organisation_id FROM invoices
-      )
-      SELECT
-        (SELECT COUNT(*) FROM analytics_first) AS analytics_count,
-        (SELECT COUNT(*) FROM actual_invoices) AS db_count,
-        (SELECT COUNT(*) FROM analytics_first a
-          LEFT JOIN actual_invoices d ON a.organisation_id = d.organisation_id
-          WHERE d.organisation_id IS NULL) AS analytics_without_db
-    `);
+    const invoiceTruthRes = await pool.query(`SELECT * FROM reconcile_first_invoice_truth()`);
 
     const invRow = invoiceTruthRes.rows[0];
     if (
