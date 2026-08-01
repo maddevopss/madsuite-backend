@@ -94,4 +94,16 @@ describe("Permissions HTTP — immobilisations (domaine 1.H)", () => {
     expect(res.status).toBe(201);
     expect(res.body.asset.asset_number).toBe("EQ-PERM-002");
   });
+
+  test("un employé ne peut pas céder un actif immobilisé", async () => {
+    const asset = await db.pool.query(
+      `SELECT id FROM accounting_fixed_assets WHERE organisation_id=$1 AND asset_number='EQ-PERM-002'`,
+      [mockState.organisationId],
+    );
+    const res = await request(app)
+      .post(`/api/accounting/fixed-assets/${asset.rows[0].id}/dispose`)
+      .set("x-test-role", "employe")
+      .send({ disposalDate: "2026-02-01", disposalProceeds: 0 });
+    expect(res.status).toBe(403);
+  });
 });

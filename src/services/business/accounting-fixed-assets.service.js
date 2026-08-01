@@ -204,10 +204,108 @@ async function runDepreciation(db, organisationId, { runDate, periodId, idempote
   return { duplicate: false, run: updated.rows[0], entryId: posted.entryId, totals };
 }
 
+async function loadAccumulatedDepreciation(db, organisationId, assetId) {
+  const { rows } = await db.query(
+    `SELECT COALESCE(SUM(dl.depreciation_amount), 0)::numeric AS accumulated
+     FROM accounting_depreciation_lines dl
+     JOIN accounting_depreciation_runs dr
+       ON dr.id = dl.run_id AND dr.organisation_id = dl.organisation_id
+     WHERE dl.organisation_id = $1 AND dl.fixed_asset_id = $2 AND dr.status = 'posted'`,
+    [organisationId, assetId],
+  );
+  return toMoney(rows[0].accumulated);
+}
+
+// Cède un actif immobilisé : sort son coût d'acquisition et son
+// amortissement cumulé (calculé à la date de cession, avec la même
+// discipline "recalculé depuis les lots publiés" que runDepreciation),
+// comptabilise le produit de cession le cas échéant, et publie la
+// différence comme gain ou perte sur cession. L'écriture reste équilibrée
+// quel que soit le signe du gain/perte :
+//   débit  = amortissement cumulé + produit de cession + perte (le cas échéant)
+//   crédit = coût d'acquisition + gain (le cas échéant)
+// Un actif ne peut être cédé qu'une seule fois ; une deuxième tentative sur
+// un actif déjà 'disposed' retourne l'écriture déjà publiée sans rien
+// republier (recordPostedEntry est lui-même idempotent par source).
+async function disposeAsset(db, organisationId, assetId, {
+  disposalDate,
+  disposalProceeds = 0,
+  proceedsAccountId,
+  gainLossAccountId,
+  createdBy,
+}) {
+  if (!disposalDate) throw badRequest("La date de cession est obligatoire.");
+  const proceeds = toMoney(disposalProceeds || 0);
+  if (proceeds < 0) throw badRequest("Le produit de cession ne peut pas être négatif.");
+
+  const asset = await getFixedAsset(db, organisationId, assetId);
+  if (!asset) throw Object.assign(new Error("Immobilisation introuvable."), { statusCode: 404 });
+
+  if (asset.status === "disposed") {
+    const existingEntry = await db.query(
+      `SELECT id FROM accounting_entries WHERE organisation_id=$1 AND source_type='fixed_asset_disposal' AND source_id=$2 AND status <> 'reversed'`,
+      [organisationId, String(assetId)],
+    );
+    return { duplicate: true, asset, entryId: existingEntry.rows[0]?.id || null };
+  }
+  if (asset.status !== "active") {
+    throw conflict("Seul un actif actif peut être cédé.");
+  }
+
+  const accumulated = await loadAccumulatedDepreciation(db, organisationId, assetId);
+  const netBookValue = toMoney(Number(asset.acquisition_cost) - accumulated);
+  const gainLoss = toMoney(proceeds - netBookValue);
+
+  if (proceeds > 0 && !proceedsAccountId) {
+    throw badRequest("Le compte de réception du produit de cession est obligatoire lorsqu'un produit est déclaré.");
+  }
+  if (gainLoss !== 0 && !gainLossAccountId) {
+    throw badRequest("Le compte de gain ou perte sur cession est obligatoire.");
+  }
+
+  const entryLines = [
+    { accountId: asset.accumulated_depreciation_account_id, description: `Sortie de l'amortissement cumulé — ${asset.name}`, debit: accumulated, credit: 0 },
+    { accountId: asset.asset_account_id, description: `Sortie de l'actif au coût — ${asset.name}`, debit: 0, credit: Number(asset.acquisition_cost) },
+  ];
+  if (proceeds > 0) {
+    entryLines.push({ accountId: proceedsAccountId, description: `Produit de cession — ${asset.name}`, debit: proceeds, credit: 0 });
+  }
+  if (gainLoss > 0) {
+    entryLines.push({ accountId: gainLossAccountId, description: `Gain sur cession — ${asset.name}`, debit: 0, credit: gainLoss });
+  } else if (gainLoss < 0) {
+    entryLines.push({ accountId: gainLossAccountId, description: `Perte sur cession — ${asset.name}`, debit: -gainLoss, credit: 0 });
+  }
+
+  const posted = await recordPostedEntry(db, {
+    organisationId,
+    userId: createdBy,
+    journalCode: "GEN",
+    journalName: "Journal général",
+    journalType: "general",
+    entryNumber: `CES-${asset.id}`,
+    entryDate: disposalDate,
+    description: `Cession de l'immobilisation ${asset.asset_number} — ${asset.name}`,
+    sourceType: "fixed_asset_disposal",
+    sourceId: String(assetId),
+    lines: entryLines,
+  });
+
+  const updated = await db.query(
+    `UPDATE accounting_fixed_assets
+     SET status='disposed', disposed_at=$3, disposal_proceeds=$4
+     WHERE organisation_id=$1 AND id=$2
+     RETURNING *`,
+    [organisationId, assetId, disposalDate, proceeds],
+  );
+
+  return { duplicate: false, asset: updated.rows[0], entryId: posted.entryId, netBookValue, accumulated, gainLoss };
+}
+
 module.exports = {
   calculateStraightLineMonthlyDepreciation,
   registerAsset,
   listFixedAssets,
   getFixedAsset,
   runDepreciation,
+  disposeAsset,
 };
