@@ -7,9 +7,10 @@ const {
 } = require("../../services/business/payroll-run-lifecycle.service");
 
 router.use(requireOrganisation);
-router.use(requireRole("admin"));
 
-router.post("/rulesets/:id/activate", async (req, res, next) => {
+// L'activation d'un jeu de règles gouverne le calcul de toute la paie de
+// l'organisation : réservée aux admins (approbateur), pas aux préparateurs.
+router.post("/rulesets/:id/activate", requireRole("admin"), async (req, res, next) => {
   try {
     const rulesetId = Number(req.params.id);
     if (!Number.isInteger(rulesetId) || rulesetId <= 0) {
@@ -22,7 +23,7 @@ router.post("/rulesets/:id/activate", async (req, res, next) => {
   }
 });
 
-router.post("/periods/:id/runs", async (req, res, next) => {
+router.post("/periods/:id/runs", requireRole("admin", "manager"), async (req, res, next) => {
   try {
     const periodId = Number(req.params.id);
     if (!Number.isInteger(periodId) || periodId <= 0) {

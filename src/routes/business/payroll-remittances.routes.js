@@ -3,6 +3,7 @@
 const crypto = require('crypto');
 const router = require('express').Router();
 const { requireOrganisation } = require('../../middleware/organization.middleware');
+const requireRole = require('../../middleware/requireRole');
 const { buildRemittance } = require('../../services/business/payroll-remittance.service');
 const payrollDepositsRoutes = require('./payroll-deposits.routes');
 const payrollVacationsRoutes = require('./payroll-vacations.routes');
@@ -11,6 +12,10 @@ const payrollYearEndRoutes = require('./payroll-year-end.routes');
 const payrollReconciliationRoutes = require('./payroll-reconciliation.routes');
 
 router.use(requireOrganisation);
+// Plancher commun à toutes les sous-routes de remises (dépôts, vacances, fins
+// d'emploi, feuillets, rapprochement) : préparation ouverte à admin/manager,
+// les actions d'approbation propres à chaque sous-route resserrent à admin.
+router.use(requireRole('admin', 'manager'));
 router.use('/deposits', payrollDepositsRoutes);
 router.use('/vacations', payrollVacationsRoutes);
 router.use('/terminations', payrollTerminationsRoutes);
@@ -87,7 +92,7 @@ router.post('/', async (req, res, next) => {
   }
 });
 
-router.post('/:id/:action', async (req, res, next) => {
+router.post('/:id/:action', requireRole('admin'), async (req, res, next) => {
   try {
     const id = positiveId(req.params.id, 'Remise');
     const action = req.params.action;

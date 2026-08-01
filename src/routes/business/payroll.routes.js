@@ -11,9 +11,16 @@ const payrollLifecycleRoutes = require("./payroll-lifecycle.routes");
 const { checksumRules } = require("../../services/business/payroll-run-lifecycle.service");
 
 router.use(requireOrganisation);
-router.use(requireRole("admin"));
 router.use("/remittances", payrollRemittancesRoutes);
 router.use("/", payrollLifecycleRoutes);
+
+// Séparation préparateur/approbateur (#318, #363) : la préparation (saisie,
+// calcul) reste ouverte à admin/manager, mais les actions de gouvernance
+// (verrouillage de période, approbation, paiement, comptabilisation,
+// correction) exigent le rôle admin — un manager qui prépare un cycle ne
+// peut pas se l'auto-approuver.
+const preparer = requireRole("admin", "manager");
+const approver = requireRole("admin");
 
 function positiveId(value, label) {
   const id = Number(value);
@@ -30,14 +37,14 @@ function splitLegalName(legalName) {
   return { firstName: trimmed.slice(0, spaceIndex), lastName: trimmed.slice(spaceIndex + 1).trim() };
 }
 
-router.get("/employees", async (req, res, next) => {
+router.get("/employees", preparer, async (req, res, next) => {
   try {
     const { rows } = await req.db.query("SELECT * FROM payroll_employees WHERE organisation_id=$1 ORDER BY legal_name", [req.organisationId]);
     return res.json({ employees: rows });
   } catch (error) { return next(error); }
 });
 
-router.post("/employees", async (req, res, next) => {
+router.post("/employees", preparer, async (req, res, next) => {
   try {
     const body = req.body || {};
     if (!body.employeeNumber || !body.legalName || !body.hireDate || !["hourly", "salary"].includes(body.payType)) return res.status(400).json({ message: "Les renseignements essentiels de l’employé sont invalides." });
@@ -50,7 +57,7 @@ router.post("/employees", async (req, res, next) => {
   } catch (error) { return next(error); }
 });
 
-router.patch("/employees/:id", async (req, res, next) => {
+router.patch("/employees/:id", preparer, async (req, res, next) => {
   try {
     const id = positiveId(req.params.id, "Employé");
     const body = req.body || {};
@@ -68,10 +75,10 @@ router.patch("/employees/:id", async (req, res, next) => {
   } catch (error) { return next(error); }
 });
 
-router.get("/periods", async (req, res, next) => {
+router.get("/periods", preparer, async (req, res, next) => {
   try { const { rows } = await req.db.query("SELECT * FROM payroll_periods WHERE organisation_id=$1 ORDER BY period_start DESC", [req.organisationId]); return res.json({ periods: rows }); } catch (error) { return next(error); }
 });
-router.post("/periods", async (req, res, next) => {
+router.post("/periods", preparer, async (req, res, next) => {
   try {
     const body = req.body || {};
     if (!["weekly", "biweekly", "semimonthly", "monthly"].includes(body.frequency) || !body.periodStart || !body.periodEnd || !body.payDate) return res.status(400).json({ message: "La fréquence et les dates de la période sont obligatoires." });
@@ -79,14 +86,14 @@ router.post("/periods", async (req, res, next) => {
     return res.status(201).json({ period: rows[0] });
   } catch (error) { return next(error); }
 });
-router.post("/periods/:id/lock", async (req, res, next) => {
+router.post("/periods/:id/lock", approver, async (req, res, next) => {
   try { const id = positiveId(req.params.id, "Période"); const { rows } = await req.db.query(`UPDATE payroll_periods SET status='locked',locked_at=NOW(),locked_by=$3 WHERE organisation_id=$1 AND id=$2 AND status='open' RETURNING *`, [req.organisationId, id, req.user?.id || null]); if (!rows[0]) return res.status(409).json({ message: "La période est introuvable ou déjà verrouillée." }); return res.json({ period: rows[0] }); } catch (error) { return next(error); }
 });
 
-router.get("/periods/:id/inputs", async (req, res, next) => {
+router.get("/periods/:id/inputs", preparer, async (req, res, next) => {
   try { const id = positiveId(req.params.id, "Période"); const { rows } = await req.db.query(`SELECT i.*,e.employee_number,e.legal_name FROM payroll_variable_inputs i JOIN payroll_employees e ON e.id=i.employee_id AND e.organisation_id=i.organisation_id WHERE i.organisation_id=$1 AND i.payroll_period_id=$2 ORDER BY e.legal_name,i.id`, [req.organisationId, id]); return res.json({ inputs: rows }); } catch (error) { return next(error); }
 });
-router.post("/periods/:id/inputs", async (req, res, next) => {
+router.post("/periods/:id/inputs", preparer, async (req, res, next) => {
   try {
     const periodId = positiveId(req.params.id, "Période"); const employeeId = positiveId(req.body?.employeeId, "Employé");
     const type = req.body?.inputType; const allowed = ["regular_hours", "overtime_hours", "paid_leave", "unpaid_leave", "bonus", "commission", "taxable_benefit", "reimbursement", "adjustment"];
@@ -97,25 +104,43 @@ router.post("/periods/:id/inputs", async (req, res, next) => {
   } catch (error) { return next(error); }
 });
 
-router.get("/rulesets", async (req, res, next) => { try { const { rows } = await req.db.query(`SELECT id,version,province,effective_from,effective_to,status,checksum,created_at FROM payroll_rulesets WHERE organisation_id=$1 ORDER BY effective_from DESC`, [req.organisationId]); return res.json({ rulesets: rows }); } catch (error) { return next(error); } });
-router.post("/rulesets", async (req, res, next) => { try { const body = req.body || {}; if (!body.version || !body.effectiveFrom || !body.rules || typeof body.rules !== "object") return res.status(400).json({ message: "Version, date d’effet et règles sont obligatoires." }); const checksum = checksumRules(body.rules); const { rows } = await req.db.query(`INSERT INTO payroll_rulesets (organisation_id,version,province,effective_from,effective_to,rules,checksum,status,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`, [req.organisationId, body.version, body.province || "QC", body.effectiveFrom, body.effectiveTo || null, body.rules, checksum, body.status || "draft", req.user?.id || null]); return res.status(201).json({ ruleset: rows[0] }); } catch (error) { return next(error); } });
+router.get("/rulesets", preparer, async (req, res, next) => { try { const { rows } = await req.db.query(`SELECT id,version,province,effective_from,effective_to,status,checksum,created_at FROM payroll_rulesets WHERE organisation_id=$1 ORDER BY effective_from DESC`, [req.organisationId]); return res.json({ rulesets: rows }); } catch (error) { return next(error); } });
+router.post("/rulesets", preparer, async (req, res, next) => { try { const body = req.body || {}; if (!body.version || !body.effectiveFrom || !body.rules || typeof body.rules !== "object") return res.status(400).json({ message: "Version, date d’effet et règles sont obligatoires." }); const checksum = checksumRules(body.rules); const { rows } = await req.db.query(`INSERT INTO payroll_rulesets (organisation_id,version,province,effective_from,effective_to,rules,checksum,status,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`, [req.organisationId, body.version, body.province || "QC", body.effectiveFrom, body.effectiveTo || null, body.rules, checksum, body.status || "draft", req.user?.id || null]); return res.status(201).json({ ruleset: rows[0] }); } catch (error) { return next(error); } });
 
-router.get("/runs", async (req, res, next) => { try { const { rows } = await req.db.query(`SELECT r.*,rs.version AS ruleset_version FROM payroll_runs r LEFT JOIN payroll_rulesets rs ON rs.id=r.ruleset_id AND rs.organisation_id=r.organisation_id WHERE r.organisation_id=$1 ORDER BY r.period_end DESC`, [req.organisationId]); return res.json({ runs: rows }); } catch (error) { return next(error); } });
-router.post("/runs", async (req, res, next) => { try { const body = req.body || {}; if (!body.periodStart || !body.periodEnd || !body.payDate || !body.rulesetId) return res.status(400).json({ message: "La période, la date de paiement et le jeu de règles sont obligatoires." }); const { rows } = await req.db.query(`INSERT INTO payroll_runs (organisation_id,period_start,period_end,pay_date,ruleset_id,ruleset_version) SELECT $1,$2,$3,$4,id,version FROM payroll_rulesets WHERE organisation_id=$1 AND id=$5 AND status='active' RETURNING *`, [req.organisationId, body.periodStart, body.periodEnd, body.payDate, body.rulesetId]); if (!rows[0]) return res.status(409).json({ message: "Le jeu de règles doit être actif." }); return res.status(201).json({ run: rows[0] }); } catch (error) { return next(error); } });
-router.get("/runs/:id", async (req, res, next) => { try { const id = positiveId(req.params.id, "Cycle"); const run = await req.db.query(`SELECT * FROM payroll_runs WHERE organisation_id=$1 AND id=$2`, [req.organisationId, id]); if (!run.rows[0]) return res.status(404).json({ message: "Cycle de paie introuvable." }); const lines = await req.db.query(`SELECT l.*,e.employee_number,e.legal_name FROM payroll_run_lines l JOIN payroll_employees e ON e.id=l.employee_id AND e.organisation_id=l.organisation_id WHERE l.organisation_id=$1 AND l.payroll_run_id=$2 ORDER BY e.legal_name`, [req.organisationId, id]); return res.json({ run: run.rows[0], lines: lines.rows }); } catch (error) { return next(error); } });
-router.post("/runs/:id/calculate", async (req, res, next) => { try { const result = await payrollService.calculateRun({ organisationId: req.organisationId, runId: positiveId(req.params.id, "Cycle"), entries: req.body?.entries || [], idempotencyKey: req.body?.idempotencyKey, createdBy: req.user?.id }); if (!result) return res.status(404).json({ message: "Cycle de paie introuvable." }); return res.status(result.duplicate ? 200 : 201).json(result); } catch (error) { return next(error); } });
-for (const action of ["approve", "pay", "void"]) router.post(`/runs/:id/${action}`, async (req, res, next) => { try { const result = await payrollService.transitionRun({ organisationId: req.organisationId, runId: positiveId(req.params.id, "Cycle"), action, reason: req.body?.reason, idempotencyKey: req.body?.idempotencyKey, createdBy: req.user?.id }); if (!result) return res.status(404).json({ message: "Cycle de paie introuvable." }); return res.status(201).json(result); } catch (error) { return next(error); } });
+router.get("/runs", preparer, async (req, res, next) => { try { const { rows } = await req.db.query(`SELECT r.*,rs.version AS ruleset_version FROM payroll_runs r LEFT JOIN payroll_rulesets rs ON rs.id=r.ruleset_id AND rs.organisation_id=r.organisation_id WHERE r.organisation_id=$1 ORDER BY r.period_end DESC`, [req.organisationId]); return res.json({ runs: rows }); } catch (error) { return next(error); } });
+router.post("/runs", preparer, async (req, res, next) => { try { const body = req.body || {}; if (!body.periodStart || !body.periodEnd || !body.payDate || !body.rulesetId) return res.status(400).json({ message: "La période, la date de paiement et le jeu de règles sont obligatoires." }); const { rows } = await req.db.query(`INSERT INTO payroll_runs (organisation_id,period_start,period_end,pay_date,ruleset_id,ruleset_version) SELECT $1,$2,$3,$4,id,version FROM payroll_rulesets WHERE organisation_id=$1 AND id=$5 AND status='active' RETURNING *`, [req.organisationId, body.periodStart, body.periodEnd, body.payDate, body.rulesetId]); if (!rows[0]) return res.status(409).json({ message: "Le jeu de règles doit être actif." }); return res.status(201).json({ run: rows[0] }); } catch (error) { return next(error); } });
+router.get("/runs/:id", preparer, async (req, res, next) => { try { const id = positiveId(req.params.id, "Cycle"); const run = await req.db.query(`SELECT * FROM payroll_runs WHERE organisation_id=$1 AND id=$2`, [req.organisationId, id]); if (!run.rows[0]) return res.status(404).json({ message: "Cycle de paie introuvable." }); const lines = await req.db.query(`SELECT l.*,e.employee_number,e.legal_name FROM payroll_run_lines l JOIN payroll_employees e ON e.id=l.employee_id AND e.organisation_id=l.organisation_id WHERE l.organisation_id=$1 AND l.payroll_run_id=$2 ORDER BY e.legal_name`, [req.organisationId, id]); return res.json({ run: run.rows[0], lines: lines.rows }); } catch (error) { return next(error); } });
+router.post("/runs/:id/calculate", preparer, async (req, res, next) => { try { const result = await payrollService.calculateRun({ organisationId: req.organisationId, runId: positiveId(req.params.id, "Cycle"), entries: req.body?.entries || [], idempotencyKey: req.body?.idempotencyKey, createdBy: req.user?.id }); if (!result) return res.status(404).json({ message: "Cycle de paie introuvable." }); return res.status(result.duplicate ? 200 : 201).json(result); } catch (error) { return next(error); } });
+for (const action of ["approve", "pay", "void"]) router.post(`/runs/:id/${action}`, approver, async (req, res, next) => { try { const result = await payrollService.transitionRun({ organisationId: req.organisationId, runId: positiveId(req.params.id, "Cycle"), action, reason: req.body?.reason, idempotencyKey: req.body?.idempotencyKey, createdBy: req.user?.id }); if (!result) return res.status(404).json({ message: "Cycle de paie introuvable." }); return res.status(201).json(result); } catch (error) { return next(error); } });
 
-router.get("/runs/:id/pay-stubs", async (req, res, next) => {
-  try { const id = positiveId(req.params.id, "Cycle"); const run = await req.db.query("SELECT * FROM payroll_runs WHERE organisation_id=$1 AND id=$2", [req.organisationId, id]); if (!run.rows[0]) return res.status(404).json({ message: "Cycle de paie introuvable." }); const lines = await req.db.query(`SELECT l.*,e.employee_number,e.legal_name FROM payroll_run_lines l JOIN payroll_employees e ON e.id=l.employee_id AND e.organisation_id=l.organisation_id WHERE l.organisation_id=$1 AND l.payroll_run_id=$2 ORDER BY e.legal_name`, [req.organisationId, id]); return res.json({ payStubs: lines.rows.map((line) => buildPayStub({ run: run.rows[0], employee: line, line, canViewSensitive: true })) }); } catch (error) { return next(error); }
+// Un employé (rôle 'employe') peut consulter ses propres talons de paie, jamais
+// ceux d'un collègue : contrairement aux autres routes, ni admin/manager ni
+// employe n'est bloqué en amont — le filtrage par payroll_employees.user_id se
+// fait après la requête, dans le handler.
+function allowPreparerOrSelf(req, res, next) {
+  if (["admin", "manager", "employe"].includes(req.user?.role)) return next();
+  return res.status(403).json({ message: "Permissions insuffisantes" });
+}
+
+router.get("/runs/:id/pay-stubs", allowPreparerOrSelf, async (req, res, next) => {
+  try {
+    const id = positiveId(req.params.id, "Cycle");
+    const run = await req.db.query("SELECT * FROM payroll_runs WHERE organisation_id=$1 AND id=$2", [req.organisationId, id]);
+    if (!run.rows[0]) return res.status(404).json({ message: "Cycle de paie introuvable." });
+    const lines = await req.db.query(`SELECT l.*,e.employee_number,e.legal_name,e.user_id FROM payroll_run_lines l JOIN payroll_employees e ON e.id=l.employee_id AND e.organisation_id=l.organisation_id WHERE l.organisation_id=$1 AND l.payroll_run_id=$2 ORDER BY e.legal_name`, [req.organisationId, id]);
+    const isSelfService = !["admin", "manager"].includes(req.user?.role);
+    const visibleLines = isSelfService ? lines.rows.filter((line) => String(line.user_id) === String(req.user.id)) : lines.rows;
+    if (isSelfService && visibleLines.length === 0) return res.status(403).json({ message: "Vous ne pouvez consulter que votre propre talon de paie." });
+    return res.json({ payStubs: visibleLines.map((line) => buildPayStub({ run: run.rows[0], employee: line, line, canViewSensitive: true })) });
+  } catch (error) { return next(error); }
 });
-router.get("/runs/:id/register", async (req, res, next) => {
+router.get("/runs/:id/register", preparer, async (req, res, next) => {
   try { const id = positiveId(req.params.id, "Cycle"); const run = await req.db.query("SELECT * FROM payroll_runs WHERE organisation_id=$1 AND id=$2", [req.organisationId, id]); if (!run.rows[0]) return res.status(404).json({ message: "Cycle de paie introuvable." }); const lines = await req.db.query(`SELECT l.*,e.employee_number,e.legal_name FROM payroll_run_lines l JOIN payroll_employees e ON e.id=l.employee_id AND e.organisation_id=l.organisation_id WHERE l.organisation_id=$1 AND l.payroll_run_id=$2 ORDER BY e.legal_name`, [req.organisationId, id]); return res.json({ register: buildPayrollRegister({ run: run.rows[0], lines: lines.rows }) }); } catch (error) { return next(error); }
 });
-router.post("/runs/:id/accounting-preview", async (req, res, next) => {
+router.post("/runs/:id/accounting-preview", preparer, async (req, res, next) => {
   try { const id = positiveId(req.params.id, "Cycle"); const { rows } = await req.db.query("SELECT * FROM payroll_runs WHERE organisation_id=$1 AND id=$2 AND status IN ('approved','paid')", [req.organisationId, id]); if (!rows[0]) return res.status(409).json({ message: "Le cycle doit être approuvé avant sa comptabilisation." }); return res.json({ journal: buildPayrollJournal({ run: rows[0], expenseAccountId: req.body?.expenseAccountId, payableAccountId: req.body?.payableAccountId, deductionLiabilityAccountId: req.body?.deductionLiabilityAccountId, contributionExpenseAccountId: req.body?.contributionExpenseAccountId, contributionLiabilityAccountId: req.body?.contributionLiabilityAccountId }) }); } catch (error) { return next(error); }
 });
-router.post("/runs/:id/post-accounting", async (req, res, next) => {
+router.post("/runs/:id/post-accounting", approver, async (req, res, next) => {
   try {
     const id = positiveId(req.params.id, "Cycle");
     const { rows } = await req.db.query("SELECT * FROM payroll_runs WHERE organisation_id=$1 AND id=$2 AND status IN ('approved','paid')", [req.organisationId, id]);
@@ -138,7 +163,7 @@ router.post("/runs/:id/post-accounting", async (req, res, next) => {
 // correction renverse son écriture comptable publiée de façon non destructive (même
 // gouvernance que /accounting/entries/:id/reverse) et marque le cycle 'corrected'
 // plutôt que de le laisser 'paid' avec une écriture renversée en silence.
-router.post("/runs/:id/correct", async (req, res, next) => {
+router.post("/runs/:id/correct", approver, async (req, res, next) => {
   try {
     const id = positiveId(req.params.id, "Cycle");
     const idempotencyKey = req.body?.idempotencyKey;

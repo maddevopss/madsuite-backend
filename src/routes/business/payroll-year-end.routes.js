@@ -2,6 +2,7 @@
 
 const router = require('express').Router();
 const { requireOrganisation } = require('../../middleware/organization.middleware');
+const requireRole = require('../../middleware/requireRole');
 const { buildYearEndSlip } = require('../../services/business/payroll-year-end.service');
 
 router.use(requireOrganisation);
@@ -71,7 +72,7 @@ router.post('/', async (req, res, next) => {
   }
 });
 
-router.post('/:id/:action', async (req, res, next) => {
+router.post('/:id/:action', requireRole('admin'), async (req, res, next) => {
   try {
     const id = positiveId(req.params.id, 'Feuillet');
     const action = req.params.action;
