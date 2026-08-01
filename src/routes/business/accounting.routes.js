@@ -11,6 +11,7 @@ const accountingTrialBalanceService = require("../../services/business/accountin
 const accountingReconciliationService = require("../../services/business/accounting-reconciliation.service");
 const accountingRemediationService = require("../../services/business/accounting-remediation.service");
 const accountingFixedAssetsService = require("../../services/business/accounting-fixed-assets.service");
+const taxCodesService = require("../../services/business/tax-codes.service");
 const businessEventService = require("../../services/business/business-event.service");
 const financialProjectionService = require("../../services/business/financial-projection.service");
 const accountingStatementsComparativeService = require("../../services/business/accounting-statements-comparative.service");
@@ -36,6 +37,52 @@ router.post("/accounts", requireRole("admin"), async (req, res, next) => {
     const account = await accountingMasterdataService.createAccount(req.db, req.organisationId, req.body);
     res.status(201).json({ account });
   } catch (error) { next(error); }
+});
+
+router.get("/tax-codes", async (req, res, next) => {
+  try {
+    const taxCodes = await taxCodesService.listTaxCodes(req.db, req.organisationId);
+    return res.json({ taxCodes });
+  } catch (error) { return next(error); }
+});
+
+router.post("/tax-codes", requireRole("admin"), async (req, res, next) => {
+  try {
+    const taxCode = await taxCodesService.createTaxCode(req.db, req.organisationId, { ...req.body, createdBy: req.user?.id });
+    await businessEventService.appendEvent(req.db, {
+      organisationId: req.organisationId,
+      eventType: "accounting.tax_code.created",
+      aggregateType: "tax_code",
+      aggregateId: taxCode.id,
+      actorUserId: req.user?.id,
+      payload: { code: taxCode.code, rate: taxCode.rate, taxType: taxCode.tax_type },
+    });
+    return res.status(201).json({ taxCode });
+  } catch (error) { return next(error); }
+});
+
+router.post("/tax-codes/:id/activate", requireRole("admin"), async (req, res, next) => {
+  try {
+    const taxCode = await taxCodesService.activateTaxCode(req.db, req.organisationId, Number(req.params.id), req.user?.id);
+    await businessEventService.appendEvent(req.db, {
+      organisationId: req.organisationId,
+      eventType: "accounting.tax_code.activated",
+      aggregateType: "tax_code",
+      aggregateId: taxCode.id,
+      actorUserId: req.user?.id,
+      payload: { code: taxCode.code, rate: taxCode.rate },
+    });
+    return res.json({ taxCode });
+  } catch (error) { return next(error); }
+});
+
+router.get("/tax-codes/resolve", async (req, res, next) => {
+  try {
+    if (!req.query.code || !req.query.date) return res.status(400).json({ message: "Le code et la date sont obligatoires." });
+    const taxCode = await taxCodesService.resolveActiveTaxCode(req.db, req.organisationId, req.query.code, req.query.date);
+    if (!taxCode) return res.status(404).json({ message: "Aucun profil de taxe actif pour ce code à cette date." });
+    return res.json({ taxCode });
+  } catch (error) { return next(error); }
 });
 
 router.get("/periods", async (req, res, next) => {
