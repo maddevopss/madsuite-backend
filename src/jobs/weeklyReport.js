@@ -1,5 +1,6 @@
 const cron = require("node-cron");
 const db = require("../../db");
+const dbStore = require("../utils/dbStore");
 const logger = require("../config/logger");
 const nodemailer = require("nodemailer");
 
@@ -82,13 +83,10 @@ async function sendWeeklyReport() {
   try {
     logger.info("Génération du rapport hebdomadaire pour les administrateurs...");
 
-    // 1. Récupération des organisations et de leurs admins
-    const orgs = await db.query(`
-      SELECT o.id, o.nom, u.email as admin_email 
-      FROM organisations o
-      JOIN utilisateurs u ON u.organisation_id = o.id
-      WHERE u.role = 'admin' AND u.deleted_at IS NULL
-    `);
+    // 1. Récupération des organisations et de leurs admins — utilisateurs est
+    // sous RLS FORCE, résolution cross-tenant via fonction SECURITY DEFINER
+    // dédiée (cf. migration 20260801_weekly_report_admins_resolver.sql).
+    const orgs = await db.query(`SELECT * FROM list_all_org_admins()`);
 
     const transporter = nodemailer.createTransport({
       host: process.env.EMAIL_HOST,
@@ -97,37 +95,60 @@ async function sendWeeklyReport() {
     });
 
     for (const org of orgs.rows) {
-      // 2. Collecte des stats de purge de la semaine
-      const purgeStats = await db.query(
-        `
-        SELECT details FROM business_audit_logs 
-        WHERE organisation_id = $1 AND action = 'system.purge_executed'
-        AND created_at > NOW() - INTERVAL '7 days'
-        ORDER BY created_at DESC LIMIT 1
-      `,
-        [org.id],
-      );
+      const orgId = org.org_id;
+      const orgNom = org.org_nom;
 
-      // 3. Collecte de l'activité globale
-      const activity = await db.query(
-        `
-        SELECT SUM(total_seconds) / 3600 as hours
-        FROM activity_daily_summary
-        WHERE organisation_id = $1 AND activity_date > CURRENT_DATE - 7
-      `,
-        [org.id],
-      );
+      // activity_daily_summary est sous RLS FORCE : ce job en lot traite
+      // toutes les organisations hors de tout contexte requête.
+      const client = await db.pool.connect();
+      let totalHours = 0;
+      let lastPurge = {};
+      try {
+        await client.query("BEGIN");
+        await client.query("SELECT set_config('app.current_organisation_id', $1, true)", [String(orgId)]);
 
-      const totalHours = Math.round(activity.rows[0]?.hours || 0);
-      const lastPurge = purgeStats.rows[0]?.details?.stats || {};
+        await dbStore.run({ dbClient: client, organisationId: orgId }, async () => {
+          // 2. Collecte des stats de purge de la semaine
+          const purgeStats = await db.query(
+            `
+            SELECT details FROM business_audit_logs
+            WHERE organisation_id = $1 AND action = 'system.purge_executed'
+            AND created_at > NOW() - INTERVAL '7 days'
+            ORDER BY created_at DESC LIMIT 1
+          `,
+            [orgId],
+          );
 
-      const html = generateWeeklyReportHtml(org.nom, totalHours, lastPurge);
+          // 3. Collecte de l'activité globale
+          const activity = await db.query(
+            `
+            SELECT SUM(total_seconds) / 3600 as hours
+            FROM activity_daily_summary
+            WHERE organisation_id = $1 AND activity_date > CURRENT_DATE - 7
+          `,
+            [orgId],
+          );
+
+          totalHours = Math.round(activity.rows[0]?.hours || 0);
+          lastPurge = purgeStats.rows[0]?.details?.stats || {};
+        });
+
+        await client.query("COMMIT");
+      } catch (error) {
+        try { await client.query("ROLLBACK"); } catch (_) {}
+        logger.error(`Erreur collecte des stats pour l'organisation ${orgId}`, { error: error.message });
+        continue;
+      } finally {
+        client.release();
+      }
+
+      const html = generateWeeklyReportHtml(orgNom, totalHours, lastPurge);
 
       // 4. Envoi de l'email
       await transporter.sendMail({
         from: process.env.EMAIL_FROM || '"MADSuite System" <info@maddevops.com>',
         to: org.admin_email,
-        subject: `Rapport Hebdomadaire : ${org.nom}`,
+        subject: `Rapport Hebdomadaire : ${orgNom}`,
         html: html,
       });
     }

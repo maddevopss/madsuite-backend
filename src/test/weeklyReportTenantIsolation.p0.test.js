@@ -1,5 +1,6 @@
 jest.mock("../../db", () => ({
   query: jest.fn(),
+  pool: { connect: jest.fn() },
 }));
 
 jest.mock("nodemailer", () => ({
@@ -18,13 +19,13 @@ describe("P0 — isolation multi-tenant du rapport hebdomadaire", () => {
   test("le job traite A puis B sans mélanger destinataires, statistiques ni contenu", async () => {
     const organisations = [
       {
-        id: 101,
-        nom: "Organisation Alpha",
+        org_id: 101,
+        org_nom: "Organisation Alpha",
         admin_email: "alpha-admin@example.test",
       },
       {
-        id: 202,
-        nom: "Organisation Beta",
+        org_id: 202,
+        org_nom: "Organisation Beta",
         admin_email: "beta-admin@example.test",
       },
     ];
@@ -37,10 +38,16 @@ describe("P0 — isolation multi-tenant du rapport hebdomadaire", () => {
 
     nodemailer.createTransport.mockReturnValue({ sendMail });
 
+    const client = {
+      query: jest.fn().mockResolvedValue({ rows: [] }),
+      release: jest.fn(),
+    };
+    db.pool.connect.mockResolvedValue(client);
+
     db.query.mockImplementation(async (sql, params = []) => {
       const normalized = normalizeSql(sql);
 
-      if (normalized.includes("FROM organisations o")) {
+      if (normalized.includes("list_all_org_admins")) {
         return { rows: organisations };
       }
 
