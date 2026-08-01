@@ -81,7 +81,7 @@ router.post('/', async (req, res, next) => {
         amounts.dueDate,
         amounts.employeeAmount,
         amounts.employerAmount,
-        body.evidence || [],
+        JSON.stringify(body.evidence || []),
         idempotencyKey,
         req.user?.id || null,
       ],
