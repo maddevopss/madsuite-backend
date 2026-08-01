@@ -25,13 +25,28 @@ router.get("/", async (req, res, next) => {
 router.post("/", requireRole("admin"), async (req, res, next) => {
   try {
     const body = req.body;
+    if (!body.name || !String(body.name).trim()) {
+      return res.status(400).json({ message: "Le nom du fournisseur est obligatoire." });
+    }
+    // supplier_number est NOT NULL/unique par organisation depuis la migration
+    // du registre fournisseur enrichi ; cette route simple n'expose pas ce
+    // champ dans son contrat, donc on le génère de façon séquentielle sous
+    // verrou (même schéma que la numérotation des notes de crédit).
+    await req.db.query("SELECT pg_advisory_xact_lock(482031, COALESCE($1::int, 0))", [req.organisationId]);
+    const sequence = await req.db.query(
+      `SELECT COALESCE(MAX(CAST(SUBSTRING(supplier_number FROM '([0-9]+)$') AS integer)), 0) + 1 AS next_seq
+       FROM suppliers WHERE organisation_id = $1`,
+      [req.organisationId],
+    );
+    const supplierNumber = `SUP-${String(sequence.rows[0].next_seq).padStart(5, "0")}`;
     const { rows } = await req.db.query(
       `INSERT INTO suppliers
-       (organisation_id, name, contact_name, email, phone, tax_number, payment_terms_days, address)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       (organisation_id, supplier_number, name, contact_name, email, phone, tax_number, payment_terms_days, address)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
        RETURNING *`,
       [
         req.organisationId,
+        supplierNumber,
         body.name,
         body.contactName || null,
         body.email || null,
