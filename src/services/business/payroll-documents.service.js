@@ -1,15 +1,5 @@
 const crypto = require("crypto");
 
-function redactEmployee(employee, canViewSensitive) {
-  if (canViewSensitive) return employee;
-  return {
-    id: employee.id,
-    employee_number: employee.employee_number,
-    legal_name: employee.legal_name,
-    employment_status: employee.employment_status,
-  };
-}
-
 function buildPayStub({ organisationId, run, line, employee, generatedBy }) {
   if (!organisationId || !run || !line || !employee) throw Object.assign(new Error("Données de talon incomplètes."), { statusCode: 400 });
   const payload = {
@@ -51,4 +41,4 @@ function buildPayrollRegister({ organisationId, run, lines }) {
   };
 }
 
-module.exports = { redactEmployee, buildPayStub, buildPayrollRegister };
+module.exports = { buildPayStub, buildPayrollRegister };
