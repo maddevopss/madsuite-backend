@@ -18,22 +18,18 @@ async function processRecurringInvoices() {
     // Ajout de AND r.organisation_id IS NOT NULL et vérification cross-org
     // r.organisation_id = i.organisation_id pour éviter le clonage cross-tenant
     // si template_invoice_id pointe vers une facture d'une autre organisation.
-    const query = `
-      SELECT r.*, i.notes, i.subtotal, i.tax_total, i.total, c.email as client_email
-      FROM recurring_invoices r
-      JOIN invoices i ON r.template_invoice_id = i.id
-        AND r.organisation_id = i.organisation_id
-      JOIN clients c ON r.client_id = c.id
-        AND r.organisation_id = c.organisation_id
-      WHERE r.status = 'active'
-        AND r.next_issue_date <= CURRENT_DATE
-        AND r.organisation_id IS NOT NULL
-      FOR UPDATE OF r SKIP LOCKED
-    `;
-    const recurrences = await client.query(query);
+    // invoices/clients sont sous RLS FORCE : résolution cross-tenant via
+    // fonction SECURITY DEFINER (même requête + verrou tenu par cette
+    // transaction, cf. migration 20260801_recurring_billing_resolvers.sql).
+    const recurrences = await client.query(`SELECT * FROM list_due_recurring_invoices()`);
 
     for (const r of recurrences.rows) {
       try {
+        // invoices/invoice_items/utilisateurs sont sous RLS FORCE : chaque
+        // récurrence peut appartenir à une organisation différente, donc le
+        // GUC doit être re-scopé avant chaque itération.
+        await client.query("SELECT set_config('app.current_organisation_id', $1, true)", [String(r.organisation_id)]);
+
         const issueDate = new Date(); // Aujourd'hui
         const dueDate = new Date();
         dueDate.setDate(dueDate.getDate() + 14); // Net 14 par défaut (ou on pourrait prendre la diff de l'original)

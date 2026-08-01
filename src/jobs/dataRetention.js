@@ -6,14 +6,14 @@ const { recordBusinessAudit } = require("../services/auditLog.service");
  * Exécute une suppression par lots jusqu'à ce que plus rien ne soit supprimé
  * ou que la limite de sécurité soit atteinte.
  */
-async function deleteInBatches(client, query, values = [], limit = 5000, maxIter = 20) {
+async function deleteInBatches(client, query, values = [], limit = 5000, maxIter = 20, countColumn = null) {
   let totalDeleted = 0;
   let iterations = 0;
   let lastCount = 0;
 
   do {
     const res = await client.query(query, values);
-    lastCount = res.rowCount;
+    lastCount = countColumn ? Number(res.rows[0][countColumn]) : res.rowCount;
     totalDeleted += lastCount;
     iterations += 1;
   } while (lastCount === limit && iterations < maxIter);
@@ -24,22 +24,6 @@ async function deleteInBatches(client, query, values = [], limit = 5000, maxIter
 async function tableExists(client, tableName) {
   const res = await client.query("SELECT to_regclass($1) AS regclass", [tableName]);
   return Boolean(res.rows[0]?.regclass);
-}
-
-async function columnExists(client, tableName, columnName) {
-  const res = await client.query(
-    `
-    SELECT 1
-    FROM information_schema.columns
-    WHERE table_schema = current_schema()
-      AND table_name = $1
-      AND column_name = $2
-    LIMIT 1
-    `,
-    [tableName, columnName],
-  );
-
-  return res.rowCount > 0;
 }
 
 /**
@@ -104,48 +88,34 @@ async function runDataPurge(pool) {
       await dropExpiredPartitions(client, "security_incidents_buffer", 120);
     }
 
-    const hasExtendedRetentionColumn = await columnExists(client, "organisations", "has_extended_retention");
-    const activityLogsRetentionExpr = hasExtendedRetentionColumn
-      ? `(CASE WHEN o.has_extended_retention = TRUE THEN o.retention_activity_logs_days ELSE LEAST(o.retention_activity_logs_days, 30) END * INTERVAL '1 day')`
-      : `(o.retention_activity_logs_days * INTERVAL '1 day')`;
-    const summaryRetentionExpr = hasExtendedRetentionColumn
-      ? `(CASE WHEN o.has_extended_retention = TRUE THEN o.retention_summary_days ELSE LEAST(o.retention_summary_days, 30) END * INTERVAL '1 day')`
-      : `(o.retention_summary_days * INTERVAL '1 day')`;
-
-    // Utilisation d'un join pour appliquer les délais spécifiques à chaque organisation.
-    // On utilise les colonnes ajoutées via la migration 015.
+    // activity_logs/activity_daily_summary sont sous RLS FORCE : cette purge
+    // en lot traite toutes les organisations sur une connexion non scopée,
+    // résolue via des fonctions SECURITY DEFINER dédiées (mêmes requêtes,
+    // mêmes bornes de rétention par organisation) plutôt qu'un DELETE direct
+    // qui n'affecterait jamais aucune ligne.
+    // Note : la colonne organisations.has_extended_retention n'existe dans
+    // aucune migration actuelle — l'ancien branchement conditionnel sur
+    // cette colonne n'était donc jamais exercé ; les fonctions SQL
+    // implémentent uniquement la formule simple réellement en vigueur.
 
     // 1. Logs d'activité (Loop)
     const logsCount = await deleteInBatches(
       client,
-      `
-      DELETE FROM activity_logs
-      WHERE id IN (
-        SELECT al.id FROM activity_logs al
-        JOIN organisations o ON al.organisation_id = o.id
-        WHERE al.captured_at < NOW() - ${activityLogsRetentionExpr}
-          AND al.is_aggregated = true
-        LIMIT $1
-      )
-    `,
+      `SELECT purge_activity_logs_batch($1) AS deleted_count`,
       [BATCH_LIMIT],
       BATCH_LIMIT,
+      20,
+      "deleted_count",
     );
 
     // 2. Résumés d'activité (Loop)
     const summaryCount = await deleteInBatches(
       client,
-      `
-      DELETE FROM activity_daily_summary
-      WHERE id IN (
-        SELECT ads.id FROM activity_daily_summary ads
-        JOIN organisations o ON ads.organisation_id = o.id
-        WHERE ads.activity_date < CURRENT_DATE - ${summaryRetentionExpr}
-        LIMIT $1
-      )
-    `,
+      `SELECT purge_activity_summary_batch($1) AS deleted_count`,
       [BATCH_LIMIT],
       BATCH_LIMIT,
+      20,
+      "deleted_count",
     );
 
     // 3. Audits métier (Loop)
@@ -165,22 +135,21 @@ async function runDataPurge(pool) {
     );
 
     // Purge des données "soft-deleted" depuis plus de 90 jours
+    // time_entries/projets/clients/utilisateurs/invoices sont sous RLS FORCE :
+    // résolu via purge_soft_deleted_batch() (nom de table toujours fixe,
+    // fourni par l'application, jamais une entrée utilisateur).
     const tablesToCleanup = ["time_entries", "projets", "clients", "utilisateurs", "invoices"];
     let softDeleteCount = 0;
 
     for (const table of tablesToCleanup) {
-      const res = await client.query(`
-        DELETE FROM ${table}
-        WHERE id IN (SELECT id FROM ${table} WHERE deleted_at < NOW() - INTERVAL '90 days' LIMIT 5000)
-      `);
-      softDeleteCount += res.rowCount;
+      const res = await client.query(`SELECT purge_soft_deleted_batch($1, $2) AS deleted_count`, [table, 5000]);
+      softDeleteCount += Number(res.rows[0].deleted_count);
     }
 
     // Purge des sessions utilisateurs (Hard Delete après 90 jours)
-    const resSessions = await client.query(`
-      DELETE FROM user_sessions
-      WHERE id IN (SELECT id FROM user_sessions WHERE login_time < NOW() - INTERVAL '90 days' LIMIT 5000)
-    `);
+    // user_sessions est sous RLS FORCE.
+    const resSessionsCount = await client.query(`SELECT purge_user_sessions_batch($1) AS deleted_count`, [5000]);
+    const sessionsDeleted = Number(resSessionsCount.rows[0].deleted_count);
 
     // Purge des Refresh Tokens expirés ou révoqués
     const tokensCount = await deleteInBatches(
@@ -197,35 +166,26 @@ async function runDataPurge(pool) {
       BATCH_LIMIT,
     );
 
-    // 6. Purge du buffer d'incidents de sécurité
+    // 6. Purge du buffer d'incidents de sécurité — RLS FORCE.
     let securityIncidentsCount = 0;
     if (await tableExists(client, "security_incidents_buffer")) {
       securityIncidentsCount = await deleteInBatches(
         client,
-        `
-        DELETE FROM security_incidents_buffer
-        WHERE id IN (
-          SELECT id FROM security_incidents_buffer 
-          WHERE (notified_at < NOW() - INTERVAL '30 days')
-             OR (created_at < NOW() - INTERVAL '90 days')
-          LIMIT $1
-        )
-        `,
+        `SELECT purge_security_incidents_buffer_batch($1) AS deleted_count`,
         [BATCH_LIMIT],
         BATCH_LIMIT,
+        20,
+        "deleted_count",
       );
     }
 
-    // Purge du cache de signatures (Billing Assistant)
+    // Purge du cache de signatures (Billing Assistant) — RLS FORCE.
     // On supprime ce qui n'a pas été utilisé depuis 60 jours
     // OU ce qui est très incertain (< 30%) et pas validé manuellement depuis 7 jours.
-    const resCache = await client.query(`
-      DELETE FROM activity_project_cache
-      WHERE last_used_at < NOW() - INTERVAL '60 days'
-         OR (confidence < 30 AND is_manual = FALSE AND last_used_at < NOW() - INTERVAL '7 days')
-    `);
+    const resCacheCount = await client.query(`SELECT purge_activity_project_cache_batch() AS deleted_count`);
+    const cacheDeleted = Number(resCacheCount.rows[0].deleted_count);
 
-    const message = `Purge terminée : ${logsCount} logs, ${summaryCount} résumés, ${auditCount} audits, ${resSessions.rowCount} sessions, ${tokensCount} tokens, ${securityIncidentsCount} incidents sécu, ${resCache.rowCount} signatures cache et ${softDeleteCount} éléments supprimés définitivement.`;
+    const message = `Purge terminée : ${logsCount} logs, ${summaryCount} résumés, ${auditCount} audits, ${sessionsDeleted} sessions, ${tokensCount} tokens, ${securityIncidentsCount} incidents sécu, ${cacheDeleted} signatures cache et ${softDeleteCount} éléments supprimés définitivement.`;
     logger.info(message);
 
     // FIX P2 (audit multi-tenant 2026-06-24) :

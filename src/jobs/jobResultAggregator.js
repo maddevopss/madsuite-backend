@@ -108,11 +108,12 @@ function createJobResultTracker(jobName = "Unknown Job") {
 
         if (recentRes.rows.length === 0) {
           const alertMsg = `System Failure in ${jobName} [${severity}]: ${errMsg} (SysSig: ${systemSignature}, NodeSig: ${dedupSignature})`;
-          
-          await pool.query(`
-            INSERT INTO notifications (organisation_id, utilisateur_id, type, message)
-            SELECT organisation_id, id, 'system_alert', $1 FROM utilisateurs WHERE role = 'admin'
-          `, [alertMsg]);
+
+          // utilisateurs est sous RLS FORCE : la résolution des admins de
+          // toutes les organisations passe par une fonction SECURITY DEFINER
+          // dédiée plutôt qu'une lecture directe bloquée sur cette connexion
+          // non scopée.
+          await pool.query(`SELECT notify_all_admins_system_alert($1)`, [alertMsg]);
 
           // Severity Routing
           // MEDIUM: aggregated dashboard only (the notification above covers this)
