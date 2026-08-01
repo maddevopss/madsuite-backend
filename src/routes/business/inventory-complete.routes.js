@@ -49,14 +49,15 @@ router.get('/lots', async (req, res, next) => {
   } catch (error) { return next(error); }
 });
 
-router.post('/lots/:id/disposition', async (req, res, next) => {
+router.post('/lots/:id/disposition', requireRole('admin'), async (req, res, next) => {
   try {
     const current = (await req.db.query('SELECT * FROM inventory_lots WHERE organisation_id=$1 AND id=$2', [req.organisationId, Number(req.params.id)])).rows[0];
     if (!current) return res.status(404).json({ code: 'inventory.lot.not_found' });
     const decision = validateLotDisposition({ status: req.body.status, quantity: current.quantity, reason: req.body.reason, evidence: req.body.evidence || [] });
     if (!decision.allowed) return res.status(400).json(decision);
-    const updated = (await req.db.query('UPDATE inventory_lots SET status=$3,evidence=$4 WHERE organisation_id=$1 AND id=$2 RETURNING *', [req.organisationId,current.id,req.body.status,req.body.evidence||[]])).rows[0];
-    await req.db.query(`INSERT INTO inventory_status_events (organisation_id,aggregate_type,aggregate_id,from_status,to_status,reason,evidence,created_by) VALUES ($1,'lot',$2,$3,$4,$5,$6,$7)`, [req.organisationId,current.id,current.status,req.body.status,req.body.reason,req.body.evidence||[],actor(req)]);
+    const evidenceJson = JSON.stringify(req.body.evidence || []);
+    const updated = (await req.db.query('UPDATE inventory_lots SET status=$3,evidence=$4 WHERE organisation_id=$1 AND id=$2 RETURNING *', [req.organisationId,current.id,req.body.status,evidenceJson])).rows[0];
+    await req.db.query(`INSERT INTO inventory_status_events (organisation_id,aggregate_type,aggregate_id,from_status,to_status,reason,evidence,created_by) VALUES ($1,'lot',$2,$3,$4,$5,$6,$7)`, [req.organisationId,current.id,current.status,req.body.status,req.body.reason,evidenceJson,actor(req)]);
     return res.json({ lot: updated });
   } catch (error) { return next(error); }
 });
