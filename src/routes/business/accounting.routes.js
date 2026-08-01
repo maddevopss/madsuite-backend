@@ -10,6 +10,7 @@ const accountingExportService = require("../../services/business/accounting-expo
 const accountingTrialBalanceService = require("../../services/business/accounting-trial-balance.service");
 const accountingReconciliationService = require("../../services/business/accounting-reconciliation.service");
 const accountingRemediationService = require("../../services/business/accounting-remediation.service");
+const bankReconciliationService = require("../../services/business/bank-reconciliation.service");
 const accountingFixedAssetsService = require("../../services/business/accounting-fixed-assets.service");
 const taxCodesService = require("../../services/business/tax-codes.service");
 const businessEventService = require("../../services/business/business-event.service");
@@ -270,6 +271,115 @@ router.post("/reconciliation/remediation/apply", requireRole("admin"), async (re
   try {
     const result = await accountingRemediationService.applyControlledAdjustment({ db: req.db, organisationId: req.organisationId, userId: req.user?.id, command: req.body });
     return res.status(result.adjustment?.duplicate ? 200 : 201).json(result);
+  } catch (error) { return next(error); }
+});
+
+router.get("/bank-reconciliation/statements", async (req, res, next) => {
+  try {
+    const statements = await bankReconciliationService.listStatements(req.db, req.organisationId, { accountId: req.query.accountId });
+    return res.json({ statements });
+  } catch (error) { return next(error); }
+});
+
+router.post("/bank-reconciliation/statements", requireRole("admin"), async (req, res, next) => {
+  try {
+    const statement = await bankReconciliationService.createStatement(req.db, req.organisationId, { ...req.body, createdBy: req.user?.id });
+    await businessEventService.appendEvent(req.db, {
+      organisationId: req.organisationId,
+      eventType: "accounting.bank_statement.created",
+      aggregateType: "bank_statement",
+      aggregateId: statement.id,
+      actorUserId: req.user?.id,
+      payload: { accountId: statement.account_id, periodStart: statement.period_start, periodEnd: statement.period_end },
+    });
+    return res.status(201).json({ statement });
+  } catch (error) { return next(error); }
+});
+
+router.get("/bank-reconciliation/statements/:id", async (req, res, next) => {
+  try {
+    const summary = await bankReconciliationService.getReconciliationSummary(req.db, req.organisationId, Number(req.params.id));
+    const lines = await bankReconciliationService.listStatementLines(req.db, req.organisationId, Number(req.params.id));
+    return res.json({ ...summary, lines });
+  } catch (error) { return next(error); }
+});
+
+router.post("/bank-reconciliation/statements/:id/lines", requireRole("admin"), async (req, res, next) => {
+  try {
+    const lines = await bankReconciliationService.addStatementLines(req.db, req.organisationId, Number(req.params.id), req.body.lines);
+    return res.status(201).json({ lines });
+  } catch (error) { return next(error); }
+});
+
+router.post("/bank-reconciliation/lines/:id/match", requireRole("admin"), async (req, res, next) => {
+  try {
+    const line = await bankReconciliationService.matchLine(req.db, req.organisationId, Number(req.params.id), {
+      entryLineId: req.body.entryLineId,
+      matchedBy: req.user?.id,
+    });
+    await businessEventService.appendEvent(req.db, {
+      organisationId: req.organisationId,
+      eventType: "accounting.bank_statement_line.matched",
+      aggregateType: "bank_statement_line",
+      aggregateId: line.id,
+      actorUserId: req.user?.id,
+      payload: { entryLineId: req.body.entryLineId, amount: line.amount },
+    });
+    return res.json({ line });
+  } catch (error) { return next(error); }
+});
+
+router.post("/bank-reconciliation/lines/:id/unmatch", requireRole("admin"), async (req, res, next) => {
+  try {
+    const line = await bankReconciliationService.unmatchLine(req.db, req.organisationId, Number(req.params.id));
+    return res.json({ line });
+  } catch (error) { return next(error); }
+});
+
+router.get("/bank-reconciliation/statements/:id/suggested-matches", async (req, res, next) => {
+  try {
+    const suggestions = await bankReconciliationService.suggestMatches(req.db, req.organisationId, Number(req.params.id), {
+      dateWindowDays: req.query.dateWindowDays ? Number(req.query.dateWindowDays) : undefined,
+    });
+    return res.json({ suggestions });
+  } catch (error) { return next(error); }
+});
+
+router.post("/bank-reconciliation/statements/:id/apply-suggested-matches", requireRole("admin"), async (req, res, next) => {
+  try {
+    const result = await bankReconciliationService.applySuggestedMatches(req.db, req.organisationId, Number(req.params.id), {
+      confirmedByHuman: req.body.confirmedByHuman,
+      matchedBy: req.user?.id,
+      dateWindowDays: req.body.dateWindowDays,
+    });
+    if (result.appliedCount > 0) {
+      await businessEventService.appendEvent(req.db, {
+        organisationId: req.organisationId,
+        eventType: "accounting.bank_statement.auto_matched",
+        aggregateType: "bank_statement",
+        aggregateId: Number(req.params.id),
+        actorUserId: req.user?.id,
+        payload: { appliedCount: result.appliedCount, skippedCount: result.skippedCount },
+      });
+    }
+    return res.json(result);
+  } catch (error) { return next(error); }
+});
+
+router.post("/bank-reconciliation/statements/:id/lock", requireRole("admin"), async (req, res, next) => {
+  try {
+    const result = await bankReconciliationService.lockStatement(req.db, req.organisationId, Number(req.params.id), req.user?.id);
+    if (!result.duplicate) {
+      await businessEventService.appendEvent(req.db, {
+        organisationId: req.organisationId,
+        eventType: "accounting.bank_statement.locked",
+        aggregateType: "bank_statement",
+        aggregateId: result.statement.id,
+        actorUserId: req.user?.id,
+        payload: {},
+      });
+    }
+    return res.status(result.duplicate ? 200 : 201).json(result);
   } catch (error) { return next(error); }
 });
 
