@@ -5,6 +5,7 @@ const { appendEvent } = require("./business-event.service");
 const { persistTrustAssessment, persistGraphEdges } = require("./trust-persistence.service");
 const { calculateGrossPay, roundMoney } = require("./payroll-gross-calculation.service");
 const { calculateNetPay } = require("./payroll-deductions.service");
+const { assertCanApprove } = require("./payroll-approval-policy.service");
 
 const CALCULATE_POLICY = "payroll.run.calculate@1";
 const APPROVE_POLICY = "payroll.run.approve@1";
@@ -99,7 +100,7 @@ async function calculateRun({ organisationId, runId, entries = [], idempotencyKe
       if (!employees.rows.length) throw Object.assign(new Error("Aucun employé actif pour cette période."), { statusCode: 409 });
 
       const totals = { gross: money(gross), reimbursements: money(reimbursements), deductions: money(deductions), employerContributions: money(employer), net: money(net) };
-      const updated = await client.query(`UPDATE payroll_runs SET status='calculated',totals=$1,idempotency_key=$2,calculated_at=NOW(),ct_mad_transaction_id=$3,correlation_id=$4 WHERE organisation_id=$5 AND id=$6 RETURNING *`, [JSON.stringify(totals), idempotencyKey, transactionId, correlationId, orgId, run.id]);
+      const updated = await client.query(`UPDATE payroll_runs SET status='calculated',totals=$1,idempotency_key=$2,calculated_at=NOW(),calculated_by=$3,ct_mad_transaction_id=$4,correlation_id=$5 WHERE organisation_id=$6 AND id=$7 RETURNING *`, [JSON.stringify(totals), idempotencyKey, actorUserId || null, transactionId, correlationId, orgId, run.id]);
       await client.query(`UPDATE payroll_periods SET status='locked',locked_at=NOW(),locked_by=$1 WHERE organisation_id=$2 AND period_start=$3 AND period_end=$4 AND status='open'`, [actorUserId, orgId, run.period_start, run.period_end]);
       const event = await appendEvent(client, { organisationId: orgId, eventType: "payroll.run.calculated", aggregateType: "payroll_run", aggregateId: run.id, actorUserId, correlationId, payload: { totals, rulesetVersion: run.ruleset_version } });
       const trust = await persistTrustAssessment(client, { organisationId: orgId, transactionId, correlationId, checks: [{ code: "payroll.ruleset_versioned", passed: Boolean(run.ruleset_version), evidence: [{ version: run.ruleset_version }] }, { code: "payroll.lines_calculated", passed: employees.rows.length > 0, evidence: [{ employeeCount: employees.rows.length }] }, { code: "payroll.inputs_locked", passed: true, evidence: [{ periodStart: run.period_start, periodEnd: run.period_end }] }] });
@@ -116,6 +117,14 @@ async function transitionRun({ organisationId, runId, action, reason, idempotenc
     const { rows } = await client.query(`SELECT * FROM payroll_runs WHERE organisation_id=$1 AND id=$2 FOR UPDATE`, [orgId, runId]); const run = rows[0]; if (!run) return null;
     const expected = action === "approve" ? "calculated" : action === "pay" ? "approved" : null;
     if (expected && run.status !== expected) throw Object.assign(new Error(`Le cycle doit être ${expected}.`), { statusCode: 409 });
+    // Un admin pouvait auparavant préparer (calculer) ET approuver le même
+    // cycle de paie sans aucun contrôle de séparation des tâches. On refuse
+    // désormais l'auto-approbation en comparant le préparateur enregistré
+    // (calculated_by) à l'approbateur courant, via la logique déjà conçue
+    // (mais jusqu'ici jamais câblée) de payroll-approval-policy.service.js.
+    if (action === "approve") {
+      assertCanApprove({ preparedBy: run.calculated_by, approverId: actorUserId });
+    }
     if (action === "void" && run.status === "paid") throw Object.assign(new Error("Un cycle payé doit être renversé par un processus de paiement distinct."), { statusCode: 409 });
     const status = action === "approve" ? "approved" : action === "pay" ? "paid" : "void";
     // $5 (reason) doit être référencé dans les trois branches : sinon Postgres
