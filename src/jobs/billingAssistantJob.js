@@ -31,23 +31,19 @@ async function processReminders() {
     await client.query("BEGIN");
 
     // Les relances de soumissions conservent leur parcours historique.
-    const pendingEstimatesQuery = `
-      SELECT e.*, c.email as client_email
-      FROM estimates e
-      JOIN clients c ON e.client_id = c.id
-      WHERE e.status = 'sent'
-        AND e.valid_until < CURRENT_DATE
-        AND e.reminders_sent < 3
-        AND (e.last_reminder_at IS NULL OR e.last_reminder_at < NOW() - INTERVAL '3 days')
-        AND e.deleted_at IS NULL
-      FOR UPDATE SKIP LOCKED
-    `;
-    const pendingEstimates = await client.query(pendingEstimatesQuery);
+    // estimates/clients sont sous RLS FORCE : résolution cross-tenant via
+    // fonction SECURITY DEFINER (même requête + verrou tenu par cette
+    // transaction, cf. migration 20260801_recurring_billing_resolvers.sql).
+    const pendingEstimates = await client.query(`SELECT * FROM list_due_estimate_reminders()`);
 
     for (const estimate of pendingEstimates.rows) {
       if (!estimate.client_email) continue;
 
       try {
+        // Chaque soumission peut appartenir à une organisation différente :
+        // le GUC doit être re-scopé avant chaque itération.
+        await client.query("SELECT set_config('app.current_organisation_id', $1, true)", [String(estimate.organisation_id)]);
+
         await outboxService.insertEvent(client, "estimate_reminder", {
           email: estimate.client_email,
           estimate,
