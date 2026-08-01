@@ -288,6 +288,29 @@ router.post("/fixed-assets/depreciation-runs", requireRole("admin"), async (req,
   } catch (error) { return next(error); }
 });
 
+router.post("/fixed-assets/:id/dispose", requireRole("admin"), async (req, res, next) => {
+  try {
+    const result = await accountingFixedAssetsService.disposeAsset(req.db, req.organisationId, Number(req.params.id), {
+      disposalDate: req.body.disposalDate,
+      disposalProceeds: req.body.disposalProceeds,
+      proceedsAccountId: req.body.proceedsAccountId,
+      gainLossAccountId: req.body.gainLossAccountId,
+      createdBy: req.user?.id,
+    });
+    if (!result.duplicate) {
+      await businessEventService.appendEvent(req.db, {
+        organisationId: req.organisationId,
+        eventType: "accounting.fixed_asset.disposed",
+        aggregateType: "accounting_fixed_asset",
+        aggregateId: result.asset.id,
+        actorUserId: req.user?.id,
+        payload: { disposalDate: req.body.disposalDate, disposalProceeds: result.asset.disposal_proceeds, gainLoss: result.gainLoss, entryId: result.entryId },
+      });
+    }
+    return res.status(result.duplicate ? 200 : 201).json(result);
+  } catch (error) { return next(error); }
+});
+
 router.get("/exports/trial-balance.csv", async (req, res, next) => {
   try {
     const csv = await accountingExportService.trialBalanceCsv(req.db, req.organisationId, req.query.startDate, req.query.endDate);
