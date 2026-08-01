@@ -1,18 +1,46 @@
-const pool = require("../../db");
+const db = require("../../db");
+const { createTestOrganisation } = require("./helpers/testData");
+const { seedDefaultChart, createEntry, postEntry } = require("../services/business/accounting.service");
 
-const runIntegration = process.env.RUN_ACCOUNTING_POSTGRES_EVIDENCE === "true";
-const describeIntegration = runIntegration ? describe : describe.skip;
-
-describeIntegration("preuves PostgreSQL de la comptabilité complète", () => {
+// Auparavant gardé derrière RUN_ACCOUNTING_POSTGRES_EVIDENCE=true
+// (describe.skip par défaut, donc jamais exécuté par `npm test`) et
+// n'insérait aucune donnée : les invariants ci-dessous passaient vide sur
+// une base de test sans écritures comptables, sans rien prouver. On insère
+// désormais de vraies écritures posées avant de vérifier ces invariants
+// GLOBAUX (toutes organisations confondues, pas seulement celles créées
+// ici) — la valeur de ce test est justement de détecter une violation
+// n'importe où dans la base, pas seulement dans les données qu'il crée.
+describe("preuves PostgreSQL de la comptabilité complète", () => {
   let client;
 
   beforeAll(async () => {
-    client = await pool.connect();
+    client = await db.pool.connect();
+
+    const org = await createTestOrganisation({ nom: "Preuves Comptables E2E Org" });
+    await seedDefaultChart(client, org.id);
+    const accounts = await client.query(
+      "SELECT id, code FROM accounting_accounts WHERE organisation_id=$1 AND code IN ('1000','4000')",
+      [org.id],
+    );
+    const cash = accounts.rows.find((row) => row.code === "1000");
+    const revenue = accounts.rows.find((row) => row.code === "4000");
+
+    const entry = await createEntry(client, org.id, null, {
+      entryDate: "2026-01-08",
+      description: "Preuve d'invariants — vente au comptant",
+      lines: [
+        { accountId: cash.id, debit: 60, credit: 0 },
+        { accountId: revenue.id, debit: 0, credit: 60 },
+      ],
+    });
+    await postEntry(client, org.id, entry.id);
   });
 
-  afterAll(async () => {
-    if (client) client.release();
-    await pool.end();
+  afterAll(() => {
+    // Ne PAS appeler pool.end() ici : db.pool est un singleton partagé par
+    // tous les fichiers de test exécutés dans le même worker Jest — le
+    // fermer casserait toute suite s'exécutant après celle-ci.
+    client.release();
   });
 
   test("les tables comptables obligatoires existent", async () => {

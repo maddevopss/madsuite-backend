@@ -1,4 +1,5 @@
 const ACCOUNT_CODES = {
+  cash: "1000",
   bank: "1010",
   receivables: "1100",
   taxReceivable: "1300",

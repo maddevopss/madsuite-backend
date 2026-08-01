@@ -1,4 +1,12 @@
 const { jsPDF } = require('jspdf');
+const { ACCOUNT_CODES } = require('./accounting-sync.service');
+
+// Comptes de trésorerie canoniques (mêmes codes que ceux posés par le plan
+// comptable initial fr-CA et utilisés par les automatisations comptables) :
+// un filtrage LIKE '10%' capturerait aussi tout compte d'actif que
+// l'organisation créerait dans la même plage numérique sans être de la
+// trésorerie (ex. placements à court terme).
+const CASH_ACCOUNT_CODES = [ACCOUNT_CODES.cash, ACCOUNT_CODES.bank];
 
 function csvCell(value) {
   return `"${String(value ?? '').replaceAll('"', '""')}"`;
@@ -58,7 +66,7 @@ async function journalCsv(db, organisationId, startDate, endDate) {
 async function cashFlow(db, organisationId, startDate, endDate) {
   const { rows } = await db.query(
     `SELECT e.entry_date, e.entry_number, e.description, e.source_type, e.source_id,
-            SUM(CASE WHEN a.code LIKE '10%' THEN l.debit-l.credit ELSE 0 END)::numeric AS cash_movement
+            SUM(CASE WHEN a.code = ANY($4::varchar[]) THEN l.debit-l.credit ELSE 0 END)::numeric AS cash_movement
      FROM accounting_entries e
      JOIN accounting_entry_lines l ON l.entry_id=e.id AND l.organisation_id=e.organisation_id
      JOIN accounting_accounts a ON a.id=l.account_id AND a.organisation_id=l.organisation_id
@@ -66,9 +74,9 @@ async function cashFlow(db, organisationId, startDate, endDate) {
        AND ($2::date IS NULL OR e.entry_date >= $2::date)
        AND ($3::date IS NULL OR e.entry_date <= $3::date)
      GROUP BY e.id
-     HAVING SUM(CASE WHEN a.code LIKE '10%' THEN l.debit-l.credit ELSE 0 END) <> 0
+     HAVING SUM(CASE WHEN a.code = ANY($4::varchar[]) THEN l.debit-l.credit ELSE 0 END) <> 0
      ORDER BY e.entry_date,e.id`,
-    [organisationId, startDate || null, endDate || null],
+    [organisationId, startDate || null, endDate || null, CASH_ACCOUNT_CODES],
   );
 
   const movements = rows.map((row) => ({ ...row, cash_movement: Number(row.cash_movement) }));
