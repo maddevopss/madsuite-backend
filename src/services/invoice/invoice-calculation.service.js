@@ -39,7 +39,7 @@ function calculateTotals(entries, expenses, taxRatePercentage = 0) {
   }
 
   for (const exp of expenses) {
-    subtotal += roundMoney(exp.montant);
+    subtotal += roundMoney(exp.amount);
   }
 
   const taxTotal = roundMoney(subtotal * (Number(taxRatePercentage) / 100));
@@ -99,7 +99,7 @@ async function fetchValidExpenses({ requestedExpenseIds, clientId, organisationI
       AND e.invoice_id IS NULL
       AND e.deleted_at IS NULL
       ${orgFilter}
-    ORDER BY e.date_depense ASC
+    ORDER BY e.expense_date ASC
     ${lock ? "FOR UPDATE OF e" : ""}
     `,
     params,

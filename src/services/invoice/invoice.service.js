@@ -38,6 +38,11 @@ async function createInvoiceFromEntries({
   }
   try {
     await txClient.query("BEGIN");
+    // Les tables clients/projets/expenses/invoices sont sous RLS FORCE : sans ce
+    // GUC, fetchValidEntries/fetchValidExpenses ne voient jamais aucune ligne
+    // ("Aucune entrée de temps ou dépense sélectionnable pour ce client.") et
+    // l'INSERT dans invoices échouerait la politique WITH CHECK.
+    await txClient.query("SELECT set_config('app.current_organisation_id', $1, true)", [String(finalOrgId)]);
 
     if (idempotencyKey) {
       const existingResult = await txClient.query(
@@ -129,8 +134,8 @@ async function createInvoiceFromEntries({
         null,
         exp.description || exp.projet_nom || "Dépense",
         1,
-        roundMoney(exp.montant),
-        roundMoney(exp.montant),
+        roundMoney(exp.amount),
+        roundMoney(exp.amount),
         new Date().toISOString(),
         exp.description || null,
       );
@@ -241,6 +246,7 @@ async function createInvoiceFromEstimate({ estimate, organisationId, billedBy, r
   const txClient = await db.pool.connect();
   try {
     await txClient.query("BEGIN");
+    await txClient.query("SELECT set_config('app.current_organisation_id', $1, true)", [String(organisationId)]);
 
     const invoiceNumber = await getNextInvoiceNumber(organisationId, txClient);
     const billedAt = new Date();

@@ -6,9 +6,11 @@ const payrollService = require("../../services/business/payroll-transaction.serv
 const { buildPayrollJournal, postPayrollJournal } = require("../../services/business/payroll-accounting.service");
 const { reversePostedEntry } = require("../../services/business/accounting-reversal-governance.service");
 const { buildPayStub, buildPayrollRegister } = require("../../services/business/payroll-documents.service");
+const { registerCsv, payStubsCsv } = require("../../services/business/payroll-export.service");
 const payrollRemittancesRoutes = require("./payroll-remittances.routes");
 const payrollLifecycleRoutes = require("./payroll-lifecycle.routes");
 const { checksumRules } = require("../../services/business/payroll-run-lifecycle.service");
+const { appendEvent, listEvents } = require("../../services/business/business-event.service");
 
 router.use(requireOrganisation);
 router.use("/remittances", payrollRemittancesRoutes);
@@ -137,6 +139,29 @@ router.get("/runs/:id/pay-stubs", allowPreparerOrSelf, async (req, res, next) =>
 router.get("/runs/:id/register", preparer, async (req, res, next) => {
   try { const id = positiveId(req.params.id, "Cycle"); const run = await req.db.query("SELECT * FROM payroll_runs WHERE organisation_id=$1 AND id=$2", [req.organisationId, id]); if (!run.rows[0]) return res.status(404).json({ message: "Cycle de paie introuvable." }); const lines = await req.db.query(`SELECT l.*,e.employee_number,e.legal_name FROM payroll_run_lines l JOIN payroll_employees e ON e.id=l.employee_id AND e.organisation_id=l.organisation_id WHERE l.organisation_id=$1 AND l.payroll_run_id=$2 ORDER BY e.legal_name`, [req.organisationId, id]); return res.json({ register: buildPayrollRegister({ organisationId: req.organisationId, run: run.rows[0], lines: lines.rows }) }); } catch (error) { return next(error); }
 });
+
+// Export contrôlé (#318, Sprint 7) : réservé au palier préparateur/approbateur, jamais
+// au libre-service employé — un CSV regroupe les talons de tout le monde sur le cycle.
+router.get("/runs/:id/register/export.csv", preparer, async (req, res, next) => {
+  try {
+    const id = positiveId(req.params.id, "Cycle");
+    const run = await req.db.query("SELECT * FROM payroll_runs WHERE organisation_id=$1 AND id=$2", [req.organisationId, id]);
+    if (!run.rows[0]) return res.status(404).json({ message: "Cycle de paie introuvable." });
+    const lines = await req.db.query(`SELECT l.*,e.employee_number,e.legal_name FROM payroll_run_lines l JOIN payroll_employees e ON e.id=l.employee_id AND e.organisation_id=l.organisation_id WHERE l.organisation_id=$1 AND l.payroll_run_id=$2 ORDER BY e.legal_name`, [req.organisationId, id]);
+    const register = buildPayrollRegister({ organisationId: req.organisationId, run: run.rows[0], lines: lines.rows });
+    return res.type("text/csv").set("Content-Disposition", "attachment; filename=registre-paie.csv").send(registerCsv(register));
+  } catch (error) { return next(error); }
+});
+router.get("/runs/:id/pay-stubs/export.csv", preparer, async (req, res, next) => {
+  try {
+    const id = positiveId(req.params.id, "Cycle");
+    const run = await req.db.query("SELECT * FROM payroll_runs WHERE organisation_id=$1 AND id=$2", [req.organisationId, id]);
+    if (!run.rows[0]) return res.status(404).json({ message: "Cycle de paie introuvable." });
+    const lines = await req.db.query(`SELECT l.*,e.employee_number,e.legal_name FROM payroll_run_lines l JOIN payroll_employees e ON e.id=l.employee_id AND e.organisation_id=l.organisation_id WHERE l.organisation_id=$1 AND l.payroll_run_id=$2 ORDER BY e.legal_name`, [req.organisationId, id]);
+    const payStubs = lines.rows.map((line) => buildPayStub({ organisationId: req.organisationId, run: run.rows[0], employee: line, line }));
+    return res.type("text/csv").set("Content-Disposition", "attachment; filename=talons-paie.csv").send(payStubsCsv(payStubs));
+  } catch (error) { return next(error); }
+});
 router.post("/runs/:id/accounting-preview", preparer, async (req, res, next) => {
   try { const id = positiveId(req.params.id, "Cycle"); const { rows } = await req.db.query("SELECT * FROM payroll_runs WHERE organisation_id=$1 AND id=$2 AND status IN ('approved','paid')", [req.organisationId, id]); if (!rows[0]) return res.status(409).json({ message: "Le cycle doit être approuvé avant sa comptabilisation." }); return res.json({ journal: buildPayrollJournal({ run: rows[0], expenseAccountId: req.body?.expenseAccountId, payableAccountId: req.body?.payableAccountId, deductionLiabilityAccountId: req.body?.deductionLiabilityAccountId, contributionExpenseAccountId: req.body?.contributionExpenseAccountId, contributionLiabilityAccountId: req.body?.contributionLiabilityAccountId }) }); } catch (error) { return next(error); }
 });
@@ -199,7 +224,42 @@ router.post("/runs/:id/correct", approver, async (req, res, next) => {
        WHERE organisation_id=$1 AND id=$2 RETURNING *`,
       [req.organisationId, id, req.user?.id || null, req.body?.reason, idempotencyKey],
     );
+    if (!reversal.duplicate) {
+      await appendEvent(req.db, {
+        organisationId: req.organisationId,
+        eventType: "payroll.run.corrected",
+        aggregateType: "payroll_run",
+        aggregateId: id,
+        actorUserId: req.user?.id,
+        payload: { reason: req.body?.reason, reversalEntryId: reversal.reversal?.id || null },
+      });
+    }
     return res.status(201).json({ run: corrected[0], reversal });
+  } catch (error) { return next(error); }
+});
+
+// Journal d'approbation (#318, Sprint 7) : historique horodaté des transitions
+// (calcul, approbation, paiement, correction) d'un cycle, reconstitué depuis les
+// événements métier déjà émis par calculateRun/transitionRun/la correction ci-dessus.
+router.get("/runs/:id/events", preparer, async (req, res, next) => {
+  try {
+    const id = positiveId(req.params.id, "Cycle");
+    const events = await listEvents(req.db, req.organisationId, { aggregateType: "payroll_run", aggregateId: id });
+    return res.json({ events });
+  } catch (error) { return next(error); }
+});
+
+// Historique des modifications de rémunération (#318, Sprint 7) : chaque
+// embauche/ajustement salarial laisse une trace en base depuis POST/PATCH
+// /employees, mais n'était jusqu'ici consultable par aucune route.
+router.get("/employees/:id/compensation-history", preparer, async (req, res, next) => {
+  try {
+    const id = positiveId(req.params.id, "Employé");
+    const { rows } = await req.db.query(
+      `SELECT * FROM payroll_compensation_history WHERE organisation_id=$1 AND employee_id=$2 ORDER BY effective_from DESC, id DESC`,
+      [req.organisationId, id],
+    );
+    return res.json({ history: rows });
   } catch (error) { return next(error); }
 });
 

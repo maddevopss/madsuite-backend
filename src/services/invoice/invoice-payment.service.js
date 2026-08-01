@@ -24,6 +24,13 @@ async function releaseInvoiceTimeEntries(invoiceId, organisationId, txClient = n
   return result.rowCount;
 }
 
+// invoices est sous RLS FORCE : une connexion dédiée (db.pool.connect()) qui
+// n'a jamais reçu app.current_organisation_id ne voit et ne peut écrire aucune
+// ligne, quel que soit le filtre organisation_id explicite dans la requête.
+async function setOrganisationScope(client, organisationId) {
+  await client.query("SELECT set_config('app.current_organisation_id', $1, true)", [String(organisationValue(organisationId))]);
+}
+
 async function updateInvoice({ invoiceId, organisationId, data, req, txClient = null }) {
   const params = [invoiceId, organisationValue(organisationId)];
   const conditions = ["id = $1", "organisation_id = $2", "deleted_at IS NULL"];
@@ -72,6 +79,7 @@ async function updateInvoice({ invoiceId, organisationId, data, req, txClient = 
   try {
     if (!isExternalTx) {
       await client.query("BEGIN");
+      await setOrganisationScope(client, organisationId);
     }
 
     const currentResult = await client.query(
@@ -184,6 +192,7 @@ async function deleteInvoice({ invoiceId, organisationId, req, txClient = null }
   try {
     if (!isExternalTx) {
       await client.query("BEGIN");
+      await setOrganisationScope(client, organisationId);
     }
 
     const lockRes = await client.query(
