@@ -207,6 +207,84 @@ async function lockStatement(db, organisationId, statementId, lockedBy) {
   return { duplicate: false, statement: rows[0] };
 }
 
+const DEFAULT_DATE_WINDOW_DAYS = 5;
+
+// Propose des correspondances sans jamais en imposer une : pour chaque
+// ligne de relevé non rapprochée, cherche les lignes d'écritures publiées
+// du même compte, au montant net (débit - crédit) strictement identique,
+// dans une fenêtre de dates raisonnable, et pas déjà associées à une autre
+// ligne de relevé. Une ligne de relevé avec plusieurs candidats possibles
+// est signalée ambiguë et n'est jamais choisie automatiquement — seules
+// les correspondances univoques (exactement un candidat) sont proposées
+// comme applicables par applySuggestedMatches.
+async function suggestMatches(db, organisationId, statementId, { dateWindowDays = DEFAULT_DATE_WINDOW_DAYS } = {}) {
+  const statement = await getStatement(db, organisationId, statementId);
+  if (!statement) throw notFound("Relevé bancaire introuvable.");
+
+  const unmatchedLines = await db.query(
+    `SELECT * FROM bank_statement_lines WHERE organisation_id=$1 AND statement_id=$2 AND status='unmatched' ORDER BY line_date, id`,
+    [organisationId, statementId],
+  );
+
+  const suggestions = [];
+  for (const line of unmatchedLines.rows) {
+    const candidates = await db.query(
+      `SELECT l.id AS entry_line_id, l.debit, l.credit, e.id AS entry_id, e.entry_number, e.entry_date, e.description
+       FROM accounting_entry_lines l
+       JOIN accounting_entries e ON e.id = l.entry_id AND e.organisation_id = l.organisation_id
+       WHERE l.organisation_id = $1
+         AND l.account_id = $2
+         AND e.status = 'posted'
+         AND (l.debit - l.credit) = $3
+         AND e.entry_date BETWEEN $4::date - $5::int AND $4::date + $5::int
+         AND NOT EXISTS (
+           SELECT 1 FROM bank_statement_lines bsl
+           WHERE bsl.organisation_id = l.organisation_id AND bsl.matched_entry_line_id = l.id
+         )
+       ORDER BY ABS(e.entry_date - $4::date), e.id`,
+      [organisationId, statement.account_id, toMoney(line.amount), line.line_date, dateWindowDays],
+    );
+
+    suggestions.push({
+      statementLine: line,
+      candidates: candidates.rows,
+      ambiguous: candidates.rows.length > 1,
+      matchable: candidates.rows.length === 1,
+    });
+  }
+
+  return suggestions;
+}
+
+// N'applique QUE les correspondances univoques suggérées par suggestMatches,
+// et seulement après confirmation humaine explicite (confirmedByHuman===true)
+// — jamais de correspondance automatique silencieuse. Les suggestions
+// ambiguës ou sans candidat restent pour résolution manuelle via matchLine.
+async function applySuggestedMatches(db, organisationId, statementId, { confirmedByHuman, matchedBy, dateWindowDays } = {}) {
+  if (confirmedByHuman !== true) {
+    throw badRequest("Une confirmation humaine explicite est obligatoire avant d'appliquer des correspondances automatiques.");
+  }
+  await requireOpenStatement(db, organisationId, statementId);
+
+  const suggestions = await suggestMatches(db, organisationId, statementId, { dateWindowDays });
+  const applied = [];
+  const skipped = [];
+
+  for (const suggestion of suggestions) {
+    if (!suggestion.matchable) {
+      skipped.push({ statementLineId: suggestion.statementLine.id, reason: suggestion.ambiguous ? "ambiguous" : "no_candidate" });
+      continue;
+    }
+    const matched = await matchLine(db, organisationId, suggestion.statementLine.id, {
+      entryLineId: suggestion.candidates[0].entry_line_id,
+      matchedBy,
+    });
+    applied.push(matched);
+  }
+
+  return { appliedCount: applied.length, skippedCount: skipped.length, applied, skipped };
+}
+
 module.exports = {
   createStatement,
   getStatement,
@@ -217,4 +295,6 @@ module.exports = {
   unmatchLine,
   getReconciliationSummary,
   lockStatement,
+  suggestMatches,
+  applySuggestedMatches,
 };
