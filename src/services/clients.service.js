@@ -131,6 +131,7 @@ async function deleteClient({ clientId, organisationId }) {
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
+    await client.query("SELECT set_config('app.current_organisation_id', $1, true)", [String(organisationValue(organisationId))]);
 
     const params = [clientId];
     const condition = scopedOrganisationCondition(params, organisationId);

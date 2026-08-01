@@ -1,9 +1,11 @@
 const express = require('express');
 const db = require('../../../db');
+const { requireOrganisation } = require('../../middleware/organization.middleware');
 const { organisationValue } = require('../../utils/organisationScope');
 const { executeTransaction } = require('../../services/business/transaction-engine.service');
 
 const router = express.Router();
+router.use(requireOrganisation);
 const org = (req) => organisationValue(req.organisationId || req.user?.organisation_id);
 const actor = (req) => req.user?.id || req.user?.userId || null;
 const key = (req) => req.get('Idempotency-Key') || req.body?.idempotencyKey;
@@ -15,7 +17,7 @@ function notFound(code) {
   return error;
 }
 
-router.get('/', (req, res, next) => handle(res, next, async () => (await db.pool.query(
+router.get('/', (req, res, next) => handle(res, next, async () => (await db.query(
   'SELECT * FROM audit_corrective_action_links WHERE organisation_id=$1 ORDER BY created_at DESC',
   [org(req)],
 )).rows));

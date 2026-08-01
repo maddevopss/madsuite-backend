@@ -43,6 +43,8 @@ describe("StripeReconciliationService — atomicité P0", () => {
     mockQuery
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ rowCount: 1 })
+      .mockResolvedValueOnce({ rowCount: 1, rows: [{ org_id: 5 }] })
+      .mockResolvedValueOnce({})
       .mockResolvedValueOnce({
         rows: [{
           id: 77,
@@ -71,6 +73,8 @@ describe("StripeReconciliationService — atomicité P0", () => {
     mockQuery
       .mockResolvedValueOnce({})
       .mockResolvedValueOnce({ rowCount: 1 })
+      .mockResolvedValueOnce({ rowCount: 1, rows: [{ org_id: 5 }] })
+      .mockResolvedValueOnce({})
       .mockResolvedValueOnce({
         rows: [{
           id: 77,

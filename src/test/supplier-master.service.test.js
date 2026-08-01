@@ -19,11 +19,12 @@ describe('supplier-master.service', () => {
   test('crée un fournisseur et son événement de preuve', async () => {
     const supplier = { id: 41, supplier_number: 'SUP-0041', status: 'active' };
     const client = clientWith([
-      { rows: [] },
-      { rows: [] },
-      { rows: [supplier] },
-      { rows: [{ id: 1 }] },
-      { rows: [] },
+      { rows: [] }, // BEGIN
+      { rows: [] }, // set_config
+      { rows: [] }, // duplicate check
+      { rows: [supplier] }, // INSERT suppliers
+      { rows: [{ id: 1 }] }, // INSERT supplier_audit_events
+      { rows: [] }, // COMMIT
     ]);
 
     const result = await service.createSupplier({
@@ -47,9 +48,10 @@ describe('supplier-master.service', () => {
   test('retourne le dossier existant lors du rejeu idempotent', async () => {
     const supplier = { id: 42, supplier_number: 'SUP-0042' };
     const client = clientWith([
-      { rows: [] },
-      { rows: [supplier] },
-      { rows: [] },
+      { rows: [] }, // BEGIN
+      { rows: [] }, // set_config
+      { rows: [supplier] }, // duplicate check
+      { rows: [] }, // ROLLBACK
     ]);
 
     const result = await service.createSupplier({
@@ -81,12 +83,13 @@ describe('supplier-master.service', () => {
   test('conserve le statut précédent et le nouveau dans le journal', async () => {
     const updated = { id: 42, status: 'on_hold' };
     const client = clientWith([
-      { rows: [] },
-      { rows: [] },
-      { rows: [{ id: 42, status: 'active' }] },
-      { rows: [updated] },
-      { rows: [{ id: 99 }] },
-      { rows: [] },
+      { rows: [] }, // BEGIN
+      { rows: [] }, // set_config
+      { rows: [] }, // existingAudit check
+      { rows: [{ id: 42, status: 'active' }] }, // current SELECT
+      { rows: [updated] }, // UPDATE
+      { rows: [{ id: 99 }] }, // INSERT supplier_audit_events
+      { rows: [] }, // COMMIT
     ]);
 
     const result = await service.changeStatus({

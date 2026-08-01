@@ -9,11 +9,10 @@ async function createClientOrganisation({ organisation_nom, user_nom, email, pas
   try {
     await client.query("BEGIN");
 
-    // Vérifier si l'email existe déjà
-    const userResult = await client.query(
-      `SELECT id FROM utilisateurs WHERE email = $1 AND deleted_at IS NULL`,
-      [email]
-    );
+    // Vérifier si l'email existe déjà — recherche intrinsèquement cross-tenant
+    // (aucune organisation n'existe encore) : passe par la fonction SECURITY
+    // DEFINER dédiée plutôt que par une lecture directe bloquée par RLS FORCE.
+    const userResult = await client.query(`SELECT id FROM auth_find_user_by_email($1)`, [email]);
 
     if (userResult.rows.length > 0) {
       throw new Error("Cet email est déjà utilisé.");
@@ -30,6 +29,11 @@ async function createClientOrganisation({ organisation_nom, user_nom, email, pas
     );
 
     const organisation = orgResult.rows[0];
+
+    // utilisateurs est sous RLS FORCE : l'INSERT ci-dessous exige que le GUC
+    // corresponde à l'organisation qui vient d'être créée dans cette même
+    // transaction.
+    await client.query("SELECT set_config('app.current_organisation_id', $1, true)", [String(organisation.id)]);
 
     // 2. Hasher le mot de passe — P1-8 fix: utiliser BCRYPT_SALT_ROUNDS (12 en prod)
     const passwordHash = await bcrypt.hash(password, BCRYPT_SALT_ROUNDS);

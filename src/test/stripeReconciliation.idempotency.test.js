@@ -52,6 +52,8 @@ describe("StripeReconciliationService — paiement unique et rejeu idempotent P0
     mockQuery
       .mockResolvedValueOnce({}) // BEGIN
       .mockResolvedValueOnce({ rowCount: 1 }) // INSERT payment_events
+      .mockResolvedValueOnce({ rowCount: 1, rows: [{ org_id: 7 }] }) // SELECT resolve_invoice_organisation
+      .mockResolvedValueOnce({}) // SELECT set_config
       .mockResolvedValueOnce({
         rowCount: 1,
         rows: [

@@ -50,7 +50,7 @@ router.get('/', (req, res, next) => handle(res, next, async () => {
   addCommonPaginationClauses({ clauses, values, page, alias: 'l' });
   values.push(page.limit + 1);
 
-  const rows = (await db.pool.query(`
+  const rows = (await db.query(`
     SELECT l.*
     FROM institutional_risk_links l
     WHERE ${clauses.join(' AND ')}

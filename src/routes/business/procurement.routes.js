@@ -1,16 +1,18 @@
 const express = require('express');
 const db = require('../../../db');
+const { requireOrganisation } = require('../../middleware/organization.middleware');
 const { organisationValue } = require('../../utils/organisationScope');
 const { calculateTotals } = require('../../services/business/procurement-transaction.service');
 const { executeTransaction } = require('../../services/business/transaction-engine.service');
 
 const router = express.Router();
+router.use(requireOrganisation);
 const org = (req) => organisationValue(req.organisationId || req.user?.organisation_id);
 const actor = (req) => req.user?.id || req.user?.userId || null;
 const key = (req) => req.get('Idempotency-Key') || req.body?.idempotencyKey;
 const handle = (res, next, fn, status = 200) => Promise.resolve(fn()).then((data) => res.status(status).json(data)).catch(next);
 
-router.get('/requisitions', (req, res, next) => handle(res, next, async () => (await db.pool.query(
+router.get('/requisitions', (req, res, next) => handle(res, next, async () => (await db.query(
   'SELECT * FROM procurement_requisitions WHERE organisation_id=$1 ORDER BY created_at DESC', [org(req)],
 )).rows));
 
@@ -18,6 +20,7 @@ router.post('/requisitions', (req, res, next) => handle(res, next, async () => {
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
+    await client.query("SELECT set_config('app.current_organisation_id', $1, true)", [String(org(req))]);
     const totals = calculateTotals(req.body.items || [], 0);
     const inserted = await client.query(`INSERT INTO procurement_requisitions
       (organisation_id,requisition_number,title,justification,requested_by,needed_by,currency,estimated_total,budget_code,idempotency_key,created_by)
@@ -39,19 +42,19 @@ router.post('/requisitions', (req, res, next) => handle(res, next, async () => {
   }
 }, 201));
 
-router.get('/orders', (req, res, next) => handle(res, next, async () => (await db.pool.query(
+router.get('/orders', (req, res, next) => handle(res, next, async () => (await db.query(
   'SELECT * FROM procurement_purchase_orders WHERE organisation_id=$1 ORDER BY created_at DESC', [org(req)],
 )).rows));
 
 router.post('/orders', (req, res, next) => handle(res, next, async () => {
   const totals = calculateTotals(req.body.items || [], req.body.taxes || 0);
-  return (await db.pool.query(`INSERT INTO procurement_purchase_orders
+  return (await db.query(`INSERT INTO procurement_purchase_orders
     (organisation_id,purchase_order_number,requisition_id,supplier_id,currency,subtotal,taxes,total,expected_at,terms,evidence,idempotency_key,created_by)
     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
   [org(req), req.body.purchaseOrderNumber, req.body.requisitionId || null, req.body.supplierId || null, req.body.currency || 'CAD', totals.subtotal, totals.taxes, totals.total, req.body.expectedAt || null, req.body.terms || {}, req.body.evidence || [], key(req), actor(req)])).rows[0];
 }, 201));
 
-router.get('/finance-links', (req, res, next) => handle(res, next, async () => (await db.pool.query('SELECT * FROM procurement_finance_links WHERE organisation_id=$1 ORDER BY created_at DESC', [org(req)])).rows));
+router.get('/finance-links', (req, res, next) => handle(res, next, async () => (await db.query('SELECT * FROM procurement_finance_links WHERE organisation_id=$1 ORDER BY created_at DESC', [org(req)])).rows));
 router.post('/finance-links', (req, res, next) => handle(res, next, async () => {
   const tx = await executeTransaction({
     type: 'procurement.finance_link.create',
@@ -82,25 +85,25 @@ router.post('/finance-links', (req, res, next) => handle(res, next, async () => 
   return tx.result;
 }, 201));
 
-router.get('/receipts', (req, res, next) => handle(res, next, async () => (await db.pool.query(
+router.get('/receipts', (req, res, next) => handle(res, next, async () => (await db.query(
   'SELECT * FROM procurement_receipts WHERE organisation_id=$1 ORDER BY received_at DESC', [org(req)],
 )).rows));
 
-router.post('/receipts', (req, res, next) => handle(res, next, async () => (await db.pool.query(`INSERT INTO procurement_receipts
+router.post('/receipts', (req, res, next) => handle(res, next, async () => (await db.query(`INSERT INTO procurement_receipts
   (organisation_id,purchase_order_id,receipt_number,received_by,status,condition_notes,evidence,idempotency_key)
   VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
 [org(req), req.body.purchaseOrderId, req.body.receiptNumber, actor(req), req.body.status || 'received', req.body.conditionNotes || null, req.body.evidence || [], key(req)])).rows[0], 201));
 
-router.get('/supplier-invoices', (req, res, next) => handle(res, next, async () => (await db.pool.query(
+router.get('/supplier-invoices', (req, res, next) => handle(res, next, async () => (await db.query(
   'SELECT * FROM procurement_supplier_invoices WHERE organisation_id=$1 ORDER BY created_at DESC', [org(req)],
 )).rows));
 
 router.get('/alerts', (req, res, next) => handle(res, next, async () => {
   const organisationId = org(req);
   const [pending, overdue, exceptions] = await Promise.all([
-    db.pool.query("SELECT * FROM procurement_requisitions WHERE organisation_id=$1 AND status='submitted' ORDER BY created_at", [organisationId]),
-    db.pool.query("SELECT * FROM procurement_purchase_orders WHERE organisation_id=$1 AND status NOT IN ('received','closed','cancelled') AND expected_at<CURRENT_DATE ORDER BY expected_at", [organisationId]),
-    db.pool.query("SELECT * FROM procurement_supplier_invoices WHERE organisation_id=$1 AND status='exception' ORDER BY created_at", [organisationId]),
+    db.query("SELECT * FROM procurement_requisitions WHERE organisation_id=$1 AND status='submitted' ORDER BY created_at", [organisationId]),
+    db.query("SELECT * FROM procurement_purchase_orders WHERE organisation_id=$1 AND status NOT IN ('received','closed','cancelled') AND expected_at<CURRENT_DATE ORDER BY expected_at", [organisationId]),
+    db.query("SELECT * FROM procurement_supplier_invoices WHERE organisation_id=$1 AND status='exception' ORDER BY created_at", [organisationId]),
   ]);
   return { pendingApprovals: pending.rows, overdueOrders: overdue.rows, invoiceExceptions: exceptions.rows };
 }));

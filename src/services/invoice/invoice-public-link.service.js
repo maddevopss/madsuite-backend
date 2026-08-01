@@ -1,6 +1,7 @@
 const crypto = require("crypto");
 
 const db = require("../../../db");
+const dbStore = require("../../utils/dbStore");
 const { organisationValue } = require("../../utils/organisationScope");
 const { getInvoiceById } = require("./invoice-query.service");
 const { recordBusinessAudit } = require("../auditLog.service");
@@ -68,6 +69,9 @@ async function createInvoicePublicLink({
 
   try {
     await client.query("BEGIN");
+    // invoices/invoice_public_links sont sous RLS FORCE : sans ce GUC, aucune
+    // ligne n'est visible/écrivable sur cette connexion dédiée.
+    await client.query("SELECT set_config('app.current_organisation_id', $1, true)", [String(organisationValue(organisationId))]);
 
     const invoiceResult = await client.query(
       `
@@ -207,48 +211,61 @@ async function getInvoicePublicLinkStatus({ invoiceId, organisationId }) {
 async function getPublicInvoiceContextByToken(token) {
   if (!isValidPublicInvoiceToken(token)) return null;
 
+  // La résolution jeton → organisation est intrinsèquement cross-tenant : elle
+  // passe par une fonction SECURITY DEFINER étroite (elle ne fait que
+  // résoudre + horodater un lien non révoqué et non expiré), jamais par une
+  // lecture directe des tables applicatives, bloquée par RLS FORCE.
   const tokenHash = hashPublicToken(token);
-  const result = await db.query(
-    `
-    SELECT l.id AS link_id, l.organisation_id, l.invoice_id,
-           l.expires_at, i.status, o.nom AS organisation_name
-    FROM invoice_public_links l
-    JOIN invoices i
-      ON i.id = l.invoice_id
-     AND i.organisation_id = l.organisation_id
-    JOIN organisations o ON o.id = l.organisation_id
-    WHERE l.token_hash = $1
-      AND l.revoked_at IS NULL
-      AND l.expires_at > NOW()
-      AND i.deleted_at IS NULL
-      AND i.status IN ('finalized', 'sent', 'paid')
-    LIMIT 1
-    `,
-    [tokenHash],
-  );
+  const resolved = await db.query(`SELECT * FROM resolve_invoice_public_link($1)`, [tokenHash]);
+  const link = resolved.rows[0];
+  if (!link) return null;
 
-  const row = result.rows[0];
-  if (!row) return null;
+  const client = await db.pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SELECT set_config('app.current_organisation_id', $1, true)", [String(link.organisation_id)]);
 
-  const invoice = await getInvoiceById({
-    invoiceId: row.invoice_id,
-    organisationId: row.organisation_id,
-  });
-  if (!invoice) return null;
+    const detail = await client.query(
+      `SELECT i.status, o.nom AS organisation_name
+       FROM invoices i
+       JOIN organisations o ON o.id = i.organisation_id
+       WHERE i.id = $1 AND i.organisation_id = $2 AND i.deleted_at IS NULL AND i.status IN ('finalized', 'sent', 'paid')`,
+      [link.invoice_id, link.organisation_id],
+    );
+    const row = detail.rows[0];
+    if (!row) {
+      await client.query("ROLLBACK");
+      return null;
+    }
 
-  db.query(
-    "UPDATE invoice_public_links SET last_accessed_at = NOW() WHERE id = $1",
-    [row.link_id],
-  ).catch(() => {});
+    // getInvoiceById interroge via le module db partagé (respecte le contexte
+    // ALS) : on l'exécute sous le contexte de cette connexion déjà scopée,
+    // sans avoir à dupliquer sa logique de chargement des lignes.
+    const invoice = await dbStore.run(
+      { dbClient: client, organisationId: link.organisation_id },
+      () => getInvoiceById({ invoiceId: link.invoice_id, organisationId: link.organisation_id }),
+    );
+    if (!invoice) {
+      await client.query("ROLLBACK");
+      return null;
+    }
 
-  return {
-    type: "invoice",
-    organisationId: row.organisation_id,
-    organisationName: row.organisation_name,
-    expiresAt: row.expires_at,
-    invoice,
-    publicDocument: buildPublicInvoiceDocument(invoice),
-  };
+    await client.query("COMMIT");
+
+    return {
+      type: "invoice",
+      organisationId: link.organisation_id,
+      organisationName: row.organisation_name,
+      expiresAt: link.expires_at,
+      invoice,
+      publicDocument: buildPublicInvoiceDocument(invoice),
+    };
+  } catch (error) {
+    try { await client.query("ROLLBACK"); } catch (_) {}
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 module.exports = {

@@ -72,6 +72,10 @@ describe("stripeReconciliation.service.js", () => {
       .mockResolvedValueOnce({ rowCount: 0, rows: [] })
       // INSERT payment_events
       .mockResolvedValueOnce({ rowCount: 1, rows: [] })
+      // SELECT resolve_invoice_organisation
+      .mockResolvedValueOnce({ rowCount: 1, rows: [{ org_id: 1 }] })
+      // SELECT set_config
+      .mockResolvedValueOnce({ rowCount: 0, rows: [] })
       // SELECT invoice
       .mockResolvedValueOnce({
         rowCount: 1,
@@ -142,7 +146,7 @@ describe("stripeReconciliation.service.js", () => {
       .mockResolvedValueOnce({ rowCount: 0, rows: [] })
       // INSERT payment_events
       .mockResolvedValueOnce({ rowCount: 1, rows: [] })
-      // SELECT invoice
+      // SELECT resolve_invoice_organisation
       .mockResolvedValueOnce({ rowCount: 0, rows: [] })
       // ROLLBACK
       .mockResolvedValueOnce({ rowCount: 0, rows: [] });

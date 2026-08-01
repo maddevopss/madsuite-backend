@@ -69,7 +69,7 @@ async function runMatching({ organisationId, billId, policyId, actorUserId, idem
 async function resolveException({ organisationId, exceptionId, status, explanation, evidence, actorUserId }) {
   if (!['accepted','corrected','rejected'].includes(status)) { const error = new Error('supplier.invalid_exception_resolution'); error.statusCode = 400; throw error; }
   if (!String(explanation || '').trim()) { const error = new Error('supplier.exception_explanation_required'); error.statusCode = 400; throw error; }
-  return (await db.pool.query(`UPDATE supplier_matching_exceptions SET status=$3, explanation=$4, evidence=$5, resolved_by=$6, resolved_at=NOW()
+  return (await db.query(`UPDATE supplier_matching_exceptions SET status=$3, explanation=$4, evidence=$5, resolved_by=$6, resolved_at=NOW()
     WHERE organisation_id=$1 AND id=$2 AND status='open' RETURNING *`, [organisationId, exceptionId, status, explanation.trim(), evidence || [], actorUserId || null])).rows[0] || null;
 }
 

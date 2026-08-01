@@ -6,7 +6,12 @@ const { handleServiceError } = require("../utils/routeError");
 const ApiResponse = require("../utils/apiResponse");
 const analyticsService = require("../services/analytics.service");
 const requireRole = require("../middleware/requireRole");
+const { requireOrganisation } = require("../middleware/organization.middleware");
 const logger = require("../config/logger");
+
+// organisations/clients/estimates/invoices sont sous RLS FORCE : ce middleware
+// établit le contexte (GUC + client transactionnel scopé) pour toute la route.
+router.use(requireOrganisation);
 
 // P1-1 fix: Le DDL dynamique (ALTER TABLE) a été supprimé de cette route.
 // Les colonnes adresse, tax_numbers et onboarding_completed doivent être créées
@@ -20,43 +25,31 @@ router.post("/setup", requireRole("admin"), async (req, res, next) => {
     const organisationId = getOrganisationId(req);
     const { nom, address, taxNumbers } = req.body;
 
-    const client = await db.pool.connect();
+    // P1-1 fix: Plus de DDL dynamique. Les colonnes sont créées par la migration 063.
+    // Si les colonnes n'existent pas encore, la requête échouera proprement.
+    await req.db.query(
+      `UPDATE organisations
+       SET nom = COALESCE($1, nom),
+           adresse = COALESCE($2, adresse),
+           tax_numbers = COALESCE($3, tax_numbers),
+           onboarding_completed = true
+       WHERE id = $4`,
+      [nom, address, taxNumbers, organisationId]
+    );
+
+    // Funnel instrumentation
     try {
-      await client.query("BEGIN");
-
-      // P1-1 fix: Plus de DDL dynamique. Les colonnes sont créées par la migration 063.
-      // Si les colonnes n'existent pas encore, la requête échouera proprement.
-      await client.query(
-        `UPDATE organisations 
-         SET nom = COALESCE($1, nom), 
-             adresse = COALESCE($2, adresse), 
-             tax_numbers = COALESCE($3, tax_numbers),
-             onboarding_completed = true
-         WHERE id = $4`,
-        [nom, address, taxNumbers, organisationId]
-      );
-
-      await client.query("COMMIT");
-
-      // Funnel instrumentation
-      try {
-        const userId = req.user?.id;
-        await analyticsService.trackEvent("onboarding_completed", {
-          organisationId,
-          userId,
-          metadata: { has_company_info: !!nom }
-        });
-      } catch (e) {
-        logger.warn("Failed to track onboarding_completed");
-      }
-
-      return res.status(200).json(ApiResponse.success("ONBOARDING_COMPLETED"));
-    } catch (err) {
-      await client.query("ROLLBACK");
-      throw err;
-    } finally {
-      client.release();
+      const userId = req.user?.id;
+      await analyticsService.trackEvent("onboarding_completed", {
+        organisationId,
+        userId,
+        metadata: { has_company_info: !!nom }
+      });
+    } catch (e) {
+      logger.warn("Failed to track onboarding_completed");
     }
+
+    return res.status(200).json(ApiResponse.success("ONBOARDING_COMPLETED"));
   } catch (err) {
     return handleServiceError(err, res, next);
   }
@@ -68,85 +61,75 @@ router.post("/sample-data", requireRole("admin"), async (req, res, next) => {
   try {
     const organisationId = getOrganisationId(req);
     const userId = req.user.id;
+    const client = req.db;
 
-    const client = await db.pool.connect();
-    try {
-      await client.query("BEGIN");
+    // 1. Create a demo client
+    const clientRes = await client.query(
+      `INSERT INTO clients (organisation_id, nom, email, hourly_rate_defaut)
+       VALUES ($1, 'Client Démo Inc.', 'demo@client.com', 120.00) RETURNING id`,
+      [organisationId]
+    );
+    const clientId = clientRes.rows[0].id;
 
-      // 1. Create a demo client
-      const clientRes = await client.query(
-        `INSERT INTO clients (organisation_id, nom, email, hourly_rate_defaut) 
-         VALUES ($1, 'Client Démo Inc.', 'demo@client.com', 120.00) RETURNING id`,
-        [organisationId]
-      );
-      const clientId = clientRes.rows[0].id;
+    // 2. Create a demo project
+    const projRes = await client.query(
+      `INSERT INTO projets (organisation_id, client_id, nom, taux_horaire, status)
+       VALUES ($1, $2, 'Refonte site web', 120.00, 'actif') RETURNING id`,
+      [organisationId, clientId]
+    );
+    const projetId = projRes.rows[0].id;
 
-      // 2. Create a demo project
-      const projRes = await client.query(
-        `INSERT INTO projets (organisation_id, client_id, nom, taux_horaire, status) 
-         VALUES ($1, $2, 'Refonte site web', 120.00, 'actif') RETURNING id`,
+    // 2.5 Create a demo time entry (for mental model: time → invoice)
+    const timeEntryRes = await client.query(
+      `INSERT INTO time_entries (organisation_id, utilisateur_id, projet_id, client_id, start_time, end_time, description, hourly_rate)
+       VALUES ($1, $2, $3, $4, NOW() - INTERVAL '15 minutes', NOW(), 'Développement démo', 120.00) RETURNING id`,
+      [organisationId, userId, projetId, clientId]
+    );
+    const timeEntryId = timeEntryRes.rows[0].id;
+
+    // 3. Create a demo estimate
+    // Check if estimates table exists
+    const estimatesCheck = await client.query(`
+      SELECT table_name FROM information_schema.tables WHERE table_name='estimates'
+    `);
+
+    let estimateId = null;
+    if (estimatesCheck.rowCount > 0) {
+      const estRes = await client.query(
+        `INSERT INTO estimates (organisation_id, client_id, estimate_number, status, subtotal, total)
+         VALUES ($1, $2, 'DEV-0001', 'draft', 1000.00, 1150.00) RETURNING id`,
         [organisationId, clientId]
       );
-      const projetId = projRes.rows[0].id;
+      estimateId = estRes.rows[0].id;
 
-      // 2.5 Create a demo time entry (for mental model: time → invoice)
-      const timeEntryRes = await client.query(
-        `INSERT INTO time_entries (organisation_id, utilisateur_id, projet_id, client_id, start_time, end_time, description, hourly_rate)
-         VALUES ($1, $2, $3, $4, NOW() - INTERVAL '15 minutes', NOW(), 'Développement démo', 120.00) RETURNING id`,
-        [organisationId, userId, projetId, clientId]
-      );
-      const timeEntryId = timeEntryRes.rows[0].id;
-
-      // 3. Create a demo estimate
-      // Check if estimates table exists
-      const estimatesCheck = await client.query(`
-        SELECT table_name FROM information_schema.tables WHERE table_name='estimates'
+      // Insert items
+      const estItemsCheck = await client.query(`
+        SELECT table_name FROM information_schema.tables WHERE table_name='estimate_items'
       `);
-      
-      let estimateId = null;
-      if (estimatesCheck.rowCount > 0) {
-        const estRes = await client.query(
-          `INSERT INTO estimates (organisation_id, client_id, estimate_number, status, subtotal, total) 
-           VALUES ($1, $2, 'DEV-0001', 'draft', 1000.00, 1150.00) RETURNING id`,
-          [organisationId, clientId]
+      if (estItemsCheck.rowCount > 0) {
+        await client.query(
+          `INSERT INTO estimate_items (organisation_id, estimate_id, description, quantity, unit_rate, amount)
+           VALUES ($1, $2, 'Design UX/UI', 10, 100.00, 1000.00)`,
+          [organisationId, estimateId]
         );
-        estimateId = estRes.rows[0].id;
-
-        // Insert items
-        const estItemsCheck = await client.query(`
-          SELECT table_name FROM information_schema.tables WHERE table_name='estimate_items'
-        `);
-        if (estItemsCheck.rowCount > 0) {
-          await client.query(
-            `INSERT INTO estimate_items (organisation_id, estimate_id, description, quantity, unit_rate, amount)
-             VALUES ($1, $2, 'Design UX/UI', 10, 100.00, 1000.00)`,
-            [organisationId, estimateId]
-          );
-        }
       }
-
-      // 4. Create a demo invoice
-      const invRes = await client.query(
-        `INSERT INTO invoices (organisation_id, client_id, invoice_number, status, subtotal, total, issue_date, due_date) 
-         VALUES ($1, $2, 'INV-0001', 'draft', 1000.00, 1150.00, CURRENT_DATE, CURRENT_DATE + INTERVAL '15 days') RETURNING id`,
-        [organisationId, clientId]
-      );
-      const invoiceId = invRes.rows[0].id;
-
-      await client.query(
-        `INSERT INTO invoice_items (organisation_id, invoice_id, description, quantity, unit_rate, amount)
-         VALUES ($1, $2, 'Design UX/UI', 10, 100.00, 1000.00)`,
-        [organisationId, invoiceId]
-      );
-
-      await client.query("COMMIT");
-      return res.status(200).json(ApiResponse.success("SAMPLE_DATA_CREATED"));
-    } catch (err) {
-      await client.query("ROLLBACK");
-      throw err;
-    } finally {
-      client.release();
     }
+
+    // 4. Create a demo invoice
+    const invRes = await client.query(
+      `INSERT INTO invoices (organisation_id, client_id, invoice_number, status, subtotal, total, issue_date, due_date)
+       VALUES ($1, $2, 'INV-0001', 'draft', 1000.00, 1150.00, CURRENT_DATE, CURRENT_DATE + INTERVAL '15 days') RETURNING id`,
+      [organisationId, clientId]
+    );
+    const invoiceId = invRes.rows[0].id;
+
+    await client.query(
+      `INSERT INTO invoice_items (organisation_id, invoice_id, description, quantity, unit_rate, amount)
+       VALUES ($1, $2, 'Design UX/UI', 10, 100.00, 1000.00)`,
+      [organisationId, invoiceId]
+    );
+
+    return res.status(200).json(ApiResponse.success("SAMPLE_DATA_CREATED"));
   } catch (err) {
     return handleServiceError(err, res, next);
   }

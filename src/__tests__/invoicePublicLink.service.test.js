@@ -121,11 +121,15 @@ describe("invoice-public-link.service", () => {
         organisation_id: 7,
         invoice_id: 99,
         expires_at: "2026-08-24T00:00:00.000Z",
-        status: "finalized",
-        organisation_name: "Organisation A",
       }],
     });
-    db.query.mockResolvedValueOnce({ rowCount: 1, rows: [] });
+    client.query.mockImplementation(async (sql) => {
+      const text = String(sql);
+      if (text.includes("SELECT i.status, o.nom")) {
+        return { rows: [{ status: "finalized", organisation_name: "Organisation A" }] };
+      }
+      return { rows: [] };
+    });
     getInvoiceById.mockResolvedValue({
       id: 99,
       invoice_number: "FAC-00099",

@@ -14,6 +14,7 @@ async function createSupplier({ organisationId, actorUserId, payload }) {
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
+    await client.query("SELECT set_config('app.current_organisation_id', $1, true)", [String(organisationId)]);
 
     const idempotencyKey = clean(payload.idempotencyKey);
     if (!idempotencyKey) throw httpError('supplier.idempotency_key_required', 400);
@@ -93,6 +94,7 @@ async function changeStatus({ organisationId, supplierId, status, reason, actorU
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
+    await client.query("SELECT set_config('app.current_organisation_id', $1, true)", [String(organisationId)]);
     const existingAudit = await client.query(
       'SELECT id FROM supplier_audit_events WHERE organisation_id=$1 AND idempotency_key=$2',
       [organisationId, idempotencyKey],

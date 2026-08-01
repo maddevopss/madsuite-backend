@@ -236,6 +236,7 @@ async function updatePassword({ userId, data, organisationId }) {
 
   try {
     await client.query("BEGIN");
+    await client.query("SELECT set_config('app.current_organisation_id', $1, true)", [String(organisationId)]);
 
     // Update password
     const result = await client.query(

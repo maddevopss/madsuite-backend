@@ -23,6 +23,7 @@ async function closeWorkOrder({ db, organisationId, workOrderId, closedBy, reaso
   const client = await db.pool.connect();
   try {
     await client.query('BEGIN');
+    await client.query("SELECT set_config('app.current_organisation_id', $1, true)", [String(orgId)]);
     const workOrder = (await client.query('SELECT * FROM asset_work_orders WHERE organisation_id=$1 AND id=$2 FOR UPDATE', [orgId, workOrderId])).rows[0];
     const returnToServiceCheck = (await client.query('SELECT * FROM asset_return_to_service_checks WHERE organisation_id=$1 AND work_order_id=$2', [orgId, workOrderId])).rows[0];
     const labour = (await client.query('SELECT * FROM asset_work_order_labour WHERE organisation_id=$1 AND work_order_id=$2', [orgId, workOrderId])).rows;
