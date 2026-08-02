@@ -2,6 +2,7 @@ const router = require("express").Router();
 const { requireOrganisation } = require("../../middleware/organization.middleware");
 const requireRole = require("../../middleware/requireRole");
 const { createEmployee, transitionEmployment, decideLeave, verifyCompetency } = require("../../services/business/hr-transaction.service");
+const { createDepartment, updateDepartment, assignEmployeeDepartment, getOrganisationChart } = require("../../services/business/hr-department.service");
 
 router.use(requireOrganisation);
 router.use(requireRole("admin"));
@@ -28,5 +29,15 @@ router.get("/competencies", async(req,res,next)=>{try{const {rows}=await req.db.
 router.post("/competencies", async(req,res,next)=>{try{const {rows}=await req.db.query(`INSERT INTO hr_competencies (organisation_id,code,name,description,validity_days,is_required) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,[req.organisationId,req.body.code,req.body.name,req.body.description||null,req.body.validityDays||null,Boolean(req.body.isRequired)]);res.status(201).json({competency:rows[0]});}catch(e){next(e);}});
 router.post("/employee-competencies", async(req,res,next)=>{try{const result=await verifyCompetency({organisationId:req.organisationId,input:req.body,idempotencyKey:idempotency(req),createdBy:req.user?.id});if(!result)return res.status(404).json({error:"Compétence introuvable."});res.status(result.duplicate?200:201).json(result);}catch(e){next(e);}});
 router.get("/alerts", async(req,res,next)=>{try{const {rows}=await req.db.query(`SELECT ec.*,e.legal_name,c.code,c.name FROM hr_employee_competencies ec JOIN hr_employees e ON e.id=ec.employee_id JOIN hr_competencies c ON c.id=ec.competency_id WHERE ec.organisation_id=$1 AND ec.status='valid' AND ec.expires_at IS NOT NULL AND ec.expires_at <= CURRENT_DATE + INTERVAL '60 days' ORDER BY ec.expires_at`,[req.organisationId]);res.json({alerts:rows});}catch(e){next(e);}});
+
+// Structure organisationnelle (mandat 1.A/1.B) : hr_employees portait déjà
+// manager_employee_id (hiérarchie individuelle) mais aucune entité
+// "département" réelle n'existait -- nouvelle conception, aucun orphelin à
+// câbler ici.
+router.get("/departments", async(req,res,next)=>{try{const {rows}=await req.db.query("SELECT * FROM hr_departments WHERE organisation_id=$1 ORDER BY name",[req.organisationId]);res.json({departments:rows});}catch(e){next(e);}});
+router.post("/departments", async(req,res,next)=>{try{const result=await createDepartment({organisationId:req.organisationId,input:req.body,idempotencyKey:idempotency(req),createdBy:req.user?.id});res.status(result?.duplicate?200:201).json(result);}catch(e){if(e.code==="23505")return res.status(409).json({error:"Ce code de département existe déjà pour cette organisation."});next(e);}});
+router.patch("/departments/:id", async(req,res,next)=>{try{const result=await updateDepartment({organisationId:req.organisationId,departmentId:req.params.id,input:req.body,createdBy:req.user?.id});if(!result)return res.status(404).json({error:"Département introuvable."});res.json(result);}catch(e){next(e);}});
+router.patch("/employees/:id/department", async(req,res,next)=>{try{const result=await assignEmployeeDepartment({organisationId:req.organisationId,employeeId:req.params.id,departmentId:req.body.departmentId,db:req.db});if(!result)return res.status(404).json({error:"Employé introuvable."});res.json(result);}catch(e){next(e);}});
+router.get("/organisation-chart", async(req,res,next)=>{try{const result=await getOrganisationChart({organisationId:req.organisationId,db:req.db});res.json(result);}catch(e){next(e);}});
 
 module.exports=router;
