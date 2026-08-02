@@ -28,7 +28,7 @@ function assessOffboardingReadiness(input = {}) {
 function buildPolicyAcknowledgement(input = {}) {
   const policyCode = String(input.policyCode || '').trim();
   const policyVersion = String(input.policyVersion || '').trim();
-  if (!policyCode || !policyVersion) throw new Error('policyCode and policyVersion are required');
+  if (!policyCode || !policyVersion) throw Object.assign(new Error('policyCode and policyVersion are required'), { statusCode: 400 });
   return {
     policyCode,
     policyVersion,
