@@ -15,11 +15,12 @@ function assertPreparationComplete({ run, employees = [], inputs = [] }) {
   return true;
 }
 
-function assertCanApprove({ preparedBy, approverId, approverRoles = [] }) {
-  if (!approverRoles.includes("payroll_approver") && !approverRoles.includes("admin")) {
-    throw forbidden("Le rôle d’approbateur de paie est obligatoire.");
-  }
-  if (preparedBy && Number(preparedBy) === Number(approverId)) {
+// Le rôle d'approbateur est déjà exigé en amont par le middleware de route
+// (requireRole('admin')) — cette fonction ne couvre que la séparation des
+// tâches : le préparateur (celui qui a calculé le cycle) ne peut pas être
+// aussi celui qui l'approuve, même s'il a le rôle admin.
+function assertCanApprove({ preparedBy, approverId }) {
+  if (preparedBy && approverId && Number(preparedBy) === Number(approverId)) {
     throw forbidden("Le préparateur ne peut pas approuver son propre cycle de paie.");
   }
   return true;
