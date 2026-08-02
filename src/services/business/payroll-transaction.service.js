@@ -111,7 +111,7 @@ async function calculateRun({ organisationId, runId, entries = [], idempotencyKe
   return tx.result ? { ...tx.result, ct_mad: { transactionId: tx.transactionId, correlationId: tx.correlationId, policies: tx.policyResults } } : null;
 }
 
-async function transitionRun({ organisationId, runId, action, reason, idempotencyKey, createdBy }) {
+async function transitionRun({ organisationId, runId, action, reason, idempotencyKey, createdBy, skipMultiApproverGate }) {
   const policy = action === "approve" ? APPROVE_POLICY : action === "pay" ? PAY_POLICY : VOID_POLICY;
   const tx = await executeTransaction({ type: `payroll.run.${action}`, organisationId: organisationValue(organisationId), actorUserId: createdBy, idempotencyKey, policies: [policy], input: { runId, reason }, execute: async ({ client, transactionId, correlationId, organisationId: orgId, actorUserId }) => {
     const { rows } = await client.query(`SELECT * FROM payroll_runs WHERE organisation_id=$1 AND id=$2 FOR UPDATE`, [orgId, runId]); const run = rows[0]; if (!run) return null;
@@ -124,6 +124,20 @@ async function transitionRun({ organisationId, runId, action, reason, idempotenc
     // (mais jusqu'ici jamais câblée) de payroll-approval-policy.service.js.
     if (action === "approve") {
       assertCanApprove({ preparedBy: run.calculated_by, approverId: actorUserId });
+      // Si l'organisation a activé une politique d'approbation
+      // multi-approbateurs (payroll_approval_policies), l'approbation
+      // directe en un seul appel est refusée : elle doit passer par
+      // POST /runs/:id/approval-decisions, qui appelle cette même fonction
+      // avec skipMultiApproverGate une fois le seuil atteint.
+      if (!skipMultiApproverGate) {
+        const activePolicy = await client.query(
+          `SELECT id FROM payroll_approval_policies WHERE organisation_id=$1 AND code='payroll_run_approval' AND active=TRUE`,
+          [orgId],
+        );
+        if (activePolicy.rows[0]) {
+          throw Object.assign(new Error("Ce cycle exige une approbation multi-approbateurs : utilisez POST /runs/:id/approval-decisions."), { statusCode: 409 });
+        }
+      }
     }
     if (action === "void" && run.status === "paid") throw Object.assign(new Error("Un cycle payé doit être renversé par un processus de paiement distinct."), { statusCode: 409 });
     const status = action === "approve" ? "approved" : action === "pay" ? "paid" : "void";

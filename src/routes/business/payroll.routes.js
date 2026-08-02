@@ -9,12 +9,14 @@ const { buildPayStub, buildPayrollRegister } = require("../../services/business/
 const { registerCsv, payStubsCsv } = require("../../services/business/payroll-export.service");
 const payrollRemittancesRoutes = require("./payroll-remittances.routes");
 const payrollLifecycleRoutes = require("./payroll-lifecycle.routes");
+const payrollApprovalRoutes = require("./payroll-approval.routes");
 const { checksumRules } = require("../../services/business/payroll-run-lifecycle.service");
 const { appendEvent, listEvents } = require("../../services/business/business-event.service");
 
 router.use(requireOrganisation);
 router.use("/remittances", payrollRemittancesRoutes);
 router.use("/", payrollLifecycleRoutes);
+router.use("/", payrollApprovalRoutes);
 
 // Séparation préparateur/approbateur (#318, #363) : la préparation (saisie,
 // calcul) reste ouverte à admin/manager, mais les actions de gouvernance
