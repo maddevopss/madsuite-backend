@@ -1,8 +1,10 @@
 const express = require("express");
 const pool = require("../../../db");
 const { requireOrganisation } = require("../../middleware/organization.middleware");
+const requireRole = require("../../middleware/requireRole");
 const { organisationValue } = require("../../utils/organisationScope");
 const { createHazard, reportIncident, transitionCorrectiveAction } = require("../../services/business/sst-transaction.service");
+const { closeInspection, approveInspectionClosure } = require("../../services/business/sst-inspection-closure.service");
 
 const router = express.Router();
 // hr_employee_competencies (jointe dans /alerts) est sous RLS FORCE : sans
@@ -13,12 +15,24 @@ const orgId = (req) => organisationValue(req.user?.organisation_id || req.organi
 const actorId = (req) => req.user?.id || null;
 const key = (req) => req.get("Idempotency-Key") || req.body?.idempotencyKey;
 
+// Même séparation que payroll.routes.js : préparation (déclarer, fermer une
+// inspection) ouverte à admin/manager, gouvernance (contresigner une
+// fermeture) réservée à admin.
+const preparer = requireRole("admin", "manager");
+const approver = requireRole("admin");
+
 router.get("/hazards", async (req,res,next)=>{try{const {rows}=await pool.query(`SELECT * FROM sst_hazards WHERE organisation_id=$1 ORDER BY created_at DESC`,[orgId(req)]);res.json(rows);}catch(e){next(e);}});
 router.post("/hazards", async (req,res,next)=>{try{const result=await createHazard({organisationId:orgId(req),input:req.body,idempotencyKey:key(req),createdBy:actorId(req)});res.status(201).json(result);}catch(e){next(e);}});
 router.get("/incidents", async (req,res,next)=>{try{const {rows}=await pool.query(`SELECT * FROM sst_incidents WHERE organisation_id=$1 ORDER BY occurred_at DESC`,[orgId(req)]);res.json(rows);}catch(e){next(e);}});
 router.post("/incidents", async (req,res,next)=>{try{const result=await reportIncident({organisationId:orgId(req),input:req.body,idempotencyKey:key(req),createdBy:actorId(req)});res.status(201).json(result);}catch(e){next(e);}});
 router.get("/inspections", async (req,res,next)=>{try{const {rows}=await pool.query(`SELECT * FROM sst_inspections WHERE organisation_id=$1 ORDER BY COALESCE(scheduled_at,created_at) DESC`,[orgId(req)]);res.json(rows);}catch(e){next(e);}});
-router.post("/inspections", async (req,res,next)=>{try{const number=req.body.inspectionNumber||`INS-${Date.now()}`;const {rows}=await pool.query(`INSERT INTO sst_inspections (organisation_id,inspection_number,inspection_type,location,scheduled_at,inspector_employee_id,checklist,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,[orgId(req),number,req.body.inspectionType,req.body.location,req.body.scheduledAt||null,req.body.inspectorEmployeeId||null,req.body.checklist||[],actorId(req)]);res.status(201).json(rows[0]);}catch(e){next(e);}});
+router.post("/inspections", preparer, async (req,res,next)=>{try{const number=req.body.inspectionNumber||`INS-${Date.now()}`;const {rows}=await pool.query(`INSERT INTO sst_inspections (organisation_id,inspection_number,inspection_type,location,scheduled_at,inspector_employee_id,checklist,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,[orgId(req),number,req.body.inspectionType,req.body.location,req.body.scheduledAt||null,req.body.inspectorEmployeeId||null,req.body.checklist||[],actorId(req)]);res.status(201).json(rows[0]);}catch(e){next(e);}});
+router.get("/inspections/:id", async (req,res,next)=>{try{const inspection=await pool.query(`SELECT * FROM sst_inspections WHERE organisation_id=$1 AND id=$2`,[orgId(req),req.params.id]);if(!inspection.rows[0])return res.status(404).json({message:"Inspection introuvable."});const closure=await pool.query(`SELECT * FROM sst_inspection_closures WHERE organisation_id=$1 AND inspection_id=$2`,[orgId(req),req.params.id]);res.json({inspection:inspection.rows[0],closure:closure.rows[0]||null});}catch(e){next(e);}});
+// Fermeture d'inspection (2A du mandat RH/SST) : sst-complete-block.service.js
+// (assessInspectionClosure) et sst_inspection_closures existaient sans
+// jamais être montés sur aucune route.
+router.post("/inspections/:id/close", preparer, async (req,res,next)=>{try{const result=await closeInspection({organisationId:orgId(req),input:{...req.body,inspectionId:Number(req.params.id)},idempotencyKey:key(req),createdBy:actorId(req)});res.status(result?.duplicate?200:201).json(result);}catch(e){next(e);}});
+router.post("/inspections/:id/approve-closure", approver, async (req,res,next)=>{try{const result=await approveInspectionClosure({organisationId:orgId(req),inspectionId:Number(req.params.id),idempotencyKey:key(req),createdBy:actorId(req)});if(!result)return res.status(404).json({message:"Aucune fermeture d’inspection à contresigner."});res.json(result);}catch(e){next(e);}});
 router.get("/corrective-actions", async (req,res,next)=>{try{const {rows}=await pool.query(`SELECT * FROM sst_corrective_actions WHERE organisation_id=$1 ORDER BY due_at ASC`,[orgId(req)]);res.json(rows);}catch(e){next(e);}});
 router.post("/corrective-actions", async (req,res,next)=>{try{const {rows}=await pool.query(`INSERT INTO sst_corrective_actions (organisation_id,source_type,source_id,title,description,priority,owner_employee_id,due_at,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING *`,[orgId(req),req.body.sourceType,req.body.sourceId||null,req.body.title,req.body.description,req.body.priority,req.body.ownerEmployeeId||null,req.body.dueAt,actorId(req)]);res.status(201).json(rows[0]);}catch(e){next(e);}});
 router.post("/corrective-actions/:id/:action", async (req,res,next)=>{try{const result=await transitionCorrectiveAction({organisationId:orgId(req),actionId:Number(req.params.id),action:req.params.action,evidence:req.body.evidence,reason:req.body.reason,idempotencyKey:key(req),createdBy:actorId(req)});if(!result)return res.status(404).json({message:"Action corrective introuvable."});res.json(result);}catch(e){next(e);}});
