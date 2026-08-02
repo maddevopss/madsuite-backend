@@ -23,12 +23,21 @@ describe('payroll employee registry', () => {
   });
 
   test.each([
-    [{ legalFirstName: 'Marie', legalLastName: 'Tremblay' }, 'employeeNumber is required'],
-    [{ employeeNumber: 'EMP-001', legalLastName: 'Tremblay' }, 'legalFirstName is required'],
-    [{ employeeNumber: 'EMP-001', legalFirstName: 'Marie' }, 'legalLastName is required'],
-    [{ employeeNumber: 'EMP-001', legalFirstName: 'Marie', legalLastName: 'Tremblay', employmentStatus: 'unknown' }, 'invalid employmentStatus'],
+    [{ legalFirstName: 'Marie', legalLastName: 'Tremblay' }, 'Le numéro d’employé est obligatoire.'],
+    [{ employeeNumber: 'EMP-001', legalLastName: 'Tremblay' }, 'Le prénom légal est obligatoire.'],
+    [{ employeeNumber: 'EMP-001', legalFirstName: 'Marie' }, 'Le nom de famille légal est obligatoire.'],
+    [{ employeeNumber: 'EMP-001', legalFirstName: 'Marie', legalLastName: 'Tremblay', employmentStatus: 'unknown' }, 'Le statut d’emploi est invalide.'],
   ])('rejects invalid identity data', (input, message) => {
     expect(() => normalizeEmployeeRecord(input)).toThrow(message);
+  });
+
+  test('les erreurs de validation portent un statusCode 400 (cohérent avec le reste de l’API)', () => {
+    expect.assertions(1);
+    try {
+      normalizeEmployeeRecord({});
+    } catch (error) {
+      expect(error.statusCode).toBe(400);
+    }
   });
 
   test('rejects a termination before hiring', () => {
@@ -38,7 +47,7 @@ describe('payroll employee registry', () => {
       legalLastName: 'Roy',
       hireDate: '2026-07-20',
       terminationDate: '2026-07-19',
-    })).toThrow('terminationDate cannot precede hireDate');
+    })).toThrow('La date de fin d’emploi ne peut pas précéder la date d’embauche.');
   });
 
   test('only active and non-archived employees participate in payroll', () => {
