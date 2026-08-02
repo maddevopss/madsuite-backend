@@ -11,6 +11,7 @@ const payrollRemittancesRoutes = require("./payroll-remittances.routes");
 const payrollLifecycleRoutes = require("./payroll-lifecycle.routes");
 const { checksumRules } = require("../../services/business/payroll-run-lifecycle.service");
 const { appendEvent, listEvents } = require("../../services/business/business-event.service");
+const { normalizeEmployeeRecord } = require("../../services/business/payroll-employee-registry.service");
 
 router.use(requireOrganisation);
 router.use("/remittances", payrollRemittancesRoutes);
@@ -39,6 +40,27 @@ function splitLegalName(legalName) {
   return { firstName: trimmed.slice(0, spaceIndex), lastName: trimmed.slice(spaceIndex + 1).trim() };
 }
 
+// Les colonnes DATE reviennent de node-pg sous forme d'objets Date : les
+// reconvertir en chaîne ISO avant de les repasser à normalizeEmployeeRecord
+// (qui les stringifie autrement via Date.prototype.toString(), illisible
+// par Postgres en retour).
+function toDateInput(value) {
+  if (value == null) return null;
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return value;
+}
+
+async function assertManagerBelongsToOrganisation(db, organisationId, managerEmployeeId, employeeId) {
+  if (!managerEmployeeId) return;
+  if (employeeId && Number(managerEmployeeId) === Number(employeeId)) {
+    throw Object.assign(new Error("Un employé ne peut pas être son propre gestionnaire."), { statusCode: 400 });
+  }
+  const manager = await db.query("SELECT id FROM payroll_employees WHERE organisation_id=$1 AND id=$2", [organisationId, managerEmployeeId]);
+  if (!manager.rows[0]) {
+    throw Object.assign(new Error("Le gestionnaire désigné est introuvable dans cette organisation."), { statusCode: 400 });
+  }
+}
+
 router.get("/employees", preparer, async (req, res, next) => {
   try {
     const { rows } = await req.db.query("SELECT * FROM payroll_employees WHERE organisation_id=$1 ORDER BY legal_name", [req.organisationId]);
@@ -53,7 +75,46 @@ router.post("/employees", preparer, async (req, res, next) => {
     if (body.payType === "hourly" && Number(body.hourlyRate) <= 0) return res.status(400).json({ message: "Le taux horaire doit être supérieur à zéro." });
     if (body.payType === "salary" && Number(body.annualSalary) <= 0) return res.status(400).json({ message: "Le salaire annuel doit être supérieur à zéro." });
     const { firstName, lastName } = splitLegalName(body.legalName);
-    const { rows } = await req.db.query(`INSERT INTO payroll_employees (organisation_id,user_id,employee_number,legal_name,legal_first_name,legal_last_name,hire_date,pay_type,hourly_rate,annual_salary,province,tax_profile,employment_status,pay_frequency,expense_account_id,payable_account_id,compensation_effective_from) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$7) RETURNING *`, [req.organisationId, body.userId || null, body.employeeNumber, body.legalName, firstName, lastName, body.hireDate, body.payType, body.hourlyRate || null, body.annualSalary || null, body.province || "QC", body.taxProfile || {}, body.employmentStatus || "active", body.payFrequency || "biweekly", body.expenseAccountId || null, body.payableAccountId || null]);
+    // Champs de fiche employé étendue (department_code, manager_employee_id,
+    // preferred_name, position_title, metadata, email, phone) : colonnes déjà
+    // en base depuis longtemps mais jamais exposées en écriture par l'API
+    // (#698). normalizeEmployeeRecord (jusqu'ici orphelin) valide et
+    // normalise l'ensemble de la fiche, y compris l'ordre hire/termination.
+    const extended = normalizeEmployeeRecord({
+      employeeNumber: body.employeeNumber,
+      legalFirstName: firstName,
+      legalLastName: lastName,
+      preferredName: body.preferredName,
+      email: body.email,
+      phone: body.phone,
+      employmentStatus: body.employmentStatus || "active",
+      hireDate: body.hireDate,
+      // Un nouvel employé n'a jamais de date de fin d'emploi à la création
+      // (cohérent avec le comportement existant : la colonne n'est même pas
+      // écrite par l'INSERT ci-dessous) — la définir se fait via PATCH.
+      terminationDate: null,
+      departmentCode: body.departmentCode,
+      positionTitle: body.positionTitle,
+      managerEmployeeId: body.managerEmployeeId,
+      metadata: body.metadata,
+    });
+    await assertManagerBelongsToOrganisation(req.db, req.organisationId, extended.managerEmployeeId, null);
+    const { rows } = await req.db.query(
+      `INSERT INTO payroll_employees (
+         organisation_id,user_id,employee_number,legal_name,legal_first_name,legal_last_name,
+         preferred_name,email,phone,department_code,position_title,manager_employee_id,metadata,
+         hire_date,pay_type,hourly_rate,annual_salary,province,tax_profile,employment_status,
+         pay_frequency,expense_account_id,payable_account_id,compensation_effective_from,created_by
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$14,$24)
+       RETURNING *`,
+      [
+        req.organisationId, body.userId || null, extended.employeeNumber, body.legalName, extended.legalFirstName, extended.legalLastName,
+        extended.preferredName, extended.email, extended.phone, extended.departmentCode, extended.positionTitle, extended.managerEmployeeId,
+        JSON.stringify(extended.metadata), body.hireDate, body.payType, body.hourlyRate || null, body.annualSalary || null, body.province || "QC",
+        body.taxProfile || {}, extended.employmentStatus, body.payFrequency || "biweekly", body.expenseAccountId || null, body.payableAccountId || null,
+        req.user?.id || null,
+      ],
+    );
     await req.db.query(`INSERT INTO payroll_compensation_history (organisation_id,employee_id,effective_from,pay_type,hourly_rate,annual_salary,pay_frequency,reason,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [req.organisationId, rows[0].id, body.hireDate, body.payType, body.hourlyRate || null, body.annualSalary || null, body.payFrequency || "biweekly", "Embauche", req.user?.id || null]);
     return res.status(201).json({ employee: rows[0] });
   } catch (error) { return next(error); }
@@ -65,14 +126,61 @@ router.patch("/employees/:id", preparer, async (req, res, next) => {
     const body = req.body || {};
     const current = await req.db.query("SELECT * FROM payroll_employees WHERE organisation_id=$1 AND id=$2 FOR UPDATE", [req.organisationId, id]);
     if (!current.rows[0]) return res.status(404).json({ message: "Employé introuvable." });
-    const payType = body.payType || current.rows[0].pay_type;
-    const hourlyRate = body.hourlyRate ?? current.rows[0].hourly_rate;
-    const annualSalary = body.annualSalary ?? current.rows[0].annual_salary;
+    const existing = current.rows[0];
+    const payType = body.payType || existing.pay_type;
+    const hourlyRate = body.hourlyRate ?? existing.hourly_rate;
+    const annualSalary = body.annualSalary ?? existing.annual_salary;
     if (payType === "hourly" && Number(hourlyRate) <= 0) return res.status(400).json({ message: "Le taux horaire doit être supérieur à zéro." });
     if (payType === "salary" && Number(annualSalary) <= 0) return res.status(400).json({ message: "Le salaire annuel doit être supérieur à zéro." });
-    const effectiveFrom = body.effectiveFrom || new Date().toISOString().slice(0, 10);
-    const { rows } = await req.db.query(`UPDATE payroll_employees SET legal_name=COALESCE($3,legal_name),employment_status=COALESCE($4,employment_status),termination_date=COALESCE($5,termination_date),pay_type=$6,hourly_rate=$7,annual_salary=$8,pay_frequency=COALESCE($9,pay_frequency),expense_account_id=COALESCE($10,expense_account_id),payable_account_id=COALESCE($11,payable_account_id),compensation_effective_from=$12,updated_at=NOW() WHERE organisation_id=$1 AND id=$2 RETURNING *`, [req.organisationId, id, body.legalName || null, body.employmentStatus || null, body.terminationDate || null, payType, payType === "hourly" ? hourlyRate : null, payType === "salary" ? annualSalary : null, body.payFrequency || null, body.expenseAccountId || null, body.payableAccountId || null, effectiveFrom]);
-    await req.db.query(`INSERT INTO payroll_compensation_history (organisation_id,employee_id,effective_from,pay_type,hourly_rate,annual_salary,pay_frequency,reason,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [req.organisationId, id, effectiveFrom, payType, payType === "hourly" ? hourlyRate : null, payType === "salary" ? annualSalary : null, rows[0].pay_frequency, "Mise à jour de la rémunération", req.user?.id || null]);
+    // Une entrée d'historique de rémunération ne doit être créée que si la
+    // rémunération change réellement — pas à chaque mise à jour de la fiche
+    // (ex. un simple changement de titre de poste). Auparavant, cet insert
+    // s'exécutait sans condition à chaque PATCH avec la date du jour comme
+    // effective_from : un deuxième PATCH le même jour violait la contrainte
+    // unique (organisation_id,employee_id,effective_from), quel que soit le
+    // champ modifié.
+    const compensationChanged = body.payType !== undefined || body.hourlyRate !== undefined || body.annualSalary !== undefined || body.payFrequency !== undefined || body.effectiveFrom !== undefined;
+    const effectiveFrom = compensationChanged ? (body.effectiveFrom || new Date().toISOString().slice(0, 10)) : existing.compensation_effective_from;
+
+    // Fusionne la fiche existante avec les champs étendus fournis (#698),
+    // puis revalide l'ensemble via normalizeEmployeeRecord — y compris
+    // lorsque seule la fiche étendue change, pas la rémunération.
+    const extended = normalizeEmployeeRecord({
+      employeeNumber: existing.employee_number,
+      legalFirstName: existing.legal_first_name,
+      legalLastName: existing.legal_last_name,
+      preferredName: body.preferredName !== undefined ? body.preferredName : existing.preferred_name,
+      email: body.email !== undefined ? body.email : existing.email,
+      phone: body.phone !== undefined ? body.phone : existing.phone,
+      employmentStatus: body.employmentStatus || existing.employment_status,
+      hireDate: toDateInput(existing.hire_date),
+      terminationDate: body.terminationDate !== undefined ? body.terminationDate : toDateInput(existing.termination_date),
+      departmentCode: body.departmentCode !== undefined ? body.departmentCode : existing.department_code,
+      positionTitle: body.positionTitle !== undefined ? body.positionTitle : existing.position_title,
+      managerEmployeeId: body.managerEmployeeId !== undefined ? body.managerEmployeeId : existing.manager_employee_id,
+      metadata: body.metadata !== undefined ? body.metadata : existing.metadata,
+    });
+    await assertManagerBelongsToOrganisation(req.db, req.organisationId, extended.managerEmployeeId, id);
+
+    const { rows } = await req.db.query(
+      `UPDATE payroll_employees SET
+         legal_name=COALESCE($3,legal_name),employment_status=$4,termination_date=$5,
+         pay_type=$6,hourly_rate=$7,annual_salary=$8,pay_frequency=COALESCE($9,pay_frequency),
+         expense_account_id=COALESCE($10,expense_account_id),payable_account_id=COALESCE($11,payable_account_id),
+         compensation_effective_from=$12,preferred_name=$13,email=$14,phone=$15,department_code=$16,
+         position_title=$17,manager_employee_id=$18,metadata=$19,updated_by=$20,updated_at=NOW()
+       WHERE organisation_id=$1 AND id=$2 RETURNING *`,
+      [
+        req.organisationId, id, body.legalName || null, extended.employmentStatus, extended.terminationDate,
+        payType, payType === "hourly" ? hourlyRate : null, payType === "salary" ? annualSalary : null,
+        body.payFrequency || null, body.expenseAccountId || null, body.payableAccountId || null, effectiveFrom,
+        extended.preferredName, extended.email, extended.phone, extended.departmentCode, extended.positionTitle,
+        extended.managerEmployeeId, JSON.stringify(extended.metadata), req.user?.id || null,
+      ],
+    );
+    if (compensationChanged) {
+      await req.db.query(`INSERT INTO payroll_compensation_history (organisation_id,employee_id,effective_from,pay_type,hourly_rate,annual_salary,pay_frequency,reason,created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`, [req.organisationId, id, effectiveFrom, payType, payType === "hourly" ? hourlyRate : null, payType === "salary" ? annualSalary : null, rows[0].pay_frequency, "Mise à jour de la rémunération", req.user?.id || null]);
+    }
     return res.json({ employee: rows[0] });
   } catch (error) { return next(error); }
 });
