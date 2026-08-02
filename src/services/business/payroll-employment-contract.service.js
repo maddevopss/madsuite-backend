@@ -2,10 +2,17 @@ const CONTRACT_TYPES = new Set(['permanent', 'fixed_term', 'temporary', 'casual'
 const EMPLOYMENT_CLASSES = new Set(['full_time', 'part_time', 'on_call']);
 const PAY_FREQUENCIES = new Set(['weekly', 'biweekly', 'semimonthly', 'monthly']);
 
+// Même convention que payroll-employee-registry.service.js::invalid() : les
+// erreurs de validation portent statusCode=400 pour que les routes puissent
+// les propager telles quelles via next(error) sans les remapper une à une.
+function invalid(message) {
+  return Object.assign(new Error(message), { statusCode: 400 });
+}
+
 function toMoney(value) {
   if (value == null || value === '') return null;
   const amount = Number(value);
-  if (!Number.isFinite(amount) || amount <= 0) throw new Error('compensation must be greater than zero');
+  if (!Number.isFinite(amount) || amount <= 0) throw invalid('compensation must be greater than zero');
   return Number(amount.toFixed(2));
 }
 
@@ -19,24 +26,24 @@ function normalizeEmploymentContract(input = {}) {
   const effectiveTo = input.effectiveTo ? String(input.effectiveTo).trim() : null;
   const standardHoursPerWeek = Number(input.standardHoursPerWeek);
 
-  if (!contractNumber) throw new Error('contractNumber is required');
-  if (!CONTRACT_TYPES.has(contractType)) throw new Error('invalid contractType');
-  if (!EMPLOYMENT_CLASSES.has(employmentClass)) throw new Error('invalid employmentClass');
-  if (!['hourly', 'salary'].includes(payType)) throw new Error('invalid payType');
-  if (!PAY_FREQUENCIES.has(payFrequency)) throw new Error('invalid payFrequency');
-  if (!effectiveFrom) throw new Error('effectiveFrom is required');
+  if (!contractNumber) throw invalid('contractNumber is required');
+  if (!CONTRACT_TYPES.has(contractType)) throw invalid('invalid contractType');
+  if (!EMPLOYMENT_CLASSES.has(employmentClass)) throw invalid('invalid employmentClass');
+  if (!['hourly', 'salary'].includes(payType)) throw invalid('invalid payType');
+  if (!PAY_FREQUENCIES.has(payFrequency)) throw invalid('invalid payFrequency');
+  if (!effectiveFrom) throw invalid('effectiveFrom is required');
   if (!Number.isFinite(standardHoursPerWeek) || standardHoursPerWeek < 0 || standardHoursPerWeek > 168) {
-    throw new Error('standardHoursPerWeek must be between 0 and 168');
+    throw invalid('standardHoursPerWeek must be between 0 and 168');
   }
   if (effectiveTo && new Date(effectiveTo) < new Date(effectiveFrom)) {
-    throw new Error('effectiveTo cannot precede effectiveFrom');
+    throw invalid('effectiveTo cannot precede effectiveFrom');
   }
 
   const hourlyRate = payType === 'hourly' ? toMoney(input.hourlyRate) : null;
   const annualSalary = payType === 'salary' ? toMoney(input.annualSalary) : null;
 
-  if (payType === 'hourly' && input.annualSalary != null) throw new Error('annualSalary is not allowed for hourly contracts');
-  if (payType === 'salary' && input.hourlyRate != null) throw new Error('hourlyRate is not allowed for salary contracts');
+  if (payType === 'hourly' && input.annualSalary != null) throw invalid('annualSalary is not allowed for hourly contracts');
+  if (payType === 'salary' && input.hourlyRate != null) throw invalid('hourlyRate is not allowed for salary contracts');
 
   return {
     contractNumber,
