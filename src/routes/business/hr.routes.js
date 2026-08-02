@@ -2,6 +2,7 @@ const router = require("express").Router();
 const { requireOrganisation } = require("../../middleware/organization.middleware");
 const requireRole = require("../../middleware/requireRole");
 const { createEmployee, transitionEmployment, decideLeave, verifyCompetency } = require("../../services/business/hr-transaction.service");
+const { assignPolicyAcknowledgement, decidePolicyAcknowledgement } = require("../../services/business/hr-policy-acknowledgement.service");
 
 router.use(requireOrganisation);
 router.use(requireRole("admin"));
@@ -28,5 +29,16 @@ router.get("/competencies", async(req,res,next)=>{try{const {rows}=await req.db.
 router.post("/competencies", async(req,res,next)=>{try{const {rows}=await req.db.query(`INSERT INTO hr_competencies (organisation_id,code,name,description,validity_days,is_required) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`,[req.organisationId,req.body.code,req.body.name,req.body.description||null,req.body.validityDays||null,Boolean(req.body.isRequired)]);res.status(201).json({competency:rows[0]});}catch(e){next(e);}});
 router.post("/employee-competencies", async(req,res,next)=>{try{const result=await verifyCompetency({organisationId:req.organisationId,input:req.body,idempotencyKey:idempotency(req),createdBy:req.user?.id});if(!result)return res.status(404).json({error:"Compétence introuvable."});res.status(result.duplicate?200:201).json(result);}catch(e){next(e);}});
 router.get("/alerts", async(req,res,next)=>{try{const {rows}=await req.db.query(`SELECT ec.*,e.legal_name,c.code,c.name FROM hr_employee_competencies ec JOIN hr_employees e ON e.id=ec.employee_id JOIN hr_competencies c ON c.id=ec.competency_id WHERE ec.organisation_id=$1 AND ec.status='valid' AND ec.expires_at IS NOT NULL AND ec.expires_at <= CURRENT_DATE + INTERVAL '60 days' ORDER BY ec.expires_at`,[req.organisationId]);res.json({alerts:rows});}catch(e){next(e);}});
+
+// Accusés de réception de politiques (Documents RH, mandat 1.C) :
+// hr-complete-block.service.js (buildPolicyAcknowledgement) et
+// hr_policy_acknowledgements existaient sans jamais être montés sur aucune
+// route. Reste sous requireRole("admin") comme le reste de ce routeur (voir
+// note RBAC dans la description de la PR : le libre-service employé pour
+// signer sa propre politique exige une refonte RBAC plus large, hors
+// périmètre de ce PR).
+router.get("/policy-acknowledgements", async(req,res,next)=>{try{const {employeeId,status}=req.query;const params=[req.organisationId];let where="a.organisation_id=$1";if(employeeId){params.push(employeeId);where+=` AND a.employee_id=$${params.length}`;}if(status){params.push(status);where+=` AND a.status=$${params.length}`;}const {rows}=await req.db.query(`SELECT a.*,e.legal_name employee_name FROM hr_policy_acknowledgements a JOIN hr_employees e ON e.id=a.employee_id AND e.organisation_id=a.organisation_id WHERE ${where} ORDER BY a.assigned_at DESC`,params);res.json({acknowledgements:rows});}catch(e){next(e);}});
+router.post("/policy-acknowledgements", async(req,res,next)=>{try{const result=await assignPolicyAcknowledgement({organisationId:req.organisationId,input:req.body,idempotencyKey:idempotency(req),createdBy:req.user?.id});res.status(result?.duplicate?200:201).json(result);}catch(e){next(e);}});
+router.post("/policy-acknowledgements/:id/:action", async(req,res,next)=>{try{if(!["acknowledge","decline"].includes(req.params.action))return res.status(400).json({error:"Action invalide."});const result=await decidePolicyAcknowledgement({organisationId:req.organisationId,acknowledgementId:req.params.id,action:req.params.action,input:req.body,requestIp:req.ip,idempotencyKey:idempotency(req),createdBy:req.user?.id});if(!result)return res.status(404).json({error:"Accusé de réception introuvable."});res.json(result);}catch(e){next(e);}});
 
 module.exports=router;
