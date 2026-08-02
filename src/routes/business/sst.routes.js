@@ -3,6 +3,7 @@ const pool = require("../../../db");
 const { requireOrganisation } = require("../../middleware/organization.middleware");
 const { organisationValue } = require("../../utils/organisationScope");
 const { createHazard, reportIncident, transitionCorrectiveAction } = require("../../services/business/sst-transaction.service");
+const { openInvestigation, transitionInvestigationCase } = require("../../services/business/sst-incident-investigation.service");
 
 const router = express.Router();
 // hr_employee_competencies (jointe dans /alerts) est sous RLS FORCE : sans
@@ -25,4 +26,11 @@ router.post("/corrective-actions/:id/:action", async (req,res,next)=>{try{const 
 router.get("/ppe", async (req,res,next)=>{try{const {rows}=await pool.query(`SELECT * FROM sst_ppe_assets WHERE organisation_id=$1 ORDER BY asset_code`,[orgId(req)]);res.json(rows);}catch(e){next(e);}});
 router.post("/ppe", async (req,res,next)=>{try{const {rows}=await pool.query(`INSERT INTO sst_ppe_assets (organisation_id,asset_code,ppe_type,manufacturer,model,serial_number,assigned_employee_id,issued_at,expires_at,next_inspection_at,evidence) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,[orgId(req),req.body.assetCode,req.body.ppeType,req.body.manufacturer||null,req.body.model||null,req.body.serialNumber||null,req.body.assignedEmployeeId||null,req.body.issuedAt||null,req.body.expiresAt||null,req.body.nextInspectionAt||null,req.body.evidence||[]]);res.status(201).json(rows[0]);}catch(e){next(e);}});
 router.get("/alerts", async (req,res,next)=>{try{const [actions,ppe,competencies]=await Promise.all([pool.query(`SELECT * FROM sst_corrective_actions WHERE organisation_id=$1 AND status NOT IN ('closed','cancelled') AND due_at<NOW()`,[orgId(req)]),pool.query(`SELECT * FROM sst_ppe_assets WHERE organisation_id=$1 AND status NOT IN ('retired','lost') AND next_inspection_at<=NOW()+INTERVAL '30 days'`,[orgId(req)]),pool.query(`SELECT ec.*,c.code,c.name,e.employee_number FROM hr_employee_competencies ec JOIN hr_competencies c ON c.id=ec.competency_id JOIN hr_employees e ON e.id=ec.employee_id WHERE ec.organisation_id=$1 AND ec.status='verified' AND ec.expires_at<=NOW()+INTERVAL '60 days'`,[orgId(req)])]);res.json({overdueCorrectiveActions:actions.rows,ppeInspectionsDue:ppe.rows,trainingExpirations:competencies.rows});}catch(e){next(e);}});
+
+// Enquêtes d'incident (sst-complete-block.service.js et sst_incident_investigations
+// existaient sans jamais être montés sur aucune route).
+router.get("/incidents/:incidentId/investigation", async (req,res,next)=>{try{const {rows}=await pool.query(`SELECT * FROM sst_incident_investigations WHERE organisation_id=$1 AND incident_id=$2`,[orgId(req),req.params.incidentId]);if(!rows[0])return res.status(404).json({message:"Aucune enquête pour cet incident."});const transitions=await pool.query(`SELECT * FROM sst_incident_investigation_transitions WHERE organisation_id=$1 AND investigation_id=$2 ORDER BY created_at DESC`,[orgId(req),rows[0].id]);res.json({investigation:rows[0],transitions:transitions.rows});}catch(e){next(e);}});
+router.post("/incidents/:incidentId/investigation", async (req,res,next)=>{try{const result=await openInvestigation({organisationId:orgId(req),input:{...req.body,incidentId:req.params.incidentId},idempotencyKey:key(req),createdBy:actorId(req)});res.status(result?.duplicate?200:201).json(result);}catch(e){next(e);}});
+router.post("/investigations/:id/transitions/:action", async (req,res,next)=>{try{const result=await transitionInvestigationCase({organisationId:orgId(req),investigationId:Number(req.params.id),action:req.params.action,input:req.body,idempotencyKey:key(req),createdBy:actorId(req)});if(!result)return res.status(404).json({message:"Enquête introuvable."});res.status(result.duplicate?200:201).json(result);}catch(e){next(e);}});
+
 module.exports=router;
