@@ -3,6 +3,8 @@ const { requireOrganisation } = require("../../middleware/organization.middlewar
 const requireRole = require("../../middleware/requireRole");
 const { createEmployee, transitionEmployment, decideLeave, verifyCompetency } = require("../../services/business/hr-transaction.service");
 const { openOffboardingCase, updateOffboardingCase, closeOffboardingCase, cancelOffboardingCase } = require("../../services/business/hr-offboarding-case.service");
+const { assignPolicyAcknowledgement, decidePolicyAcknowledgement } = require("../../services/business/hr-policy-acknowledgement.service");
+const { createPerformanceReview, transitionPerformanceReview } = require("../../services/business/hr-performance-review.service");
 
 router.use(requireOrganisation);
 router.use(requireRole("admin"));
@@ -39,5 +41,69 @@ router.post("/offboarding-cases", async(req,res,next)=>{try{const result=await o
 router.patch("/offboarding-cases/:id", async(req,res,next)=>{try{const result=await updateOffboardingCase({organisationId:req.organisationId,caseId:req.params.id,input:req.body,actorUserId:req.user?.id,db:req.db});if(!result)return res.status(404).json({error:"Dossier de départ introuvable."});res.json(result);}catch(e){next(e);}});
 router.post("/offboarding-cases/:id/close", async(req,res,next)=>{try{const result=await closeOffboardingCase({organisationId:req.organisationId,caseId:req.params.id,idempotencyKey:idempotency(req),createdBy:req.user?.id});if(!result)return res.status(404).json({error:"Dossier de départ introuvable."});res.json(result);}catch(e){next(e);}});
 router.post("/offboarding-cases/:id/cancel", async(req,res,next)=>{try{const result=await cancelOffboardingCase({organisationId:req.organisationId,caseId:req.params.id,reason:req.body.reason,idempotencyKey:idempotency(req),createdBy:req.user?.id});if(!result)return res.status(404).json({error:"Dossier de départ introuvable."});res.json(result);}catch(e){next(e);}});
+
+// Accusés de réception de politiques (Documents RH, mandat 1.C) :
+// hr-complete-block.service.js (buildPolicyAcknowledgement) et
+// hr_policy_acknowledgements existaient sans jamais être montés sur aucune
+// route. Reste sous requireRole("admin") comme le reste de ce routeur (voir
+// note RBAC dans la description de la PR : le libre-service employé pour
+// signer sa propre politique exige une refonte RBAC plus large, hors
+// périmètre de ce PR).
+router.get("/policy-acknowledgements", async(req,res,next)=>{try{const {employeeId,status}=req.query;const params=[req.organisationId];let where="a.organisation_id=$1";if(employeeId){params.push(employeeId);where+=` AND a.employee_id=$${params.length}`;}if(status){params.push(status);where+=` AND a.status=$${params.length}`;}const {rows}=await req.db.query(`SELECT a.*,e.legal_name employee_name FROM hr_policy_acknowledgements a JOIN hr_employees e ON e.id=a.employee_id AND e.organisation_id=a.organisation_id WHERE ${where} ORDER BY a.assigned_at DESC`,params);res.json({acknowledgements:rows});}catch(e){next(e);}});
+router.post("/policy-acknowledgements", async(req,res,next)=>{try{const result=await assignPolicyAcknowledgement({organisationId:req.organisationId,input:req.body,idempotencyKey:idempotency(req),createdBy:req.user?.id});res.status(result?.duplicate?200:201).json(result);}catch(e){next(e);}});
+router.post("/policy-acknowledgements/:id/:action", async(req,res,next)=>{try{if(!["acknowledge","decline"].includes(req.params.action))return res.status(400).json({error:"Action invalide."});const result=await decidePolicyAcknowledgement({organisationId:req.organisationId,acknowledgementId:req.params.id,action:req.params.action,input:req.body,requestIp:req.ip,idempotencyKey:idempotency(req),createdBy:req.user?.id});if(!result)return res.status(404).json({error:"Accusé de réception introuvable."});res.json(result);}catch(e){next(e);}});
+
+// Évaluations de performance (#698 : hr-complete-block.service.js et
+// hr_performance_reviews existaient sans jamais être montés sur aucune route).
+router.get("/performance-reviews", async (req, res, next) => {
+  try {
+    const { employeeId } = req.query;
+    const params = [req.organisationId];
+    let where = "r.organisation_id=$1";
+    if (employeeId) {
+      params.push(employeeId);
+      where += ` AND r.employee_id=$${params.length}`;
+    }
+    const { rows } = await req.db.query(
+      `SELECT r.*, e.legal_name employee_name FROM hr_performance_reviews r
+       JOIN hr_employees e ON e.id=r.employee_id AND e.organisation_id=r.organisation_id
+       WHERE ${where} ORDER BY r.period_start DESC`,
+      params,
+    );
+    res.json({ reviews: rows });
+  } catch (e) { next(e); }
+});
+
+router.get("/performance-reviews/:id", async (req, res, next) => {
+  try {
+    const review = await req.db.query(
+      `SELECT r.*, e.legal_name employee_name FROM hr_performance_reviews r
+       JOIN hr_employees e ON e.id=r.employee_id AND e.organisation_id=r.organisation_id
+       WHERE r.organisation_id=$1 AND r.id=$2`,
+      [req.organisationId, req.params.id],
+    );
+    if (!review.rows[0]) return res.status(404).json({ error: "Évaluation introuvable." });
+    const transitions = await req.db.query(
+      `SELECT * FROM hr_performance_review_transitions WHERE organisation_id=$1 AND review_id=$2 ORDER BY created_at DESC`,
+      [req.organisationId, req.params.id],
+    );
+    res.json({ review: review.rows[0], transitions: transitions.rows });
+  } catch (e) { next(e); }
+});
+
+router.post("/performance-reviews", async (req, res, next) => {
+  try {
+    const result = await createPerformanceReview({ organisationId: req.organisationId, input: req.body, idempotencyKey: idempotency(req), createdBy: req.user?.id });
+    res.status(result?.duplicate ? 200 : 201).json(result);
+  } catch (e) { next(e); }
+});
+
+router.post("/performance-reviews/:id/transitions/:action", async (req, res, next) => {
+  try {
+    const result = await transitionPerformanceReview({ organisationId: req.organisationId, reviewId: req.params.id, action: req.params.action, input: req.body, idempotencyKey: idempotency(req), createdBy: req.user?.id });
+    if (!result) return res.status(404).json({ error: "Évaluation introuvable." });
+    res.status(result.duplicate ? 200 : 201).json(result);
+  } catch (e) { next(e); }
+});
 
 module.exports=router;

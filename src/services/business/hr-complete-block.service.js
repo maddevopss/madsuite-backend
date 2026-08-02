@@ -8,7 +8,9 @@ const REVIEW_TRANSITIONS = {
 };
 
 function transitionReview(status, action) {
-  if (!REVIEW_TRANSITIONS[status]?.includes(action)) throw new Error(`transition RH invalide: ${status} -> ${action}`);
+  if (!REVIEW_TRANSITIONS[status]?.includes(action)) {
+    throw Object.assign(new Error(`transition RH invalide: ${status} -> ${action}`), { statusCode: 409 });
+  }
   return action;
 }
 
@@ -26,7 +28,7 @@ function assessOffboardingReadiness(input = {}) {
 function buildPolicyAcknowledgement(input = {}) {
   const policyCode = String(input.policyCode || '').trim();
   const policyVersion = String(input.policyVersion || '').trim();
-  if (!policyCode || !policyVersion) throw new Error('policyCode and policyVersion are required');
+  if (!policyCode || !policyVersion) throw Object.assign(new Error('policyCode and policyVersion are required'), { statusCode: 400 });
   return {
     policyCode,
     policyVersion,
@@ -38,7 +40,9 @@ function buildPolicyAcknowledgement(input = {}) {
 
 function evaluateReviewClosure(input = {}) {
   const rating = Number(input.overallRating);
-  if (!Number.isFinite(rating) || rating < 0 || rating > 5) throw new Error('overallRating must be between 0 and 5');
+  if (!Number.isFinite(rating) || rating < 0 || rating > 5) {
+    throw Object.assign(new Error('overallRating must be between 0 and 5'), { statusCode: 400 });
+  }
   const objectives = Array.isArray(input.objectives) ? input.objectives : [];
   const competencies = Array.isArray(input.competencies) ? input.competencies : [];
   return { rating, objectives, competencies, complete: objectives.length > 0 && competencies.length > 0 };
