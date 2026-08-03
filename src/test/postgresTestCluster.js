@@ -5,7 +5,26 @@ const { spawnSync, spawn } = require("child_process");
 const net = require("net");
 const { Pool } = require("pg");
 
-const PG_BIN_DIR = "C:\\Program Files\\PostgreSQL\\18\\bin";
+function getPgBinDir() {
+  const platform = os.platform();
+  if (platform === "win32") {
+    return "C:\\Program Files\\PostgreSQL\\18\\bin";
+  } else if (platform === "linux") {
+    return "/usr/lib/postgresql/18/bin";
+  } else if (platform === "darwin") {
+    return "/usr/local/opt/postgresql@18/bin";
+  }
+  return "/usr/bin";
+}
+
+function getExeName(baseName) {
+  if (os.platform() === "win32") {
+    return `${baseName}.exe`;
+  }
+  return baseName;
+}
+
+const PG_BIN_DIR = getPgBinDir();
 const STATE_FILE = path.join(os.tmpdir(), "madsuite-backend-pg-test-state.json");
 
 function getBinPath(exeName) {
@@ -170,7 +189,7 @@ async function startBackendTestCluster() {
 
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "madsuite-backend-pg-"));
   const port = Number(process.env.BACKEND_TEST_PG_PORT || (await chooseFreePort()));
-  run("initdb.exe", [
+  run(getExeName("initdb"), [
     "-D",
     dataDir,
     "-U",
@@ -195,7 +214,7 @@ async function startBackendTestCluster() {
   const logFile = path.join(dataDir, "postgresql.log");
   const logStream = fs.createWriteStream(logFile, { flags: "a" });
   const postgres = spawn(
-    getBinPath("postgres.exe"),
+    getBinPath(getExeName("postgres")),
     ["-D", dataDir, "-p", String(port), "-h", "127.0.0.1"],
     {
       stdio: ["ignore", "pipe", "pipe"],
