@@ -1,6 +1,14 @@
 -- Migration: Stage 6 Authorization Matrix
 -- Complete authorization framework with RBAC and route-level permissions
 
+-- Table for organizations (required by foreign keys below)
+CREATE TABLE IF NOT EXISTS organizations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  name VARCHAR(255) NOT NULL,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Table for role definitions
 CREATE TABLE IF NOT EXISTS role_definitions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -20,7 +28,7 @@ CREATE TABLE IF NOT EXISTS role_definitions (
   updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
   created_by VARCHAR(255),
 
-  CONSTRAINT fk_role_org FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE
+  CONSTRAINT fk_role_org FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED
 );
 
 -- Create indexes for role queries
@@ -125,7 +133,7 @@ CREATE TABLE IF NOT EXISTS user_role_assignments (
   -- Audit
   is_active BOOLEAN DEFAULT true,
 
-  CONSTRAINT fk_user_org FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE,
+  CONSTRAINT fk_user_org FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE DEFERRABLE INITIALLY DEFERRED,
   CONSTRAINT fk_user_role FOREIGN KEY (role_id) REFERENCES role_definitions(id) ON DELETE RESTRICT,
   UNIQUE(user_id, organization_id, role_id, scope, scope_id)
 );
