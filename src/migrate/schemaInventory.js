@@ -54,7 +54,7 @@ async function getSchemaInventory(client) {
     inventory.stats.triggerCount = Object.keys(inventory.triggers).length;
 
   } catch (err) {
-    throw new Error(`Schema inventory error: ${err.message}`);
+    throw new Error(`Schema inventory error: ${err.message}`, { cause: err });
   }
 
   return inventory;

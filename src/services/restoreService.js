@@ -516,7 +516,7 @@ async function getRestoreHistory(config = {}) {
     params.push(environment);
   }
 
-  query += ` ORDER BY created_at DESC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
+  query += ` ORDER BY created_at DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
   params.push(limit, offset);
 
   try {
