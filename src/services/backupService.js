@@ -359,10 +359,11 @@ async function listBackups(config = {}) {
   `;
 
   const params = [];
-  let paramIndex = 1;
+  let paramIndex = 0;
 
   if (backupType) {
-    query += ` AND backup_type = $${paramIndex++}`;
+    paramIndex += 1;
+    query += ` AND backup_type = $${paramIndex}`;
     params.push(backupType);
   }
 
@@ -370,7 +371,11 @@ async function listBackups(config = {}) {
     query += ` AND verified = true`;
   }
 
-  query += ` ORDER BY created_at DESC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
+  paramIndex += 1;
+  const limitIdx = paramIndex;
+  paramIndex += 1;
+  const offsetIdx = paramIndex;
+  query += ` ORDER BY created_at DESC LIMIT $${limitIdx} OFFSET $${offsetIdx}`;
   params.push(limit, offset);
 
   try {

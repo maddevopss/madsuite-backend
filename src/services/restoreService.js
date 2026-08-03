@@ -509,14 +509,19 @@ async function getRestoreHistory(config = {}) {
   `;
 
   const params = [];
-  let paramIndex = 1;
+  let paramIndex = 0;
 
   if (environment) {
-    query += ` AND target_environment = $${paramIndex++}`;
+    paramIndex += 1;
+    query += ` AND target_environment = $${paramIndex}`;
     params.push(environment);
   }
 
-  query += ` ORDER BY created_at DESC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
+  paramIndex += 1;
+  const limitIdx = paramIndex;
+  paramIndex += 1;
+  const offsetIdx = paramIndex;
+  query += ` ORDER BY created_at DESC LIMIT $${limitIdx} OFFSET $${offsetIdx}`;
   params.push(limit, offset);
 
   try {
