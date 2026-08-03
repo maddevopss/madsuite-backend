@@ -17,11 +17,18 @@ router.get("/records", (req, res, next) => handle(res, next, async () => (await 
   [org(req)],
 )).rows));
 
-router.post("/records", (req, res, next) => handle(res, next, async () => (await db.query(
-  `INSERT INTO document_records (organisation_id,document_number,title,document_type,classification,owner_user_id,retention_until,created_by)
-   VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
-  [org(req), req.body.documentNumber, req.body.title, req.body.documentType, req.body.classification || "internal", req.body.ownerUserId || null, req.body.retentionUntil || null, actor(req)],
-)).rows[0], 201));
+router.post("/records", (req, res, next) => handle(res, next, async () => {
+  try {
+    return (await db.query(
+      `INSERT INTO document_records (organisation_id,document_number,title,document_type,classification,owner_user_id,retention_until,created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,
+      [org(req), req.body.documentNumber, req.body.title, req.body.documentType, req.body.classification || "internal", req.body.ownerUserId || null, req.body.retentionUntil || null, actor(req)],
+    )).rows[0];
+  } catch (error) {
+    if (error.code === "23505") { const conflict = new Error("documents.document_number_conflict"); conflict.statusCode = 409; throw conflict; }
+    throw error;
+  }
+}, 201));
 
 router.get("/records/:id/versions", (req, res, next) => handle(res, next, async () => (await db.query(
   `SELECT * FROM document_versions WHERE organisation_id=$1 AND document_id=$2 ORDER BY created_at DESC`,
@@ -43,6 +50,7 @@ router.post("/records/:id/versions", (req, res, next) => handle(res, next, async
     return inserted.rows[0];
   } catch (error) {
     await client.query("ROLLBACK");
+    if (error.code === "23505") { const conflict = new Error("documents.version_conflict"); conflict.statusCode = 409; throw conflict; }
     throw error;
   } finally {
     client.release();
@@ -54,10 +62,23 @@ router.get("/links/:aggregateType/:aggregateId", (req, res, next) => handle(res,
   [org(req), req.params.aggregateType, req.params.aggregateId],
 )).rows));
 
-router.post("/records/:id/links", (req, res, next) => handle(res, next, async () => (await db.query(
-  `INSERT INTO document_links (organisation_id,document_id,aggregate_type,aggregate_id,relation,created_by) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING RETURNING *`,
-  [org(req), Number(req.params.id), req.body.aggregateType, String(req.body.aggregateId), req.body.relation || "evidence_for", actor(req)],
-)).rows[0], 201));
+router.post("/records/:id/links", async (req, res, next) => {
+  try {
+    const relation = req.body.relation || "evidence_for";
+    const inserted = (await db.query(
+      `INSERT INTO document_links (organisation_id,document_id,aggregate_type,aggregate_id,relation,created_by) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING RETURNING *`,
+      [org(req), Number(req.params.id), req.body.aggregateType, String(req.body.aggregateId), relation, actor(req)],
+    )).rows[0];
+    if (inserted) return res.status(201).json(inserted);
+    const existing = (await db.query(
+      `SELECT * FROM document_links WHERE organisation_id=$1 AND document_id=$2 AND aggregate_type=$3 AND aggregate_id=$4 AND relation=$5`,
+      [org(req), Number(req.params.id), req.body.aggregateType, String(req.body.aggregateId), relation],
+    )).rows[0];
+    return res.status(200).json(existing);
+  } catch (error) {
+    return next(error);
+  }
+});
 
 router.get("/alerts", (req, res, next) => handle(res, next, async () => {
   const organisationId = org(req);
