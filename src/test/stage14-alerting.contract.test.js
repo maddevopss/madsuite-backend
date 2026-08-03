@@ -375,7 +375,7 @@ describe('Stage 14 PR 14E — Alerting & Escalation Contract Tests', () => {
 
       const stats = await alertingService.getAlertStats(testOrganisationId, { days: 7 });
       expect(stats).toBeTruthy();
-      expect(typeof stats.avg_resolution_time_min).toBe('number' || 'object'); // Could be null
+      expect(['number', 'object'].includes(typeof stats.avg_resolution_time_min)).toBe(true);
     });
   });
 
