@@ -1,12 +1,14 @@
 const { randomUUID: uuidv4 } = require('node:crypto');
 const runbooksService = require('../services/system/runbooks.service');
+const prisma = require('../../db');
 
 describe('Stage 14 PR 14F — Runbooks & RCA Contract Tests', () => {
   let testOrganisationId;
   let testUserId;
 
-  beforeAll(() => {
-    testOrganisationId = uuidv4();
+  beforeAll(async () => {
+    const organisation = await prisma.query('SELECT id FROM organisations LIMIT 1');
+    testOrganisationId = organisation.rows[0]?.id;
     testUserId = uuidv4();
   });
 

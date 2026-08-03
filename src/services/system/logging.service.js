@@ -4,14 +4,15 @@ class LoggingService {
   constructor() {
     this.redactionPatterns = [
       { pattern: /password["\s:=]+([^\s",}]+)/gi, replacement: 'password***' },
+      { pattern: /bearer\s+([^\s]+)/gi, replacement: 'bearer ***' },
       { pattern: /token["\s:=]+([^\s",}]+)/gi, replacement: 'token***' },
       { pattern: /authorization["\s:=]+([^\s",}]+)/gi, replacement: 'authorization***' },
       { pattern: /card[_]?number["\s:=]+([0-9\s-]+)/gi, replacement: 'card_number***' },
+      { pattern: /\b\d{4}[-\s]\d{4}[-\s]\d{4}[-\s]\d{4}\b/g, replacement: 'card_number***' },
       { pattern: /cvv["\s:=]+([0-9]+)/gi, replacement: 'cvv***' },
       { pattern: /ssn["\s:=]+([0-9\s-]+)/gi, replacement: 'ssn***' },
       { pattern: /api[_]?key["\s:=]+([^\s",}]+)/gi, replacement: 'api_key***' },
       { pattern: /secret["\s:=]+([^\s",}]+)/gi, replacement: 'secret***' },
-      { pattern: /bearer\s+([^\s]+)/gi, replacement: 'bearer ***' },
     ];
   }
 
@@ -77,7 +78,7 @@ class LoggingService {
       const redactedContext = this.redactObject(context || {});
       const redactedStackTrace = this.redact(stack_trace);
 
-      const log = await prisma.raw(
+      const log = await prisma.query(
         `
         INSERT INTO observability.log_events (
           organisation_id,
@@ -105,7 +106,7 @@ class LoggingService {
         ],
       );
 
-      return log[0];
+      return log.rows[0];
     } catch (error) {
       console.error('Logging service error:', error.message);
       return null;
@@ -124,7 +125,7 @@ class LoggingService {
     } = options;
 
     let query = `
-      SELECT id, timestamp, level, service, logger_name, message,
+      SELECT id, organisation_id, timestamp, level, service, logger_name, message,
              trace_id, context, stack_trace
       FROM observability.log_events
       WHERE organisation_id = $1
@@ -167,10 +168,10 @@ class LoggingService {
     params.push(limit, offset);
 
     try {
-      const logs = await prisma.raw(query, params);
-      return logs.map((log) => ({
+      const logs = await prisma.query(query, params);
+      return logs.rows.map((log) => ({
         ...log,
-        context: log.context ? JSON.parse(log.context) : {},
+        context: log.context || {},
       }));
     } catch (error) {
       console.error('Failed to fetch logs:', error.message);
@@ -209,10 +210,10 @@ class LoggingService {
     params.push(limit, offset);
 
     try {
-      const logs = await prisma.raw(query, params);
-      return logs.map((log) => ({
+      const logs = await prisma.query(query, params);
+      return logs.rows.map((log) => ({
         ...log,
-        context: log.context ? JSON.parse(log.context) : {},
+        context: log.context || {},
       }));
     } catch (error) {
       console.error('Failed to search logs:', error.message);
@@ -224,13 +225,13 @@ class LoggingService {
     const { startTime = new Date(Date.now() - 3600000), endTime = new Date() } = options;
 
     try {
-      const stats = await prisma.raw(
+      const stats = await prisma.query(
         `
         SELECT
           level,
-          COUNT(*) as count,
+          COUNT(*)::int as count,
           service,
-          COUNT(CASE WHEN stack_trace IS NOT NULL THEN 1 END) as error_traces
+          COUNT(CASE WHEN stack_trace IS NOT NULL THEN 1 END)::int as error_traces
         FROM observability.log_events
         WHERE organisation_id = $1
           AND timestamp >= $2
@@ -241,7 +242,7 @@ class LoggingService {
         [organisationId, startTime, endTime],
       );
 
-      return stats;
+      return stats.rows;
     } catch (error) {
       console.error('Failed to fetch log stats:', error.message);
       return [];
@@ -250,9 +251,9 @@ class LoggingService {
 
   async getLogsForTrace(organisationId, traceId) {
     try {
-      const logs = await prisma.raw(
+      const logs = await prisma.query(
         `
-        SELECT id, timestamp, level, service, logger_name, message, context
+        SELECT id, timestamp, level, service, logger_name, message, trace_id, context
         FROM observability.log_events
         WHERE organisation_id = $1 AND trace_id = $2
         ORDER BY timestamp ASC
@@ -260,9 +261,9 @@ class LoggingService {
         [organisationId, traceId],
       );
 
-      return logs.map((log) => ({
+      return logs.rows.map((log) => ({
         ...log,
-        context: log.context ? JSON.parse(log.context) : {},
+        context: log.context || {},
       }));
     } catch (error) {
       console.error('Failed to fetch trace logs:', error.message);
@@ -275,7 +276,7 @@ class LoggingService {
     const cutoffDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
 
     try {
-      const result = await prisma.raw(
+      const result = await prisma.query(
         `
         DELETE FROM observability.log_events
         WHERE created_at < $1

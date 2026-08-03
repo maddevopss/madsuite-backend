@@ -9,10 +9,10 @@ describe('Stage 14 PR 14B — Structured Logging Contract Tests', () => {
 
   beforeAll(async () => {
     // Setup test organisation
-    const organisation = await prisma.raw(
+    const organisation = await prisma.query(
       `SELECT id FROM organisations LIMIT 1`,
     );
-    testOrganisationId = organisation[0]?.id || uuidv4();
+    testOrganisationId = organisation.rows[0]?.id || uuidv4();
     testLogger = createLogger('madsuite-backend', testOrganisationId);
   });
 
@@ -174,7 +174,7 @@ describe('Stage 14 PR 14B — Structured Logging Contract Tests', () => {
         service: 'test-service',
       });
 
-      const log = logs[logs.length - 1];
+      const log = logs[0];
       const context = log.context;
       expect(context.password).toBe('***');
       expect(context.api_key).toBe('***');
@@ -196,7 +196,7 @@ describe('Stage 14 PR 14B — Structured Logging Contract Tests', () => {
         service: 'payment-service',
       });
 
-      const log = logs[logs.length - 1];
+      const log = logs[0];
       expect(log.message).not.toContain('4532-1234-5678-9010');
       expect(log.message).toContain('***');
     });
@@ -215,7 +215,7 @@ describe('Stage 14 PR 14B — Structured Logging Contract Tests', () => {
         service: 'payment-service',
       });
 
-      const log = logs[logs.length - 1];
+      const log = logs[0];
       expect(log.message).not.toContain('123');
     });
   });
@@ -385,7 +385,7 @@ describe('Stage 14 PR 14B — Structured Logging Contract Tests', () => {
       const oldDate = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000); // 8 days ago
 
       // Insert old log directly (simulating old data)
-      await prisma.raw(
+      await prisma.query(
         `
         INSERT INTO observability.log_events (
           organisation_id, timestamp, level, service, logger_name, message
@@ -450,7 +450,7 @@ describe('Stage 14 PR 14B — Structured Logging Contract Tests', () => {
         service: 'invoice-service',
       });
 
-      const log = logs[logs.length - 1];
+      const log = logs[0];
       expect(log.context.user_id).toBe('123');
       expect(log.context.action).toBe('create_invoice');
       expect(log.context.invoice_id).toBe('INV-001');

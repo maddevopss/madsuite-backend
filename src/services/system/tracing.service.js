@@ -25,7 +25,7 @@ class TracingService {
     }
 
     try {
-      const trace = await prisma.raw(
+      const trace = await prisma.query(
         `
         INSERT INTO observability.traces (
           organisation_id,
@@ -55,7 +55,7 @@ class TracingService {
         ],
       );
 
-      return trace[0];
+      return trace.rows[0];
     } catch (error) {
       // Don't throw - tracing should not break application
       console.error('Tracing service error:', error.message);
@@ -67,8 +67,8 @@ class TracingService {
     const { limit = 100, offset = 0, status, startTime, endTime } = options;
 
     let query = `
-      SELECT id, trace_id, service_name, operation_name, status,
-             duration_ms, start_time, error_message, tags
+      SELECT id, organisation_id, trace_id, service_name, operation_name, status,
+             duration_ms::float as duration_ms, start_time, error_message, tags
       FROM observability.traces
       WHERE organisation_id = $1
     `;
@@ -98,8 +98,8 @@ class TracingService {
     params.push(limit, offset);
 
     try {
-      const traces = await prisma.raw(query, params);
-      return traces;
+      const traces = await prisma.query(query, params);
+      return traces.rows;
     } catch (error) {
       console.error('Failed to fetch traces:', error.message);
       return [];
@@ -108,17 +108,17 @@ class TracingService {
 
   async getTraceById(traceId) {
     try {
-      const trace = await prisma.raw(
+      const trace = await prisma.query(
         `
         SELECT id, trace_id, organisation_id, service_name, operation_name,
-               status, duration_ms, start_time, error_message, tags, created_at
+               status, duration_ms::float as duration_ms, start_time, error_message, tags, created_at
         FROM observability.traces
         WHERE trace_id = $1
         LIMIT 1
         `,
         [traceId],
       );
-      return trace[0] || null;
+      return trace.rows[0] || null;
     } catch (error) {
       console.error('Failed to fetch trace:', error.message);
       return null;
@@ -129,19 +129,19 @@ class TracingService {
     const { startTime = new Date(Date.now() - 3600000), endTime = new Date() } = options;
 
     try {
-      const metrics = await prisma.raw(
+      const metrics = await prisma.query(
         `
         SELECT
           service_name,
-          COUNT(*) as total_traces,
-          COUNT(CASE WHEN status = 'success' THEN 1 END) as success_count,
-          COUNT(CASE WHEN status = 'error' THEN 1 END) as error_count,
-          COUNT(CASE WHEN status = 'timeout' THEN 1 END) as timeout_count,
-          AVG(duration_ms) as avg_duration_ms,
-          PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY duration_ms) as p50_duration_ms,
-          PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms) as p95_duration_ms,
-          PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY duration_ms) as p99_duration_ms,
-          MAX(duration_ms) as max_duration_ms
+          COUNT(*)::int as total_traces,
+          COUNT(CASE WHEN status = 'success' THEN 1 END)::int as success_count,
+          COUNT(CASE WHEN status = 'error' THEN 1 END)::int as error_count,
+          COUNT(CASE WHEN status = 'timeout' THEN 1 END)::int as timeout_count,
+          AVG(duration_ms)::float as avg_duration_ms,
+          PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY duration_ms)::float as p50_duration_ms,
+          PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms)::float as p95_duration_ms,
+          PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY duration_ms)::float as p99_duration_ms,
+          MAX(duration_ms)::float as max_duration_ms
         FROM observability.traces
         WHERE organisation_id = $1
           AND start_time >= $2
@@ -150,7 +150,7 @@ class TracingService {
         `,
         [organisationId, startTime, endTime],
       );
-      return metrics;
+      return metrics.rows;
     } catch (error) {
       console.error('Failed to fetch trace metrics:', error.message);
       return [];
@@ -162,10 +162,10 @@ class TracingService {
     const cutoffDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
 
     try {
-      const result = await prisma.raw(
+      const result = await prisma.query(
         `
         DELETE FROM observability.traces
-        WHERE created_at < $1
+        WHERE start_time < $1
         `,
         [cutoffDate],
       );

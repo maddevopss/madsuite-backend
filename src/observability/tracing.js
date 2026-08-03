@@ -51,12 +51,7 @@ const initializeTracing = () => {
   return sdk;
 };
 
-const getTracer = (name) => {
-  if (!tracerProvider) {
-    throw new Error('Tracing not initialized. Call initializeTracing() first.');
-  }
-  return tracerProvider.getTracer(name, '1.0.0');
-};
+const getTracer = (name) => trace.getTracer(name, '1.0.0');
 
 const getTraceId = () => {
   const activeSpan = trace.getActiveSpan();

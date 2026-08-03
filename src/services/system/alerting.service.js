@@ -17,7 +17,7 @@ class AlertingService {
     } = ruleData;
 
     try {
-      const result = await prisma.raw(
+      const result = await prisma.query(
         `
         INSERT INTO observability.alert_rules (
           organisation_id, name, condition, severity, runbook_ref,
@@ -36,7 +36,7 @@ class AlertingService {
         ],
       );
 
-      return result[0];
+      return result.rows[0];
     } catch (error) {
       console.error('Failed to create alert rule:', error.message);
       return null;
@@ -63,8 +63,8 @@ class AlertingService {
     query += ` ORDER BY created_at DESC`;
 
     try {
-      const rules = await prisma.raw(query, params);
-      return rules;
+      const rules = await prisma.query(query, params);
+      return rules.rows;
     } catch (error) {
       console.error('Failed to fetch alert rules:', error.message);
       return [];
@@ -73,7 +73,7 @@ class AlertingService {
 
   async checkAlertSilence(ruleId, organisationId) {
     try {
-      const silence = await prisma.raw(
+      const silence = await prisma.query(
         `
         SELECT id, until_at, reason
         FROM observability.alert_silences
@@ -85,7 +85,7 @@ class AlertingService {
         [ruleId, organisationId],
       );
 
-      return silence[0] || null;
+      return silence.rows[0] || null;
     } catch (error) {
       console.error('Failed to check alert silence:', error.message);
       return null;
@@ -111,7 +111,7 @@ class AlertingService {
     }
 
     try {
-      const result = await prisma.raw(
+      const result = await prisma.query(
         `
         INSERT INTO observability.active_alerts (
           rule_id, organisation_id, triggered_at, context
@@ -131,7 +131,7 @@ class AlertingService {
         ],
       );
 
-      const alert = result[0];
+      const alert = result.rows[0];
       this.alertHistory.set(dedupeKey, Date.now());
 
       // Schedule escalation
@@ -146,7 +146,7 @@ class AlertingService {
 
   async acknowledgeAlert(alertId, userId, organisationId) {
     try {
-      await prisma.raw(
+      await prisma.query(
         `
         UPDATE observability.active_alerts
         SET ack_by = $1, ack_at = $2
@@ -169,7 +169,7 @@ class AlertingService {
 
   async escalateAlert(alertId, organisationId, escalationLevel) {
     try {
-      await prisma.raw(
+      await prisma.query(
         `
         UPDATE observability.active_alerts
         SET escalation_level = $1, escalated_at = $2
@@ -202,7 +202,7 @@ class AlertingService {
 
         const timer = setTimeout(async () => {
           // Check if still unacked
-          const alert = await prisma.raw(
+          const alert = await prisma.query(
             `
             SELECT ack_at FROM observability.active_alerts
             WHERE id = $1 AND organisation_id = $2
@@ -210,7 +210,7 @@ class AlertingService {
             [alertId, organisationId],
           );
 
-          if (alert[0] && !alert[0].ack_at) {
+          if (alert.rows[0] && !alert.rows[0].ack_at) {
             // Still unacked, escalate
             await this.escalateAlert(alertId, organisationId, currentIndex + 1);
             currentIndex += 1;
@@ -227,7 +227,7 @@ class AlertingService {
 
   async resolveAlert(alertId, userId, organisationId, reason = '') {
     try {
-      await prisma.raw(
+      await prisma.query(
         `
         UPDATE observability.active_alerts
         SET resolved_at = $1
@@ -258,7 +258,7 @@ class AlertingService {
 
   async silenceAlert(ruleId, organisationId, untilTime, reason, userId) {
     try {
-      await prisma.raw(
+      await prisma.query(
         `
         INSERT INTO observability.alert_silences (
           rule_id, organisation_id, silenced_by, until_at, reason
@@ -276,7 +276,7 @@ class AlertingService {
 
   async recordAlertEvent(alertId, eventType, userId, context = {}) {
     try {
-      await prisma.raw(
+      await prisma.query(
         `
         INSERT INTO observability.alert_history (
           alert_id, event_type, event_at, actor_id, context
@@ -293,7 +293,7 @@ class AlertingService {
     const { resolved = false } = options;
 
     let query = `
-      SELECT id, rule_id, triggered_at, ack_at, escalated_at,
+      SELECT id, rule_id, triggered_at, ack_by, ack_at, escalated_at,
              escalation_level, resolved_at, context
       FROM observability.active_alerts
       WHERE organisation_id = $1
@@ -308,10 +308,10 @@ class AlertingService {
     query += ` ORDER BY triggered_at DESC`;
 
     try {
-      const alerts = await prisma.raw(query, params);
-      return alerts.map((a) => ({
+      const alerts = await prisma.query(query, params);
+      return alerts.rows.map((a) => ({
         ...a,
-        context: a.context ? JSON.parse(a.context) : {},
+        context: a.context || {},
       }));
     } catch (error) {
       console.error('Failed to fetch active alerts:', error.message);
@@ -321,7 +321,7 @@ class AlertingService {
 
   async getAlertHistory(alertId, organisationId) {
     try {
-      const history = await prisma.raw(
+      const history = await prisma.query(
         `
         SELECT event_type, event_at, actor_id, context
         FROM observability.alert_history
@@ -331,9 +331,9 @@ class AlertingService {
         [alertId],
       );
 
-      return history.map((h) => ({
+      return history.rows.map((h) => ({
         ...h,
-        context: h.context ? JSON.parse(h.context) : {},
+        context: h.context || {},
       }));
     } catch (error) {
       console.error('Failed to fetch alert history:', error.message);
@@ -346,14 +346,14 @@ class AlertingService {
     const startDate = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
     try {
-      const stats = await prisma.raw(
+      const stats = await prisma.query(
         `
         SELECT
-          COUNT(*) as total_alerts,
-          COUNT(*) FILTER (WHERE resolved_at IS NOT NULL) as resolved_count,
-          COUNT(*) FILTER (WHERE resolved_at IS NULL) as active_count,
-          COUNT(*) FILTER (WHERE ack_at IS NOT NULL) as acknowledged_count,
-          ROUND(AVG(EXTRACT(EPOCH FROM (resolved_at - triggered_at)) / 60)::NUMERIC, 2) as avg_resolution_time_min
+          COUNT(*)::int as total_alerts,
+          COUNT(*) FILTER (WHERE resolved_at IS NOT NULL)::int as resolved_count,
+          COUNT(*) FILTER (WHERE resolved_at IS NULL)::int as active_count,
+          COUNT(*) FILTER (WHERE ack_at IS NOT NULL)::int as acknowledged_count,
+          ROUND(AVG(EXTRACT(EPOCH FROM (resolved_at - triggered_at)) / 60)::NUMERIC, 2)::float as avg_resolution_time_min
         FROM observability.active_alerts
         WHERE organisation_id = $1
           AND triggered_at >= $2
@@ -361,7 +361,7 @@ class AlertingService {
         [organisationId, startDate],
       );
 
-      return stats[0];
+      return stats.rows[0];
     } catch (error) {
       console.error('Failed to fetch alert stats:', error.message);
       return null;
@@ -370,7 +370,7 @@ class AlertingService {
 
   async disableAlertRule(ruleId, organisationId) {
     try {
-      await prisma.raw(
+      await prisma.query(
         `
         UPDATE observability.alert_rules
         SET enabled = false, updated_at = $1
@@ -388,7 +388,7 @@ class AlertingService {
 
   async deleteAlertRule(ruleId, organisationId) {
     try {
-      await prisma.raw(
+      await prisma.query(
         `
         DELETE FROM observability.alert_rules
         WHERE id = $1 AND organisation_id = $2

@@ -15,7 +15,7 @@ class RunbooksService {
     }
 
     try {
-      const result = await prisma.raw(
+      const result = await prisma.query(
         `
         INSERT INTO observability.runbooks (
           organisation_id, name, alert_trigger, priority, steps, owner_id
@@ -32,7 +32,7 @@ class RunbooksService {
         ],
       );
 
-      return result[0];
+      return result.rows[0];
     } catch (error) {
       console.error('Failed to create runbook:', error.message);
       return null;
@@ -65,8 +65,8 @@ class RunbooksService {
     query += ` ORDER BY priority DESC, created_at DESC`;
 
     try {
-      const runbooks = await prisma.raw(query, params);
-      return runbooks;
+      const runbooks = await prisma.query(query, params);
+      return runbooks.rows;
     } catch (error) {
       console.error('Failed to fetch runbooks:', error.message);
       return [];
@@ -75,7 +75,7 @@ class RunbooksService {
 
   async getRunbookDetail(runbookId) {
     try {
-      const result = await prisma.raw(
+      const result = await prisma.query(
         `
         SELECT id, name, alert_trigger, priority, steps, owner_id, version,
                is_active, published_at, created_at
@@ -85,9 +85,9 @@ class RunbooksService {
         [runbookId],
       );
 
-      const runbook = result[0];
+      const runbook = result.rows[0];
       if (runbook) {
-        runbook.steps = JSON.parse(runbook.steps || '[]');
+        runbook.steps = runbook.steps || [];
       }
       return runbook;
     } catch (error) {
@@ -98,7 +98,7 @@ class RunbooksService {
 
   async publishRunbook(runbookId, organisationId) {
     try {
-      await prisma.raw(
+      await prisma.query(
         `
         UPDATE observability.runbooks
         SET is_active = true, published_at = $1
@@ -116,7 +116,7 @@ class RunbooksService {
 
   async deprecateRunbook(runbookId) {
     try {
-      await prisma.raw(
+      await prisma.query(
         `
         UPDATE observability.runbooks
         SET is_active = false, deprecated_at = $1
@@ -134,7 +134,7 @@ class RunbooksService {
 
   async startRunbookExecution(runbookId, executedBy, incidentRef = null) {
     try {
-      const result = await prisma.raw(
+      const result = await prisma.query(
         `
         INSERT INTO observability.runbook_executions (
           runbook_id, executed_by, incident_ref, started_at, status
@@ -144,7 +144,7 @@ class RunbooksService {
         [runbookId, executedBy, incidentRef || null, new Date(), 'in_progress'],
       );
 
-      return result[0];
+      return result.rows[0];
     } catch (error) {
       console.error('Failed to start runbook execution:', error.message);
       return null;
@@ -156,12 +156,12 @@ class RunbooksService {
 
     try {
       // Get current execution
-      const exec = await prisma.raw(
+      const exec = await prisma.query(
         `SELECT steps_executed FROM observability.runbook_executions WHERE id = $1`,
         [executionId],
       );
 
-      const steps = exec[0] ? JSON.parse(exec[0].steps_executed || '[]') : [];
+      const steps = exec.rows[0]?.steps_executed || [];
 
       // Add/update step
       const existingIndex = steps.findIndex((s) => s.step_num === stepNumber);
@@ -181,13 +181,13 @@ class RunbooksService {
       }
 
       // Update execution
-      await prisma.raw(
+      await prisma.query(
         `
         UPDATE observability.runbook_executions
-        SET steps_executed = $1, updated_at = $2
-        WHERE id = $3
+        SET steps_executed = $1
+        WHERE id = $2
         `,
-        [JSON.stringify(steps), new Date(), executionId],
+        [JSON.stringify(steps), executionId],
       );
 
       return true;
@@ -203,7 +203,7 @@ class RunbooksService {
     }
 
     try {
-      await prisma.raw(
+      await prisma.query(
         `
         UPDATE observability.runbook_executions
         SET status = $1, completed_at = $2
@@ -234,7 +234,7 @@ class RunbooksService {
 
     try {
       // Generate incident number
-      const lastInc = await prisma.raw(
+      const lastInc = await prisma.query(
         `
         SELECT incident_number FROM observability.incident_rca
         WHERE organisation_id = $1
@@ -244,8 +244,8 @@ class RunbooksService {
       );
 
       let nextNumber = 1;
-      if (lastInc[0]) {
-        const match = lastInc[0].incident_number.match(/(\d+)$/);
+      if (lastInc.rows[0]) {
+        const match = lastInc.rows[0].incident_number.match(/(\d+)$/);
         if (match) {
           nextNumber = parseInt(match[1]) + 1;
         }
@@ -253,18 +253,18 @@ class RunbooksService {
 
       const incidentNumber = `INC-${String(nextNumber).padStart(4, '0')}`;
 
-      const result = await prisma.raw(
+      const result = await prisma.query(
         `
         INSERT INTO observability.incident_rca (
           organisation_id, incident_number, title, description,
           start_time, severity, facilitator_id, status
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        RETURNING id, incident_number
+        RETURNING id, incident_number, title, severity, status
         `,
         [organisationId, incidentNumber, title, description, start_time, severity, facilitator_id || null, 'open'],
       );
 
-      return result[0];
+      return result.rows[0];
     } catch (error) {
       console.error('Failed to create RCA record:', error.message);
       return null;
@@ -275,12 +275,12 @@ class RunbooksService {
     const { time, event, actor, details } = timelineEvent;
 
     try {
-      const rca = await prisma.raw(
+      const rca = await prisma.query(
         `SELECT timeline FROM observability.incident_rca WHERE id = $1`,
         [rcaId],
       );
 
-      const timeline = rca[0] ? JSON.parse(rca[0].timeline || '[]') : [];
+      const timeline = rca.rows[0]?.timeline || [];
 
       timeline.push({
         time: time || new Date().toISOString(),
@@ -289,7 +289,7 @@ class RunbooksService {
         details: details || null,
       });
 
-      await prisma.raw(
+      await prisma.query(
         `
         UPDATE observability.incident_rca
         SET timeline = $1, updated_at = $2
@@ -309,12 +309,12 @@ class RunbooksService {
     const { description, owner, due_date } = action;
 
     try {
-      const rca = await prisma.raw(
+      const rca = await prisma.query(
         `SELECT actions FROM observability.incident_rca WHERE id = $1`,
         [rcaId],
       );
 
-      const actions = rca[0] ? JSON.parse(rca[0].actions || '[]') : [];
+      const actions = rca.rows[0]?.actions || [];
 
       const actionRecord = {
         action_id: `ACT-${Date.now()}`,
@@ -327,7 +327,7 @@ class RunbooksService {
 
       actions.push(actionRecord);
 
-      await prisma.raw(
+      await prisma.query(
         `
         UPDATE observability.incident_rca
         SET actions = $1, updated_at = $2
@@ -345,7 +345,7 @@ class RunbooksService {
 
   async closeRCA(rcaId, organisationId) {
     try {
-      await prisma.raw(
+      await prisma.query(
         `
         UPDATE observability.incident_rca
         SET status = $1, published_at = $2, updated_at = $3
@@ -390,8 +390,8 @@ class RunbooksService {
     params.push(limit, offset);
 
     try {
-      const records = await prisma.raw(query, params);
-      return records;
+      const records = await prisma.query(query, params);
+      return records.rows;
     } catch (error) {
       console.error('Failed to fetch RCA records:', error.message);
       return [];
@@ -400,7 +400,7 @@ class RunbooksService {
 
   async getRCADetail(rcaId, organisationId) {
     try {
-      const result = await prisma.raw(
+      const result = await prisma.query(
         `
         SELECT id, incident_number, title, description, severity, status,
                start_time, detection_time, resolution_time,
@@ -413,10 +413,10 @@ class RunbooksService {
         [rcaId, organisationId],
       );
 
-      const rca = result[0];
+      const rca = result.rows[0];
       if (rca) {
-        rca.timeline = JSON.parse(rca.timeline || '[]');
-        rca.actions = JSON.parse(rca.actions || '[]');
+        rca.timeline = rca.timeline || [];
+        rca.actions = rca.actions || [];
       }
       return rca;
     } catch (error) {
@@ -429,7 +429,7 @@ class RunbooksService {
     const { limit = 20 } = options;
 
     try {
-      const executions = await prisma.raw(
+      const executions = await prisma.query(
         `
         SELECT id, executed_by, incident_ref, started_at, completed_at,
                status, steps_executed
@@ -441,9 +441,9 @@ class RunbooksService {
         [runbookId, limit],
       );
 
-      return executions.map((e) => ({
+      return executions.rows.map((e) => ({
         ...e,
-        steps_executed: JSON.parse(e.steps_executed || '[]'),
+        steps_executed: e.steps_executed || [],
       }));
     } catch (error) {
       console.error('Failed to fetch executions:', error.message);

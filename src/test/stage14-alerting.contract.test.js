@@ -6,8 +6,9 @@ describe('Stage 14 PR 14E — Alerting & Escalation Contract Tests', () => {
   let testOrganisationId;
   let testUserId;
 
-  beforeAll(() => {
-    testOrganisationId = uuidv4();
+  beforeAll(async () => {
+    const organisation = await prisma.query('SELECT id FROM organisations LIMIT 1');
+    testOrganisationId = organisation.rows[0]?.id;
     testUserId = uuidv4();
   });
 
@@ -387,7 +388,7 @@ describe('Stage 14 PR 14E — Alerting & Escalation Contract Tests', () => {
 
       expect(Array.isArray(alerts)).toBe(true);
       alerts.forEach((alert) => {
-        expect(alert.resolved_at).toBeUndefined(); // Active alerts shouldn't have resolved_at
+        expect(alert.resolved_at).toBeNull(); // Active alerts shouldn't have resolved_at
       });
     });
 

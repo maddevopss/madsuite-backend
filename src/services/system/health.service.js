@@ -15,7 +15,7 @@ class HealthService {
   async checkDatabase() {
     const startTime = Date.now();
     try {
-      await prisma.raw('SELECT 1');
+      await prisma.query('SELECT 1');
       return {
         status: 'healthy',
         latency_ms: Date.now() - startTime,
@@ -169,7 +169,7 @@ class HealthService {
 
   async recordHealthCheck(serviceName, probeName, result) {
     try {
-      await prisma.raw(
+      await prisma.query(
         `
         INSERT INTO observability.health_check_results (
           service_name, probe_name, status, latency_ms, error_message, checked_at
@@ -243,7 +243,7 @@ class HealthService {
 
   async getLatestHealthStatus(serviceName) {
     try {
-      const result = await prisma.raw(
+      const result = await prisma.query(
         `
         SELECT service_name, overall_status, latest_latency_ms,
                last_checked_at, healthy_probes, degraded_probes, unhealthy_probes
@@ -253,7 +253,7 @@ class HealthService {
         [serviceName],
       );
 
-      return result[0] || null;
+      return result.rows[0] || null;
     } catch (error) {
       console.error('Failed to fetch health status:', error.message);
       return null;
@@ -262,7 +262,7 @@ class HealthService {
 
   async getHealthHistory(serviceName, probeName, limit = 100) {
     try {
-      const result = await prisma.raw(
+      const result = await prisma.query(
         `
         SELECT service_name, probe_name, status, latency_ms, error_message, checked_at
         FROM observability.health_check_results
@@ -273,7 +273,7 @@ class HealthService {
         [serviceName, probeName, limit],
       );
 
-      return result;
+      return result.rows;
     } catch (error) {
       console.error('Failed to fetch health history:', error.message);
       return [];
@@ -285,7 +285,7 @@ class HealthService {
     const cutoffDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
 
     try {
-      const result = await prisma.raw(
+      const result = await prisma.query(
         `
         DELETE FROM observability.health_check_results
         WHERE created_at < $1

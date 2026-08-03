@@ -31,10 +31,10 @@ describe('Stage 14 PR 14A — Distributed Tracing Contract Tests', () => {
     });
 
     // Setup test data
-    const organisation = await prisma.raw(`
+    const organisation = await prisma.query(`
       SELECT id FROM organisations LIMIT 1
     `);
-    testOrganisationId = organisation[0]?.id || uuidv4();
+    testOrganisationId = organisation.rows[0]?.id || uuidv4();
   });
 
   describe('Trace ID Propagation', () => {
@@ -147,7 +147,7 @@ describe('Stage 14 PR 14A — Distributed Tracing Contract Tests', () => {
       await new Promise((r) => setTimeout(r, 100));
 
       const trace = await tracingService.getTraceById(traceId);
-      const tags = JSON.parse(trace.tags || '{}');
+      const tags = trace.tags || {};
       expect(tags.http_method).toBe('GET');
       expect(tags.http_path).toBe('/test');
       expect(tags.http_status_code).toBe(200);
@@ -193,7 +193,7 @@ describe('Stage 14 PR 14A — Distributed Tracing Contract Tests', () => {
   describe('RLS & Organisation Isolation', () => {
     it('should enforce organisation_id in trace recording', async () => {
       const traceId = `trace-rls-${Date.now()}`;
-      const differentOrgId = uuidv4();
+      const differentOrgId = testOrganisationId === 2 ? 1 : 2;
 
       // Try to record trace with different organisation
       const trace = await tracingService.recordTrace({
@@ -304,7 +304,7 @@ describe('Stage 14 PR 14A — Distributed Tracing Contract Tests', () => {
       const oldTraceId = `old-trace-${Date.now()}`;
 
       // Insert old trace directly
-      await prisma.raw(
+      await prisma.query(
         `
         INSERT INTO observability.traces (
           organisation_id, trace_id, service_name, operation_name,

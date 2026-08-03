@@ -9,7 +9,7 @@ describe('Stage 14 PR 14D — Metrics & Error Budget Dashboard', () => {
   let app;
   let testOrganisationId;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     app = express();
     app.use(express.json());
     app.use((req, res, next) => {
@@ -18,7 +18,8 @@ describe('Stage 14 PR 14D — Metrics & Error Budget Dashboard', () => {
     });
     app.use(createMetricsRoutes());
 
-    testOrganisationId = uuidv4();
+    const organisation = await prisma.query('SELECT id FROM organisations LIMIT 1');
+    testOrganisationId = organisation.rows[0]?.id;
   });
 
   describe('Metric Recording', () => {
@@ -87,7 +88,7 @@ describe('Stage 14 PR 14D — Metrics & Error Budget Dashboard', () => {
 
       // Insert test traces
       for (let i = 0; i < 100; i++) {
-        await prisma.raw(
+        await prisma.query(
           `
           INSERT INTO observability.traces (
             organisation_id, trace_id, service_name, operation_name,
@@ -376,7 +377,7 @@ describe('Stage 14 PR 14D — Metrics & Error Budget Dashboard', () => {
     it('should delete old metrics', async () => {
       // Insert old metric
       try {
-        await prisma.raw(
+        await prisma.query(
           `
           INSERT INTO observability.metrics (
             metric_name, metric_type, value, timestamp

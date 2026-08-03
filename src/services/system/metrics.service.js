@@ -25,7 +25,7 @@ class MetricsService {
     }
 
     try {
-      await prisma.raw(
+      await prisma.query(
         `
         INSERT INTO observability.metrics (
           organisation_id, metric_name, metric_type, labels, value, timestamp
@@ -50,13 +50,13 @@ class MetricsService {
 
     try {
       // Get uptime from traces
-      const traceStats = await prisma.raw(
+      const traceStats = await prisma.query(
         `
         SELECT
-          COUNT(*) as total_requests,
-          COUNT(*) FILTER (WHERE status = 'success') as successful_requests,
-          COUNT(*) FILTER (WHERE status = 'error') as error_requests,
-          COUNT(*) FILTER (WHERE status = 'timeout') as timeout_requests
+          COUNT(*)::int as total_requests,
+          COUNT(*) FILTER (WHERE status = 'success')::int as successful_requests,
+          COUNT(*) FILTER (WHERE status = 'error')::int as error_requests,
+          COUNT(*) FILTER (WHERE status = 'timeout')::int as timeout_requests
         FROM observability.traces
         WHERE service_name = $1
           AND start_time >= $2
@@ -65,7 +65,7 @@ class MetricsService {
         [serviceName, periodStart, periodEnd],
       );
 
-      const stats = traceStats[0] || {
+      const stats = traceStats.rows[0] || {
         total_requests: 0,
         successful_requests: 0,
         error_requests: 0,
@@ -119,7 +119,7 @@ class MetricsService {
     if (!budget) return null;
 
     try {
-      await prisma.raw(
+      await prisma.query(
         `
         INSERT INTO observability.sla_burn_rate (
           organisation_id, service_name, period_start, period_end,
@@ -156,17 +156,17 @@ class MetricsService {
     const { startTime = new Date(Date.now() - 3600000), endTime = new Date() } = options;
 
     try {
-      const metrics = await prisma.raw(
+      const metrics = await prisma.query(
         `
         SELECT
           service_name,
           date_trunc('minute', start_time) as minute,
-          COUNT(*) as request_count,
-          PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY duration_ms) as p50_ms,
-          PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms) as p95_ms,
-          PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY duration_ms) as p99_ms,
-          MAX(duration_ms) as max_ms,
-          AVG(duration_ms)::NUMERIC(10,2) as avg_ms
+          COUNT(*)::int as request_count,
+          PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY duration_ms)::float as p50_ms,
+          PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY duration_ms)::float as p95_ms,
+          PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY duration_ms)::float as p99_ms,
+          MAX(duration_ms)::float as max_ms,
+          AVG(duration_ms)::NUMERIC(10,2)::float as avg_ms
         FROM observability.traces
         WHERE service_name = $1
           AND start_time >= $2
@@ -177,7 +177,7 @@ class MetricsService {
         [serviceName, startTime, endTime],
       );
 
-      return metrics;
+      return metrics.rows;
     } catch (error) {
       console.error('Failed to fetch latency metrics:', error.message);
       return [];
@@ -188,15 +188,15 @@ class MetricsService {
     const { startTime = new Date(Date.now() - 3600000), endTime = new Date() } = options;
 
     try {
-      const metrics = await prisma.raw(
+      const metrics = await prisma.query(
         `
         SELECT
           service_name,
           date_trunc('minute', start_time) as minute,
-          COUNT(*) as total_requests,
-          COUNT(*) FILTER (WHERE status = 'error') as error_count,
-          COUNT(*) FILTER (WHERE status = 'timeout') as timeout_count,
-          ROUND(100.0 * COUNT(*) FILTER (WHERE status = 'error') / COUNT(*)::NUMERIC, 2) as error_rate_pct
+          COUNT(*)::int as total_requests,
+          COUNT(*) FILTER (WHERE status = 'error')::int as error_count,
+          COUNT(*) FILTER (WHERE status = 'timeout')::int as timeout_count,
+          ROUND(100.0 * COUNT(*) FILTER (WHERE status = 'error') / COUNT(*)::NUMERIC, 2)::float as error_rate_pct
         FROM observability.traces
         WHERE service_name = $1
           AND start_time >= $2
@@ -207,7 +207,7 @@ class MetricsService {
         [serviceName, startTime, endTime],
       );
 
-      return metrics;
+      return metrics.rows;
     } catch (error) {
       console.error('Failed to fetch error rate:', error.message);
       return [];
@@ -218,13 +218,13 @@ class MetricsService {
     const { startTime = new Date(Date.now() - 3600000), endTime = new Date() } = options;
 
     try {
-      const metrics = await prisma.raw(
+      const metrics = await prisma.query(
         `
         SELECT
           service_name,
           date_trunc('minute', start_time) as minute,
-          COUNT(*) as requests_per_minute,
-          COUNT(*) FILTER (WHERE status = 'success')::NUMERIC / COUNT(*)::NUMERIC * 100 as success_rate_pct
+          COUNT(*)::int as requests_per_minute,
+          (COUNT(*) FILTER (WHERE status = 'success')::NUMERIC / COUNT(*)::NUMERIC * 100)::float as success_rate_pct
         FROM observability.traces
         WHERE service_name = $1
           AND start_time >= $2
@@ -235,7 +235,7 @@ class MetricsService {
         [serviceName, startTime, endTime],
       );
 
-      return metrics;
+      return metrics.rows;
     } catch (error) {
       console.error('Failed to fetch throughput:', error.message);
       return [];
@@ -244,13 +244,14 @@ class MetricsService {
 
   async getSLAStatus(organisationId, serviceName, limit = 10) {
     try {
-      const records = await prisma.raw(
+      const records = await prisma.query(
         `
         SELECT
           service_name, period_start, period_end,
-          sla_target_pct, actual_uptime_pct,
-          error_budget_remaining_minutes, error_budget_used_pct,
-          burn_rate_pct_per_hour, alert_fired
+          sla_target_pct::float as sla_target_pct, actual_uptime_pct::float as actual_uptime_pct,
+          error_budget_remaining_minutes::float as error_budget_remaining_minutes,
+          error_budget_used_pct::float as error_budget_used_pct,
+          burn_rate_pct_per_hour::float as burn_rate_pct_per_hour, alert_fired
         FROM observability.sla_burn_rate
         WHERE organisation_id = $1 AND service_name = $2
         ORDER BY period_start DESC
@@ -259,7 +260,7 @@ class MetricsService {
         [organisationId, serviceName, limit],
       );
 
-      return records;
+      return records.rows;
     } catch (error) {
       console.error('Failed to fetch SLA status:', error.message);
       return [];
@@ -270,7 +271,7 @@ class MetricsService {
     const { limit = 100, offset = 0, startTime, endTime, labels = {} } = options;
 
     let query = `
-      SELECT id, metric_name, metric_type, labels, value, timestamp
+      SELECT id, metric_name, metric_type, labels, value::float as value, timestamp
       FROM observability.metrics
       WHERE metric_name = $1
     `;
@@ -301,10 +302,10 @@ class MetricsService {
     params.push(limit, offset);
 
     try {
-      const metrics = await prisma.raw(query, params);
-      return metrics.map((m) => ({
+      const metrics = await prisma.query(query, params);
+      return metrics.rows.map((m) => ({
         ...m,
-        labels: m.labels ? JSON.parse(m.labels) : {},
+        labels: m.labels || {},
       }));
     } catch (error) {
       console.error('Failed to fetch metrics:', error.message);
@@ -316,10 +317,10 @@ class MetricsService {
     const cutoffDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
 
     try {
-      const result = await prisma.raw(
+      const result = await prisma.query(
         `
         DELETE FROM observability.metrics
-        WHERE created_at < $1
+        WHERE timestamp < $1
         `,
         [cutoffDate],
       );
