@@ -5,12 +5,12 @@ CREATE TABLE IF NOT EXISTS observability.alert_rules (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   organisation_id UUID NOT NULL,
   name TEXT NOT NULL,
-  condition TEXT NOT NULL,  -- "sla_burn_rate > 10%/hr" or "error_rate > 1%"
+  condition TEXT NOT NULL,
   severity TEXT NOT NULL CHECK (severity IN ('critical', 'warning', 'info')),
   enabled BOOLEAN DEFAULT true,
-  runbook_ref TEXT,  -- Link to runbook (PR 14F)
-  notification_channels TEXT[],  -- ['slack', 'pagerduty', 'email']
-  cooldown_minutes INTEGER DEFAULT 30,  -- Don't re-alert for this duration
+  runbook_ref TEXT,
+  notification_channels TEXT[],
+  cooldown_minutes INTEGER DEFAULT 30,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
@@ -24,13 +24,13 @@ CREATE TABLE IF NOT EXISTS observability.active_alerts (
   rule_id UUID NOT NULL,
   organisation_id UUID NOT NULL,
   triggered_at TIMESTAMPTZ NOT NULL,
-  ack_by UUID,  -- User who acknowledged
+  ack_by UUID,
   ack_at TIMESTAMPTZ,
   escalated_at TIMESTAMPTZ,
-  escalation_level INTEGER DEFAULT 0,  -- 0=oncall, 1=manager, 2=cto
+  escalation_level INTEGER DEFAULT 0,
   resolved_at TIMESTAMPTZ,
-  incident_ref TEXT,  -- Link to incident (Stage 8B)
-  context JSONB,  -- {service, threshold, current_value, trend}
+  incident_ref TEXT,
+  context JSONB,
   notification_sent_at TIMESTAMPTZ,
 
   CONSTRAINT fk_rule
@@ -44,10 +44,10 @@ CREATE TABLE IF NOT EXISTS observability.alert_silences (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   rule_id UUID NOT NULL,
   organisation_id UUID NOT NULL,
-  silenced_by UUID NOT NULL,  -- User who silenced
+  silenced_by UUID NOT NULL,
   silenced_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  until_at TIMESTAMPTZ NOT NULL,  -- When silence expires
-  reason TEXT,  -- Why silenced
+  until_at TIMESTAMPTZ NOT NULL,
+  reason TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
   CONSTRAINT fk_rule
@@ -60,10 +60,10 @@ CREATE TABLE IF NOT EXISTS observability.alert_silences (
 CREATE TABLE IF NOT EXISTS observability.alert_history (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   alert_id UUID NOT NULL,
-  event_type TEXT NOT NULL,  -- triggered, acknowledged, escalated, resolved, silenced
+  event_type TEXT NOT NULL,
   event_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  actor_id UUID,  -- User who performed action
-  context JSONB,  -- {message, escalation_level}
+  actor_id UUID,
+  context JSONB,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
   CONSTRAINT fk_alert
@@ -80,7 +80,7 @@ CREATE INDEX IF NOT EXISTS idx_active_alerts_unresolved
 CREATE INDEX IF NOT EXISTS idx_active_alerts_unack
   ON observability.active_alerts(ack_at) WHERE ack_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_alert_silences_until
-  ON observability.alert_silences(until_at) WHERE until_at > NOW();
+  ON observability.alert_silences(until_at);
 CREATE INDEX IF NOT EXISTS idx_alert_history_alert
   ON observability.alert_history(alert_id, event_at DESC);
 
@@ -90,22 +90,30 @@ ALTER TABLE observability.active_alerts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE observability.alert_silences ENABLE ROW LEVEL SECURITY;
 ALTER TABLE observability.alert_history ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY IF NOT EXISTS "Users can view alert rules for their organisation"
+DROP POLICY IF EXISTS "Users can view alert rules for their organisation"
+  ON observability.alert_rules;
+CREATE POLICY "Users can view alert rules for their organisation"
   ON observability.alert_rules
   FOR SELECT
   USING (organisation_id = current_setting('app.current_organisation_id')::uuid);
 
-CREATE POLICY IF NOT EXISTS "Users can view active alerts for their organisation"
+DROP POLICY IF EXISTS "Users can view active alerts for their organisation"
+  ON observability.active_alerts;
+CREATE POLICY "Users can view active alerts for their organisation"
   ON observability.active_alerts
   FOR SELECT
   USING (organisation_id = current_setting('app.current_organisation_id')::uuid);
 
-CREATE POLICY IF NOT EXISTS "Users can view alert silences for their organisation"
+DROP POLICY IF EXISTS "Users can view alert silences for their organisation"
+  ON observability.alert_silences;
+CREATE POLICY "Users can view alert silences for their organisation"
   ON observability.alert_silences
   FOR SELECT
   USING (organisation_id = current_setting('app.current_organisation_id')::uuid);
 
-CREATE POLICY IF NOT EXISTS "Users can view alert history for their organisation"
+DROP POLICY IF EXISTS "Users can view alert history for their organisation"
+  ON observability.alert_history;
+CREATE POLICY "Users can view alert history for their organisation"
   ON observability.alert_history
   FOR SELECT
   USING (
@@ -116,19 +124,26 @@ CREATE POLICY IF NOT EXISTS "Users can view alert history for their organisation
     )
   );
 
-CREATE POLICY IF NOT EXISTS "System can insert alert rules"
+DROP POLICY IF EXISTS "System can insert alert rules"
+  ON observability.alert_rules;
+CREATE POLICY "System can insert alert rules"
   ON observability.alert_rules
   FOR INSERT
   WITH CHECK (true);
 
-CREATE POLICY IF NOT EXISTS "System can insert active alerts"
+DROP POLICY IF EXISTS "System can insert active alerts"
+  ON observability.active_alerts;
+CREATE POLICY "System can insert active alerts"
   ON observability.active_alerts
   FOR INSERT
   WITH CHECK (true);
 
-CREATE POLICY IF NOT EXISTS "System can update active alerts"
+DROP POLICY IF EXISTS "System can update active alerts"
+  ON observability.active_alerts;
+CREATE POLICY "System can update active alerts"
   ON observability.active_alerts
   FOR UPDATE
+  USING (true)
   WITH CHECK (true);
 
 -- Grants
