@@ -259,22 +259,26 @@ FOR EACH ROW EXECUTE FUNCTION update_metrics_timestamp();
 
 -- Views for metrics dashboards
 
+CREATE SCHEMA IF NOT EXISTS metrics;
+
 -- Hourly metrics summary (last 24 hours)
 CREATE OR REPLACE VIEW metrics.hourly_summary AS
 SELECT
   COALESCE(rm.date, qm.date, edm.date, jem.date) as date,
   COALESCE(rm.hour, qm.hour, edm.hour, jem.hour) as hour,
 
-  -- Retry metrics
-  rm.total_attempts as retry_total,
-  rm.successful as retry_successful,
-  rm.failed_transient as retry_transient,
-  rm.failed_permanent as retry_permanent,
+  -- Retry metrics (MAX = pas d'agrégation réelle : au plus 1 ligne par date/hour
+  -- dans retry_metrics ; MAX évite juste le "fan-out" créé par les FULL OUTER JOIN
+  -- avec edm/jem qui, eux, ont plusieurs lignes par date/hour)
+  MAX(rm.total_attempts) as retry_total,
+  MAX(rm.successful) as retry_successful,
+  MAX(rm.failed_transient) as retry_transient,
+  MAX(rm.failed_permanent) as retry_permanent,
 
-  -- Quarantine metrics
-  qm.total_items as quarantine_items,
-  qm.recovered as quarantine_recovered,
-  qm.recovery_attempts as recovery_attempts,
+  -- Quarantine metrics (même raisonnement que retry_metrics)
+  MAX(qm.total_items) as quarantine_items,
+  MAX(qm.recovered) as quarantine_recovered,
+  MAX(qm.recovery_attempts) as recovery_attempts,
 
   -- Delivery metrics (sum across handlers)
   SUM(edm.total_events)::INT as delivery_total,
@@ -300,7 +304,6 @@ SELECT
   SUM(total_attempts)::INT as retry_total,
   SUM(successful)::INT as retry_successful,
   SUM(quarantined)::INT as quarantined_items,
-  SUM(recovery_attempts)::INT as recovery_attempts,
   AVG(avg_backoff_seconds) as avg_backoff_seconds
 FROM retry_metrics
 GROUP BY date
