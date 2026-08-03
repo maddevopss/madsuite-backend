@@ -33,13 +33,13 @@ function deny(decision) {
 router.get('/classifications', (req,res,next) => handle(res,next,async () => (await db.query('SELECT * FROM document_classifications WHERE organisation_id=$1 ORDER BY classification_code',[org(req)])).rows));
 router.post('/classifications', (req,res,next) => handle(res,next,() => {
   const input = { ...req.body, ownerUserId: req.body.ownerUserId || actor(req) };
-  return transactionalWrite(req, 'documents.classification.create', 'documents.classification.create', input, async ({ client, organisationId }) => (await client.query(`INSERT INTO document_classifications (organisation_id,classification_code,name,sensitivity_level,retention_years,legal_hold_required,owner_user_id,evidence) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,[organisationId,input.classificationCode,input.name,input.sensitivityLevel||'internal',input.retentionYears||null,input.legalHoldRequired||false,input.ownerUserId,input.evidence||[]])).rows[0]);
+  return transactionalWrite(req, 'documents.classification.create', 'documents.classification.create', input, async ({ client, organisationId }) => (await client.query(`INSERT INTO document_classifications (organisation_id,classification_code,name,sensitivity_level,retention_years,legal_hold_required,owner_user_id,evidence) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,[organisationId,input.classificationCode,input.name,input.sensitivityLevel||'internal',input.retentionYears||null,input.legalHoldRequired||false,input.ownerUserId,JSON.stringify(input.evidence||[])])).rows[0]);
 },201));
 
 router.get('/documents', (req,res,next) => handle(res,next,async () => (await db.query('SELECT * FROM governed_documents WHERE organisation_id=$1 ORDER BY updated_at DESC',[org(req)])).rows));
 router.post('/documents', (req,res,next) => handle(res,next,() => {
   const input = { ...req.body, businessOwnerUserId: req.body.businessOwnerUserId || actor(req) };
-  return transactionalWrite(req, 'documents.document.create', null, input, async ({ client, organisationId }) => (await client.query(`INSERT INTO governed_documents (organisation_id,classification_id,document_code,title,business_owner_user_id,current_version,status,effective_at,legal_hold,evidence) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,[organisationId,input.classificationId,input.documentCode,input.title,input.businessOwnerUserId,input.currentVersion||1,input.status||'draft',input.effectiveAt||null,input.legalHold||false,input.evidence||[]])).rows[0]);
+  return transactionalWrite(req, 'documents.document.create', null, input, async ({ client, organisationId }) => (await client.query(`INSERT INTO governed_documents (organisation_id,classification_id,document_code,title,business_owner_user_id,current_version,status,effective_at,legal_hold,evidence) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,[organisationId,input.classificationId,input.documentCode,input.title,input.businessOwnerUserId,input.currentVersion||1,input.status||'draft',input.effectiveAt||null,input.legalHold||false,JSON.stringify(input.evidence||[])])).rows[0]);
 },201));
 router.post('/documents/:id/publish', (req,res,next) => handle(res,next,() => transactionalWrite(req,'documents.document.publish',null,{...req.body,documentId:req.params.id},async ({ client, organisationId, idempotencyKey }) => {
   const document = (await client.query('SELECT id,status FROM governed_documents WHERE id=$1 AND organisation_id=$2 FOR UPDATE',[req.params.id,organisationId])).rows[0];
@@ -60,21 +60,24 @@ router.get('/documents/:id/versions', (req,res,next) => handle(res,next,async ()
 router.post('/documents/:id/versions', (req,res,next) => handle(res,next,() => {
   const input = { ...req.body, documentId: req.params.id, preparedByUserId: req.body.preparedByUserId || actor(req) };
   const policy = input.approvedByUserId ? 'documents.version.approve' : null;
-  return transactionalWrite(req, 'documents.version.create', policy, input, async ({ client, organisationId }) => (await client.query(`INSERT INTO governed_document_versions (organisation_id,document_id,version_number,change_summary,content_hash,storage_ref,prepared_by_user_id,approved_by_user_id,approved_at,evidence) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,[organisationId,req.params.id,input.versionNumber,input.changeSummary,input.contentHash,input.storageRef,input.preparedByUserId,input.approvedByUserId||null,input.approvedAt||null,input.evidence||[]])).rows[0]);
+  return transactionalWrite(req, 'documents.version.create', policy, input, async ({ client, organisationId }) => (await client.query(`INSERT INTO governed_document_versions (organisation_id,document_id,version_number,change_summary,content_hash,storage_ref,prepared_by_user_id,approved_by_user_id,approved_at,evidence) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,[organisationId,req.params.id,input.versionNumber,input.changeSummary,input.contentHash,input.storageRef,input.preparedByUserId,input.approvedByUserId||null,input.approvedAt||null,JSON.stringify(input.evidence||[])])).rows[0]);
 },201));
 
 router.use('/evidence-references', documentEvidenceReferenceRoutes);
 
 router.get('/retention-actions', (req,res,next) => handle(res,next,async () => (await db.query('SELECT * FROM document_retention_actions WHERE organisation_id=$1 ORDER BY scheduled_at',[org(req)])).rows));
-router.post('/retention-actions', (req,res,next) => handle(res,next,() => {
+router.post('/retention-actions', (req,res,next) => {
+  if (!key(req) || String(key(req)).trim().length < 8) return res.status(400).json({ code: 'documents.idempotency_required' });
+  return handle(res,next,() => {
   const input = { ...req.body, requestedByUserId: req.body.requestedByUserId || actor(req) };
   return transactionalWrite(req, 'documents.retention.create', null, input, async ({ client, organisationId, idempotencyKey }) => {
     const document = (await client.query('SELECT legal_hold FROM governed_documents WHERE id=$1 AND organisation_id=$2 FOR UPDATE',[input.documentId,organisationId])).rows[0];
     if (!document) throw notFound('documents.document_not_found');
     if (input.actionType === 'destroy' && document.legal_hold === true) { const error = new Error('documents.legal_hold_blocks_destruction'); error.statusCode = 409; throw error; }
-    return (await client.query(`INSERT INTO document_retention_actions (organisation_id,document_id,action_type,scheduled_at,requested_by_user_id,approved_by_user_id,executed_by_user_id,executed_at,reason,evidence,status,idempotency_key) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,[organisationId,input.documentId,input.actionType,input.scheduledAt,input.requestedByUserId,null,null,null,input.reason,input.evidence||[],'pending',idempotencyKey])).rows[0];
+    return (await client.query(`INSERT INTO document_retention_actions (organisation_id,document_id,action_type,scheduled_at,requested_by_user_id,approved_by_user_id,executed_by_user_id,executed_at,reason,evidence,status,idempotency_key) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,[organisationId,input.documentId,input.actionType,input.scheduledAt,input.requestedByUserId,null,null,null,input.reason,JSON.stringify(input.evidence||[]),'pending',idempotencyKey])).rows[0];
   });
-},201));
+  },201);
+});
 router.post('/retention-actions/:id/execute', (req,res,next) => handle(res,next,() => transactionalWrite(req,'documents.retention.execute',null,{...req.body,retentionActionId:req.params.id},async ({ client, organisationId, idempotencyKey }) => {
   const action = (await client.query(`SELECT id,document_id,action_type,requested_by_user_id,reason,evidence,status FROM document_retention_actions WHERE id=$1 AND organisation_id=$2 FOR UPDATE`,[req.params.id,organisationId])).rows[0];
   if (!action) throw notFound('documents.retention_action_not_found');
@@ -83,13 +86,13 @@ router.post('/retention-actions/:id/execute', (req,res,next) => handle(res,next,
   const input = { ...req.body, documentId:action.document_id, actionType:action.action_type, reason:action.reason, requestedByUserId:action.requested_by_user_id, approvedByUserId:req.body.approvedByUserId, executedByUserId:req.body.executedByUserId||actor(req), evidence:req.body.evidence||action.evidence||[], legalHold:document.legal_hold };
   const decision = await evaluatePolicy({ policy:'documents.retention.execute@1', input, idempotencyKey, organisationId, actorUserId:actor(req), client });
   if (!decision.allowed) deny(decision);
-  return (await client.query(`UPDATE document_retention_actions SET approved_by_user_id=$1,executed_by_user_id=$2,executed_at=NOW(),evidence=$3,status='executed' WHERE id=$4 AND organisation_id=$5 RETURNING *`,[input.approvedByUserId,input.executedByUserId,input.evidence||[],req.params.id,organisationId])).rows[0];
+  return (await client.query(`UPDATE document_retention_actions SET approved_by_user_id=$1,executed_by_user_id=$2,executed_at=NOW(),evidence=$3,status='executed' WHERE id=$4 AND organisation_id=$5 RETURNING *`,[input.approvedByUserId,input.executedByUserId,JSON.stringify(input.evidence||[]),req.params.id,organisationId])).rows[0];
 })));
 
 router.get('/access-reviews', (req,res,next) => handle(res,next,async () => (await db.query('SELECT * FROM document_access_reviews WHERE organisation_id=$1 ORDER BY reviewed_at DESC',[org(req)])).rows));
 router.post('/access-reviews', (req,res,next) => handle(res,next,() => {
   const input = { ...req.body, reviewedByUserId: req.body.reviewedByUserId || actor(req) };
-  return transactionalWrite(req, 'documents.access_review.complete', 'documents.access_review.complete', input, async ({ client, organisationId, idempotencyKey }) => (await client.query(`INSERT INTO document_access_reviews (organisation_id,document_id,reviewed_by_user_id,reviewed_at,authorized_roles,findings,evidence,idempotency_key) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,[organisationId,input.documentId,input.reviewedByUserId,input.reviewedAt,input.authorizedRoles||[],input.findings||[],input.evidence||[],idempotencyKey])).rows[0]);
+  return transactionalWrite(req, 'documents.access_review.complete', 'documents.access_review.complete', input, async ({ client, organisationId, idempotencyKey }) => (await client.query(`INSERT INTO document_access_reviews (organisation_id,document_id,reviewed_by_user_id,reviewed_at,authorized_roles,findings,evidence,idempotency_key) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,[organisationId,input.documentId,input.reviewedByUserId,input.reviewedAt,JSON.stringify(input.authorizedRoles||[]),JSON.stringify(input.findings||[]),JSON.stringify(input.evidence||[]),idempotencyKey])).rows[0]);
 },201));
 
 router.get('/alerts', (req,res,next) => handle(res,next,async () => (await db.query(`SELECT 'retention_due' AS alert_type,id,document_id,scheduled_at AS due_at FROM document_retention_actions WHERE organisation_id=$1 AND status='pending' AND scheduled_at<=NOW()+INTERVAL '60 days' UNION ALL SELECT 'legal_hold' AS alert_type,id,id AS document_id,updated_at AS due_at FROM governed_documents WHERE organisation_id=$1 AND legal_hold=TRUE ORDER BY due_at`,[org(req)])).rows));

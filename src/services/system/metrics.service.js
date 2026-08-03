@@ -293,9 +293,9 @@ class MetricsService {
 
     // Label filtering
     for (const [key, value] of Object.entries(labels)) {
-      query += ` AND labels->>'${key}' = $${paramIndex}`;
-      params.push(value);
-      paramIndex += 1;
+      query += ` AND labels->>$${paramIndex} = $${paramIndex + 1}`;
+      params.push(key, value);
+      paramIndex += 2;
     }
 
     query += ` ORDER BY timestamp DESC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;

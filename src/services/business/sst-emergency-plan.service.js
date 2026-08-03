@@ -45,7 +45,7 @@ async function createEmergencyPlan({ organisationId, input = {}, idempotencyKey,
       const inserted = await client.query(
         `INSERT INTO sst_emergency_plans (organisation_id,plan_code,scenario_type,title,procedure,assembly_point,responsible_employee_id,review_due_at,evidence,ct_mad_transaction_id,correlation_id,created_by,idempotency_key)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,
-        [orgId, String(input.planCode).trim(), String(input.scenarioType).trim(), String(input.title).trim(), String(input.procedure).trim(), input.assemblyPoint || null, input.responsibleEmployeeId || null, input.reviewDueAt || null, input.evidence || [], transactionId, correlationId, actorUserId || null, idempotencyKey],
+        [orgId, String(input.planCode).trim(), String(input.scenarioType).trim(), String(input.title).trim(), String(input.procedure).trim(), input.assemblyPoint || null, input.responsibleEmployeeId || null, input.reviewDueAt || null, JSON.stringify(input.evidence || []), transactionId, correlationId, actorUserId || null, idempotencyKey],
       );
       const plan = inserted.rows[0];
       const event = await appendEvent(client, {
@@ -131,7 +131,7 @@ async function recordEmergencyDrill({ organisationId, input = {}, idempotencyKey
       const inserted = await client.query(
         `INSERT INTO sst_emergency_drills (organisation_id,plan_id,conducted_at,participants_count,observations,evidence,ct_mad_transaction_id,correlation_id,created_by,idempotency_key)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-        [orgId, input.planId, input.conductedAt, input.participantsCount || null, input.observations || null, input.evidence || [], transactionId, correlationId, actorUserId || null, idempotencyKey],
+        [orgId, input.planId, input.conductedAt, input.participantsCount || null, input.observations || null, JSON.stringify(input.evidence || []), transactionId, correlationId, actorUserId || null, idempotencyKey],
       );
       const drill = inserted.rows[0];
       await client.query("UPDATE sst_emergency_plans SET last_drill_at=$1, updated_at=NOW() WHERE organisation_id=$2 AND id=$3", [input.conductedAt, orgId, input.planId]);

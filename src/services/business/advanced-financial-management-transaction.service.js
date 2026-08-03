@@ -16,7 +16,7 @@ const requireKey = (idempotencyKey) => validIdempotency(idempotencyKey)
 registerPolicy('finance.budget.approve', '1', ({ input, idempotencyKey }) => {
   const keyError = requireKey(idempotencyKey); if (keyError) return keyError;
   if (!input?.budgetId || !input?.ownerUserId || !input?.approvedByUserId) return { allowed: false, statusCode: 400, code: 'finance.budget_approval_required' };
-  if (input.ownerUserId === input.approvedByUserId) return { allowed: false, statusCode: 409, code: 'finance.budget_independent_approval_required' };
+  if (String(input.ownerUserId) === String(input.approvedByUserId)) return { allowed: false, statusCode: 409, code: 'finance.budget_independent_approval_required' };
   if (!hasItems(input?.allocations) || !hasItems(input?.assumptions)) return { allowed: false, statusCode: 409, code: 'finance.budget_basis_required' };
   if (!hasItems(input?.approvalEvidence)) return { allowed: false, statusCode: 409, code: 'finance.budget_evidence_required' };
   if (Number(input.totalRevenue) < 0 || Number(input.totalExpense) < 0) return { allowed: false, statusCode: 400, code: 'finance.budget_totals_invalid' };
@@ -26,7 +26,7 @@ registerPolicy('finance.budget.approve', '1', ({ input, idempotencyKey }) => {
 registerPolicy('finance.forecast.publish', '1', ({ input, idempotencyKey }) => {
   const keyError = requireKey(idempotencyKey); if (keyError) return keyError;
   if (!input?.forecastId || !input?.preparedByUserId || !input?.approvedByUserId) return { allowed: false, statusCode: 400, code: 'finance.forecast_approval_required' };
-  if (input.preparedByUserId === input.approvedByUserId) return { allowed: false, statusCode: 409, code: 'finance.forecast_independent_approval_required' };
+  if (String(input.preparedByUserId) === String(input.approvedByUserId)) return { allowed: false, statusCode: 409, code: 'finance.forecast_independent_approval_required' };
   if (!input?.periodStart || !input?.periodEnd || new Date(input.periodEnd) < new Date(input.periodStart)) return { allowed: false, statusCode: 400, code: 'finance.forecast_period_invalid' };
   if (!hasItems(input?.assumptions) || !hasItems(input?.approvalEvidence)) return { allowed: false, statusCode: 409, code: 'finance.forecast_basis_required' };
   return { allowed: true, code: 'finance.forecast_publish_allowed' };
@@ -53,7 +53,7 @@ registerPolicy('finance.funding_facility.approve', '1', ({ input, idempotencyKey
 registerPolicy('finance.scenario.approve', '1', ({ input, idempotencyKey }) => {
   const keyError = requireKey(idempotencyKey); if (keyError) return keyError;
   if (!input?.scenarioId || !input?.preparedByUserId || !input?.approvedByUserId) return { allowed: false, statusCode: 400, code: 'finance.scenario_approval_required' };
-  if (input.preparedByUserId === input.approvedByUserId) return { allowed: false, statusCode: 409, code: 'finance.scenario_independent_approval_required' };
+  if (String(input.preparedByUserId) === String(input.approvedByUserId)) return { allowed: false, statusCode: 409, code: 'finance.scenario_independent_approval_required' };
   if (!hasItems(input?.assumptions) || !hasItems(input?.recommendations) || !hasItems(input?.approvalEvidence)) return { allowed: false, statusCode: 409, code: 'finance.scenario_basis_required' };
   return { allowed: true, code: 'finance.scenario_approve_allowed' };
 });
