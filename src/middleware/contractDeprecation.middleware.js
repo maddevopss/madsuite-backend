@@ -16,15 +16,25 @@ function contractDeprecationMiddleware() {
 
     // Override json method to intercept responses
     res.json = function (data) {
-      // Check if response contains contract metadata
-      if (data && typeof data === 'object' && data.meta && data.meta.contract) {
-        const contractId = data.meta.contract;
-        const [contractName, version] = contractId.split('@');
+      try {
+        // Check if response contains contract metadata
+        if (data && typeof data === 'object' && data.meta && data.meta.contract) {
+          const contractId = data.meta.contract;
+          const [contractName, version] = contractId.split('@');
 
-        // Add deprecation headers if contract is deprecated
-        if (contractName && isDeprecated(contractName, version)) {
-          addDeprecationHeaders(res, contractName, version);
+          // Add deprecation headers if contract is deprecated
+          if (contractName && version) {
+            try {
+              if (isDeprecated(contractName, version)) {
+                addDeprecationHeaders(res, contractName, version);
+              }
+            } catch {
+              // Silently ignore unknown contracts - they're not in the registry
+            }
+          }
         }
+      } catch {
+        // Silently ignore any errors during header processing
       }
 
       // Call original json method

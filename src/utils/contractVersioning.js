@@ -89,8 +89,12 @@ function getContractVersion(name, version = null) {
  * Check if contract version is deprecated
  */
 function isDeprecated(name, version = null) {
-  const info = getContractVersion(name, version);
-  return info.deprecated === true;
+  try {
+    const info = getContractVersion(name, version);
+    return info.deprecated === true;
+  } catch {
+    return false;
+  }
 }
 
 /**
