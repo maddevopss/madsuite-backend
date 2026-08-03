@@ -75,12 +75,13 @@ CREATE TABLE IF NOT EXISTS quarantine_queue (
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-  CONSTRAINT unique_quarantine CHECK (work_type != '' AND work_id != ''),
-  CONSTRAINT valid_reason CHECK (reason IN ('max_retries_exceeded', 'permanent_error', 'manual_quarantine'))
+  CONSTRAINT quarantine_work_type_id_not_empty CHECK (work_type != '' AND work_id != ''),
+  CONSTRAINT valid_reason CHECK (reason IN ('max_retries_exceeded', 'permanent_error', 'manual_quarantine')),
+  CONSTRAINT unique_quarantine UNIQUE (work_type, work_id)
 );
 
 -- Indexes for quarantine queue
-CREATE INDEX IF NOT EXISTS idx_quarantine_work ON quarantine_queue(work_type, work_id);
+-- (idx_quarantine_work retiré : redondant avec l'index de la contrainte UNIQUE ci-dessus)
 CREATE INDEX IF NOT EXISTS idx_quarantine_reason ON quarantine_queue(reason);
 CREATE INDEX IF NOT EXISTS idx_quarantine_recovery_status ON quarantine_queue(recovery_status);
 CREATE INDEX IF NOT EXISTS idx_quarantine_created_at ON quarantine_queue(created_at);
