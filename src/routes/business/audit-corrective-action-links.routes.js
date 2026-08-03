@@ -10,6 +10,7 @@ const org = (req) => organisationValue(req.organisationId || req.user?.organisat
 const actor = (req) => req.user?.id || req.user?.userId || null;
 const key = (req) => req.get('Idempotency-Key') || req.body?.idempotencyKey;
 const handle = (res, next, fn, status = 200) => Promise.resolve(fn()).then((data) => res.status(status).json(data)).catch(next);
+const validIdempotency = (value) => Boolean(value && String(value).trim().length >= 8);
 
 function notFound(code) {
   const error = new Error(code);
@@ -22,7 +23,9 @@ router.get('/', (req, res, next) => handle(res, next, async () => (await db.quer
   [org(req)],
 )).rows));
 
-router.post('/', (req, res, next) => handle(res, next, async () => {
+router.post('/', (req, res, next) => {
+  if (!validIdempotency(key(req))) return res.status(400).json({ code: 'integration.idempotency_required' });
+  return handle(res, next, async () => {
   const input = { ...req.body };
   const transaction = await executeTransaction({
     type: 'integration.audit_action_link.create',
@@ -65,6 +68,7 @@ router.post('/', (req, res, next) => handle(res, next, async () => {
     },
   });
   return transaction.result;
-}, 201));
+  }, 201);
+});
 
 module.exports = router;
