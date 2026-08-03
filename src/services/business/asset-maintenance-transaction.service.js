@@ -47,8 +47,24 @@ async function transitionWorkOrder({ organisationId, id, action, reason, evidenc
       const { rows } = await client.query('SELECT * FROM asset_work_orders WHERE organisation_id=$1 AND id=$2 FOR UPDATE', [orgId, id]);
       const current = rows[0];
       if (!current) return null;
-      const timestamps = action === 'in_progress' ? ',started_at=COALESCE(started_at,NOW())' : action === 'completed' ? ',completed_at=NOW(),completion_reason=$4' : action === 'verified' ? ',verified_at=NOW()' : action === 'cancelled' ? ',cancellation_reason=$4' : '';
-      const updated = await client.query(`UPDATE asset_work_orders SET status=$3,evidence=$5,findings=$6,labour_cost=$7,parts_cost=$8,external_cost=$9,ct_mad_transaction_id=$10,correlation_id=$11${timestamps} WHERE organisation_id=$1 AND id=$2 RETURNING *`, [orgId,id,action,reason||null,evidence,findings,labourCost,partsCost,externalCost,transactionId,correlationId]);
+      const updated = await client.query(
+        `UPDATE asset_work_orders SET
+           status=$3,
+           evidence=$5,
+           findings=$6,
+           labour_cost=$7,
+           parts_cost=$8,
+           external_cost=$9,
+           ct_mad_transaction_id=$10,
+           correlation_id=$11,
+           started_at = CASE WHEN $3='in_progress' THEN COALESCE(started_at,NOW()) ELSE started_at END,
+           completed_at = CASE WHEN $3='completed' THEN NOW() ELSE completed_at END,
+           verified_at = CASE WHEN $3='verified' THEN NOW() ELSE verified_at END,
+           completion_reason = CASE WHEN $3='completed' THEN $4::text ELSE completion_reason END,
+           cancellation_reason = CASE WHEN $3='cancelled' THEN $4::text ELSE cancellation_reason END
+         WHERE organisation_id=$1 AND id=$2 RETURNING *`,
+        [orgId,id,action,reason||null,JSON.stringify(evidence),JSON.stringify(findings),labourCost,partsCost,externalCost,transactionId,correlationId],
+      );
       const event = await appendEvent(client, { organisationId: orgId, eventType: `assets.work_order.${action}`, aggregateType: 'asset_work_order', aggregateId: id, actorUserId, correlationId, payload: { assetId: current.asset_id, reason: reason || null, evidenceCount: evidence.length } });
       const trust = await persistTrustAssessment(client, { organisationId: orgId, transactionId, correlationId, checks: [{ code: 'assets.completion_evidenced', passed: !['completed','verified'].includes(action) || hasEvidence(evidence), evidence }, { code: 'assets.costs_non_negative', passed: [labourCost,partsCost,externalCost].every(nonNegativeMoney), evidence: [{ labourCost,partsCost,externalCost }] }] });
       const graph = await persistGraphEdges(client, { organisationId: orgId, transactionId, correlationId, edges: [{ from: { type: 'asset_work_order', id }, relation: 'maintains', to: { type: 'asset', id: current.asset_id }, provenance: { eventId: event.event_id } }] });

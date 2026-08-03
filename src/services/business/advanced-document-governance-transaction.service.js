@@ -39,7 +39,7 @@ registerPolicy('documents.document.publish', '1', ({ input, idempotencyKey }) =>
 registerPolicy('documents.retention.execute', '1', ({ input, idempotencyKey }) => {
   const keyError = requireKey(idempotencyKey); if (keyError) return keyError;
   if (!input?.documentId || !hasText(input?.actionType) || !hasText(input?.reason) || !input?.requestedByUserId || !input?.approvedByUserId || !input?.executedByUserId) return { allowed: false, statusCode: 400, code: 'documents.retention_fields_required' };
-  if (input.requestedByUserId === input.approvedByUserId || input.approvedByUserId === input.executedByUserId) return { allowed: false, statusCode: 409, code: 'documents.retention_separation_of_duties_required' };
+  if (String(input.requestedByUserId) === String(input.approvedByUserId) || String(input.approvedByUserId) === String(input.executedByUserId)) return { allowed: false, statusCode: 409, code: 'documents.retention_separation_of_duties_required' };
   if (input?.legalHold === true && input.actionType === 'destroy') return { allowed: false, statusCode: 409, code: 'documents.legal_hold_blocks_destruction' };
   if (!hasItems(input?.evidence)) return { allowed: false, statusCode: 409, code: 'documents.retention_evidence_required' };
   return { allowed: true, code: 'documents.retention_execute_allowed' };
