@@ -49,7 +49,7 @@ registerPolicy('governance.decision.create', '1', ({ input, idempotencyKey }) =>
 registerPolicy('governance.decision.approve', '1', ({ input, idempotencyKey }) => {
   const keyError = requireKey(idempotencyKey); if (keyError) return keyError;
   if (!input?.decisionId || !input?.approverUserId || !hasText(input?.approvalReason)) return { allowed: false, statusCode: 400, code: 'governance.decision_approval_required' };
-  if (input.authorUserId === input.approverUserId) return { allowed: false, statusCode: 409, code: 'governance.decision_independent_approval_required' };
+  if (String(input.authorUserId) === String(input.approverUserId)) return { allowed: false, statusCode: 409, code: 'governance.decision_independent_approval_required' };
   if (input?.activeConflict) return { allowed: false, statusCode: 409, code: 'governance.decision_conflict_blocked' };
   if (!input?.authorityValid) return { allowed: false, statusCode: 403, code: 'governance.authority_insufficient' };
   return { allowed: true, code: 'governance.decision_approve_allowed' };
@@ -58,7 +58,7 @@ registerPolicy('governance.decision.approve', '1', ({ input, idempotencyKey }) =
 registerPolicy('governance.policy.publish', '1', ({ input, idempotencyKey }) => {
   const keyError = requireKey(idempotencyKey); if (keyError) return keyError;
   if (!input?.policyId || !input?.approvedByUserId || !input?.effectiveFrom || !input?.reviewDueAt) return { allowed: false, statusCode: 400, code: 'governance.policy_governance_required' };
-  if (input.ownerUserId === input.approvedByUserId) return { allowed: false, statusCode: 409, code: 'governance.policy_independent_approval_required' };
+  if (String(input.ownerUserId) === String(input.approvedByUserId)) return { allowed: false, statusCode: 409, code: 'governance.policy_independent_approval_required' };
   if (!hasItems(input?.approvalEvidence)) return { allowed: false, statusCode: 409, code: 'governance.policy_approval_evidence_required' };
   return { allowed: true, code: 'governance.policy_publish_allowed' };
 });
