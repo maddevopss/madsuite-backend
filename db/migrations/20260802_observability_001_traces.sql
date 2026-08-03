@@ -6,7 +6,7 @@ CREATE SCHEMA IF NOT EXISTS observability;
 -- Traces table for distributed tracing
 CREATE TABLE IF NOT EXISTS observability.traces (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  organisation_id UUID NOT NULL,
+  organisation_id INTEGER NOT NULL,
   service_name TEXT NOT NULL,
   operation_name TEXT NOT NULL,
   trace_id TEXT NOT NULL,
@@ -39,7 +39,7 @@ DROP POLICY IF EXISTS "Users can view traces only for their organisation" ON obs
 CREATE POLICY "Users can view traces only for their organisation"
   ON observability.traces
   FOR SELECT
-  USING (organisation_id = current_setting('app.current_organisation_id')::uuid);
+  USING (organisation_id = current_setting('app.current_organisation_id')::INTEGER);
 
 DROP POLICY IF EXISTS "System can insert traces for any organisation" ON observability.traces;
 CREATE POLICY "System can insert traces for any organisation"
