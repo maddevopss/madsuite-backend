@@ -22,6 +22,17 @@ const {
 } = require('../utils/contractVersioning');
 
 describe('PR G: Contract Versioning & Deprecation', () => {
+  let originalRegistry;
+
+  beforeEach(() => {
+    originalRegistry = JSON.parse(JSON.stringify(CONTRACT_VERSIONS));
+  });
+
+  afterEach(() => {
+    Object.keys(CONTRACT_VERSIONS).forEach(key => delete CONTRACT_VERSIONS[key]);
+    Object.assign(CONTRACT_VERSIONS, originalRegistry);
+  });
+
   describe('contractVersioning utility', () => {
     it('should expose CONTRACT_VERSIONS registry', () => {
       expect(CONTRACT_VERSIONS).toBeDefined();

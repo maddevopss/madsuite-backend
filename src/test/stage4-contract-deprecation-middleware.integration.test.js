@@ -10,11 +10,23 @@
 
 const contractDeprecationMiddleware = require('../middleware/contractDeprecation.middleware');
 const {
+  CONTRACT_VERSIONS,
   registerContractVersion,
   deprecateContractVersion,
 } = require('../utils/contractVersioning');
 
 describe('PR G: Contract Deprecation Middleware Integration', () => {
+  let originalRegistry;
+
+  beforeEach(() => {
+    originalRegistry = JSON.parse(JSON.stringify(CONTRACT_VERSIONS));
+  });
+
+  afterEach(() => {
+    Object.keys(CONTRACT_VERSIONS).forEach(key => delete CONTRACT_VERSIONS[key]);
+    Object.assign(CONTRACT_VERSIONS, originalRegistry);
+  });
+
   describe('middleware factory', () => {
     it('should export middleware function', () => {
       expect(typeof contractDeprecationMiddleware).toBe('function');
