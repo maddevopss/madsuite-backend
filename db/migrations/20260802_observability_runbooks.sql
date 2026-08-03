@@ -1,5 +1,7 @@
 -- Stage 14 PR 14F: Runbooks & Root Cause Analysis
 
+CREATE SCHEMA IF NOT EXISTS observability;
+
 -- Runbooks table
 CREATE TABLE IF NOT EXISTS observability.runbooks (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

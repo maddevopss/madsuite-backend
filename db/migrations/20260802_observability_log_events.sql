@@ -1,5 +1,7 @@
 -- Stage 14 PR 14B: Structured Logging & Log Events
 
+CREATE SCHEMA IF NOT EXISTS observability;
+
 -- Log events table for centralized structured logging
 CREATE TABLE IF NOT EXISTS observability.log_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

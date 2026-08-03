@@ -1,5 +1,7 @@
 -- Stage 14 PR 14E: Alerting & Escalation
 
+CREATE SCHEMA IF NOT EXISTS observability;
+
 -- Alert rules table
 CREATE TABLE IF NOT EXISTS observability.alert_rules (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

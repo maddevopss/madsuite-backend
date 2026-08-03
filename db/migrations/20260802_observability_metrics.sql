@@ -1,5 +1,7 @@
 -- Stage 14 PR 14D: Metrics & Error Budget Tracking
 
+CREATE SCHEMA IF NOT EXISTS observability;
+
 -- Metrics table for Prometheus-style metrics
 CREATE TABLE IF NOT EXISTS observability.metrics (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

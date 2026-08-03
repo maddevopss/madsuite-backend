@@ -1,5 +1,7 @@
 -- Stage 14 PR 14C: Health Checks & Probes
 
+CREATE SCHEMA IF NOT EXISTS observability;
+
 -- Health check results table
 CREATE TABLE IF NOT EXISTS observability.health_check_results (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
