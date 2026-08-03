@@ -5,7 +5,7 @@ CREATE SCHEMA IF NOT EXISTS observability;
 -- Log events table for centralized structured logging
 CREATE TABLE IF NOT EXISTS observability.log_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  organisation_id UUID NOT NULL,
+  organisation_id INTEGER NOT NULL,
   timestamp TIMESTAMPTZ NOT NULL,
   level TEXT NOT NULL CHECK (level IN ('DEBUG', 'INFO', 'WARN', 'ERROR', 'FATAL')),
   service TEXT NOT NULL,
@@ -38,19 +38,21 @@ CREATE INDEX IF NOT EXISTS idx_log_events_message_search
 -- RLS policies
 ALTER TABLE observability.log_events ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY IF NOT EXISTS "Users can view logs only for their organisation"
+DROP POLICY IF EXISTS "Users can view logs only for their organisation" ON observability.log_events;
+CREATE POLICY "Users can view logs only for their organisation"
   ON observability.log_events
   FOR SELECT
-  USING (organisation_id = current_setting('app.current_organisation_id')::uuid);
+  USING (organisation_id = NULLIF(current_setting('app.current_organisation_id', TRUE), '')::integer);
 
-CREATE POLICY IF NOT EXISTS "System can insert logs for any organisation"
+DROP POLICY IF EXISTS "System can insert logs for any organisation" ON observability.log_events;
+CREATE POLICY "System can insert logs for any organisation"
   ON observability.log_events
   FOR INSERT
   WITH CHECK (true);
 
 -- Grants
-GRANT SELECT ON observability.log_events TO authenticated;
-GRANT INSERT ON observability.log_events TO authenticated;
+GRANT SELECT ON observability.log_events TO PUBLIC;
+GRANT INSERT ON observability.log_events TO PUBLIC;
 
 -- Table metadata
 COMMENT ON TABLE observability.log_events IS 'Structured logs from application services. Immutable audit trail. Sensitive fields are redacted.';

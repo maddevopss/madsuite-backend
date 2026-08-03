@@ -5,7 +5,7 @@ CREATE SCHEMA IF NOT EXISTS observability;
 -- Runbooks table
 CREATE TABLE IF NOT EXISTS observability.runbooks (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  organisation_id UUID,
+  organisation_id INTEGER,
   name TEXT NOT NULL,
   alert_trigger TEXT,  -- Links to alert rule name
   priority TEXT NOT NULL CHECK (priority IN ('critical', 'high', 'medium', 'low')),
@@ -25,7 +25,7 @@ CREATE TABLE IF NOT EXISTS observability.runbooks (
 -- RCA (Root Cause Analysis) records
 CREATE TABLE IF NOT EXISTS observability.incident_rca (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  organisation_id UUID NOT NULL,
+  organisation_id INTEGER NOT NULL,
   incident_number TEXT NOT NULL UNIQUE,  -- INC-001, INC-002...
   title TEXT NOT NULL,
   description TEXT,
@@ -97,61 +97,69 @@ ALTER TABLE observability.runbooks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE observability.incident_rca ENABLE ROW LEVEL SECURITY;
 ALTER TABLE observability.runbook_executions ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY IF NOT EXISTS "Users can view runbooks for their organisation"
+DROP POLICY IF EXISTS "Users can view runbooks for their organisation" ON observability.runbooks;
+CREATE POLICY "Users can view runbooks for their organisation"
   ON observability.runbooks
   FOR SELECT
-  USING (organisation_id IS NULL OR organisation_id = current_setting('app.current_organisation_id')::uuid);
+  USING (organisation_id IS NULL OR organisation_id = NULLIF(current_setting('app.current_organisation_id', TRUE), '')::integer);
 
-CREATE POLICY IF NOT EXISTS "Users can view RCA for their organisation"
+DROP POLICY IF EXISTS "Users can view RCA for their organisation" ON observability.incident_rca;
+CREATE POLICY "Users can view RCA for their organisation"
   ON observability.incident_rca
   FOR SELECT
-  USING (organisation_id = current_setting('app.current_organisation_id')::uuid);
+  USING (organisation_id = NULLIF(current_setting('app.current_organisation_id', TRUE), '')::integer);
 
-CREATE POLICY IF NOT EXISTS "Users can view executions for their organisation"
+DROP POLICY IF EXISTS "Users can view executions for their organisation" ON observability.runbook_executions;
+CREATE POLICY "Users can view executions for their organisation"
   ON observability.runbook_executions
   FOR SELECT
   USING (
     EXISTS (
       SELECT 1 FROM observability.runbooks
       WHERE id = runbook_executions.runbook_id
-        AND (organisation_id IS NULL OR organisation_id = current_setting('app.current_organisation_id')::uuid)
+        AND (organisation_id IS NULL OR organisation_id = NULLIF(current_setting('app.current_organisation_id', TRUE), '')::integer)
     )
   );
 
-CREATE POLICY IF NOT EXISTS "System can insert runbooks"
+DROP POLICY IF EXISTS "System can insert runbooks" ON observability.runbooks;
+CREATE POLICY "System can insert runbooks"
   ON observability.runbooks
   FOR INSERT
   WITH CHECK (true);
 
-CREATE POLICY IF NOT EXISTS "System can insert RCA records"
+DROP POLICY IF EXISTS "System can insert RCA records" ON observability.incident_rca;
+CREATE POLICY "System can insert RCA records"
   ON observability.incident_rca
   FOR INSERT
   WITH CHECK (true);
 
-CREATE POLICY IF NOT EXISTS "System can update RCA records"
+DROP POLICY IF EXISTS "System can update RCA records" ON observability.incident_rca;
+CREATE POLICY "System can update RCA records"
   ON observability.incident_rca
   FOR UPDATE
   WITH CHECK (true);
 
-CREATE POLICY IF NOT EXISTS "System can insert executions"
+DROP POLICY IF EXISTS "System can insert executions" ON observability.runbook_executions;
+CREATE POLICY "System can insert executions"
   ON observability.runbook_executions
   FOR INSERT
   WITH CHECK (true);
 
-CREATE POLICY IF NOT EXISTS "System can update executions"
+DROP POLICY IF EXISTS "System can update executions" ON observability.runbook_executions;
+CREATE POLICY "System can update executions"
   ON observability.runbook_executions
   FOR UPDATE
   WITH CHECK (true);
 
 -- Grants
-GRANT SELECT ON observability.runbooks TO authenticated;
-GRANT SELECT ON observability.incident_rca TO authenticated;
-GRANT SELECT ON observability.runbook_executions TO authenticated;
-GRANT INSERT ON observability.runbooks TO authenticated;
-GRANT INSERT ON observability.incident_rca TO authenticated;
-GRANT INSERT ON observability.runbook_executions TO authenticated;
-GRANT UPDATE ON observability.incident_rca TO authenticated;
-GRANT UPDATE ON observability.runbook_executions TO authenticated;
+GRANT SELECT ON observability.runbooks TO PUBLIC;
+GRANT SELECT ON observability.incident_rca TO PUBLIC;
+GRANT SELECT ON observability.runbook_executions TO PUBLIC;
+GRANT INSERT ON observability.runbooks TO PUBLIC;
+GRANT INSERT ON observability.incident_rca TO PUBLIC;
+GRANT INSERT ON observability.runbook_executions TO PUBLIC;
+GRANT UPDATE ON observability.incident_rca TO PUBLIC;
+GRANT UPDATE ON observability.runbook_executions TO PUBLIC;
 
 -- Table metadata
 COMMENT ON TABLE observability.runbooks IS 'Executable incident response procedures. Linked to alert rules. Versioned.';

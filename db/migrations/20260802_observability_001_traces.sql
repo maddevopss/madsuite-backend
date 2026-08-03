@@ -39,7 +39,7 @@ DROP POLICY IF EXISTS "Users can view traces only for their organisation" ON obs
 CREATE POLICY "Users can view traces only for their organisation"
   ON observability.traces
   FOR SELECT
-  USING (organisation_id = current_setting('app.current_organisation_id')::INTEGER);
+  USING (organisation_id = NULLIF(current_setting('app.current_organisation_id', TRUE), '')::integer);
 
 DROP POLICY IF EXISTS "System can insert traces for any organisation" ON observability.traces;
 CREATE POLICY "System can insert traces for any organisation"
@@ -48,9 +48,9 @@ CREATE POLICY "System can insert traces for any organisation"
   WITH CHECK (true);
 
 -- Grants
-GRANT SELECT ON observability.traces TO authenticated;
-GRANT INSERT ON observability.traces TO authenticated;
-GRANT USAGE ON SCHEMA observability TO authenticated;
+GRANT SELECT ON observability.traces TO PUBLIC;
+GRANT INSERT ON observability.traces TO PUBLIC;
+GRANT USAGE ON SCHEMA observability TO PUBLIC;
 
 -- Table metadata
 COMMENT ON TABLE observability.traces IS 'Distributed traces from OpenTelemetry instrumentation. Immutable record of request lifecycle and performance.';

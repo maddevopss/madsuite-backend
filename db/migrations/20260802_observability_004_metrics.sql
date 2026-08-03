@@ -5,7 +5,7 @@ CREATE SCHEMA IF NOT EXISTS observability;
 -- Metrics table for Prometheus-style metrics
 CREATE TABLE IF NOT EXISTS observability.metrics (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  organisation_id UUID,
+  organisation_id INTEGER,
   metric_name TEXT NOT NULL,
   metric_type TEXT NOT NULL CHECK (metric_type IN ('gauge', 'counter', 'histogram', 'summary')),
   labels JSONB DEFAULT '{}',  -- {service, endpoint, status_code, method}
@@ -25,7 +25,7 @@ CREATE INDEX IF NOT EXISTS idx_metrics_timestamp
 -- SLA burn rate tracking (computed from traces)
 CREATE TABLE IF NOT EXISTS observability.sla_burn_rate (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  organisation_id UUID NOT NULL,
+  organisation_id INTEGER NOT NULL,
   service_name TEXT NOT NULL,
   period_start TIMESTAMPTZ NOT NULL,
   period_end TIMESTAMPTZ NOT NULL,
@@ -91,34 +91,38 @@ GROUP BY service_name, date_trunc('minute', start_time);
 ALTER TABLE observability.metrics ENABLE ROW LEVEL SECURITY;
 ALTER TABLE observability.sla_burn_rate ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY IF NOT EXISTS "Users can view metrics only for their organisation"
+DROP POLICY IF EXISTS "Users can view metrics only for their organisation" ON observability.metrics;
+CREATE POLICY "Users can view metrics only for their organisation"
   ON observability.metrics
   FOR SELECT
-  USING (organisation_id IS NULL OR organisation_id = current_setting('app.current_organisation_id')::uuid);
+  USING (organisation_id IS NULL OR organisation_id = NULLIF(current_setting('app.current_organisation_id', TRUE), '')::integer);
 
-CREATE POLICY IF NOT EXISTS "Users can view SLA only for their organisation"
+DROP POLICY IF EXISTS "Users can view SLA only for their organisation" ON observability.sla_burn_rate;
+CREATE POLICY "Users can view SLA only for their organisation"
   ON observability.sla_burn_rate
   FOR SELECT
-  USING (organisation_id = current_setting('app.current_organisation_id')::uuid);
+  USING (organisation_id = NULLIF(current_setting('app.current_organisation_id', TRUE), '')::integer);
 
-CREATE POLICY IF NOT EXISTS "System can insert metrics"
+DROP POLICY IF EXISTS "System can insert metrics" ON observability.metrics;
+CREATE POLICY "System can insert metrics"
   ON observability.metrics
   FOR INSERT
   WITH CHECK (true);
 
-CREATE POLICY IF NOT EXISTS "System can insert SLA records"
+DROP POLICY IF EXISTS "System can insert SLA records" ON observability.sla_burn_rate;
+CREATE POLICY "System can insert SLA records"
   ON observability.sla_burn_rate
   FOR INSERT
   WITH CHECK (true);
 
 -- Grants
-GRANT SELECT ON observability.metrics TO authenticated;
-GRANT SELECT ON observability.sla_burn_rate TO authenticated;
-GRANT SELECT ON observability.latency_percentiles TO authenticated;
-GRANT SELECT ON observability.error_rates TO authenticated;
-GRANT SELECT ON observability.throughput_metrics TO authenticated;
-GRANT INSERT ON observability.metrics TO authenticated;
-GRANT INSERT ON observability.sla_burn_rate TO authenticated;
+GRANT SELECT ON observability.metrics TO PUBLIC;
+GRANT SELECT ON observability.sla_burn_rate TO PUBLIC;
+GRANT SELECT ON observability.latency_percentiles TO PUBLIC;
+GRANT SELECT ON observability.error_rates TO PUBLIC;
+GRANT SELECT ON observability.throughput_metrics TO PUBLIC;
+GRANT INSERT ON observability.metrics TO PUBLIC;
+GRANT INSERT ON observability.sla_burn_rate TO PUBLIC;
 
 -- Table metadata
 COMMENT ON TABLE observability.metrics IS 'Prometheus-style metrics (gauge, counter, histogram, summary). Supports dimensional data via labels.';
