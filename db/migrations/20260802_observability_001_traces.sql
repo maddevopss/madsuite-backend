@@ -35,12 +35,14 @@ CREATE INDEX IF NOT EXISTS idx_traces_status
 -- RLS policies
 ALTER TABLE observability.traces ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY IF NOT EXISTS "Users can view traces only for their organisation"
+DROP POLICY IF EXISTS "Users can view traces only for their organisation" ON observability.traces;
+CREATE POLICY "Users can view traces only for their organisation"
   ON observability.traces
   FOR SELECT
   USING (organisation_id = current_setting('app.current_organisation_id')::uuid);
 
-CREATE POLICY IF NOT EXISTS "System can insert traces for any organisation"
+DROP POLICY IF EXISTS "System can insert traces for any organisation" ON observability.traces;
+CREATE POLICY "System can insert traces for any organisation"
   ON observability.traces
   FOR INSERT
   WITH CHECK (true);
