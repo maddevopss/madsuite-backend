@@ -8,7 +8,7 @@ class LoggingService {
       { pattern: /token["\s:=]+([^\s",}]+)/gi, replacement: 'token***' },
       { pattern: /authorization["\s:=]+([^\s",}]+)/gi, replacement: 'authorization***' },
       { pattern: /card[_]?number["\s:=]+([0-9\s-]+)/gi, replacement: 'card_number***' },
-      { pattern: /\b\d{4}[-\s]\d{4}[-\s]\d{4}[-\s]\d{4}\b/g, replacement: 'card_number***' },
+      { pattern: /\b(?:\d[-\s]?){14,19}\b/g, replacement: 'card_number***' },
       { pattern: /cvv["\s:=]+([0-9]+)/gi, replacement: 'cvv***' },
       { pattern: /ssn["\s:=]+([0-9\s-]+)/gi, replacement: 'ssn***' },
       { pattern: /api[_]?key["\s:=]+([^\s",}]+)/gi, replacement: 'api_key***' },

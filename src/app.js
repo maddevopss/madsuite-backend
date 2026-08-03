@@ -83,6 +83,11 @@ const notificationsRoutes = require("./routes/notifications.routes");
 const analyticsRoutes = require("./routes/analytics.routes");
 const exportRoutes = require("./integrations/export/export.routes");
 const systemRoutes = require("./routes/system.routes");
+const { requireOrganisation } = require("./middleware/organization.middleware");
+const { createHealthRoutes } = require("./observability/healthRoutes");
+const { createMetricsRoutes } = require("./observability/metricsRoutes");
+const { createAlertingRoutes } = require("./observability/alertingRoutes");
+const { createRunbooksRoutes } = require("./observability/runbooksRoutes");
 const organisationsRoutes = require("./routes/organisations.routes");
 const masterAdminRoutes = require("./routes/master-admin.routes");
 const customerGrowthLeadsRoutes = require("./routes/customerGrowth/leads.routes");
@@ -277,6 +282,13 @@ app.use("/api/integrations/export", auth, exportRoutes);
 app.use("/api/analytics", auth, analyticsRoutes);
 app.use("/api/master-admin", auth, masterAdminRoutes);
 app.use("/api/system", auth, systemRoutes);
+
+// Stage 14 - Observability: health checks publics (probes infra), dashboards
+// metrics/alerting/runbooks authentifies et scopes par organisation.
+app.use("/api/observability", createHealthRoutes());
+app.use("/api/observability", auth, requireOrganisation, createMetricsRoutes());
+app.use("/api/observability", auth, requireOrganisation, createAlertingRoutes());
+app.use("/api/observability", auth, requireOrganisation, createRunbooksRoutes());
 
 // Routes API inconnues.
 app.use("/api", (req, res) => {
