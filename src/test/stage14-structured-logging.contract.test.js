@@ -116,7 +116,7 @@ describe('Stage 14 PR 14B — Structured Logging Contract Tests', () => {
     });
 
     it('should redact API tokens', async () => {
-      const messageWithToken = 'API token: sk_live_abc123xyz789def';
+      const messageWithToken = 'API token: test_key_abc123xyz789def';
 
       await loggingService.recordLog({
         organisation_id: testOrganisationId,
@@ -129,9 +129,9 @@ describe('Stage 14 PR 14B — Structured Logging Contract Tests', () => {
         service: 'api-service',
       });
 
-      const log = logs.find((l) => l.message.includes('sk_live'));
+      const log = logs.find((l) => l.message.includes('test_key'));
       if (log) {
-        expect(log.message).not.toContain('sk_live_abc123xyz789def');
+        expect(log.message).not.toContain('test_key_abc123xyz789def');
         expect(log.message).toContain('***');
       }
     });
