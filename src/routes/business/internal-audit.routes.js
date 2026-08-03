@@ -3,6 +3,7 @@ const db = require('../../../db');
 const { requireOrganisation } = require('../../middleware/organization.middleware');
 const { organisationValue } = require('../../utils/organisationScope');
 const { executeTransaction, evaluatePolicy } = require('../../services/business/transaction-engine.service');
+const { checkBlockClosure } = require('../../utils/blockClosureValidation');
 const auditCorrectiveActionLinksRoutes = require('./audit-corrective-action-links.routes');
 require('../../services/business/internal-audit-transaction.service');
 
@@ -46,6 +47,7 @@ router.post('/engagements/:id/complete', (req,res,next) => handle(res,next,() =>
   return transactionalWrite(req,'audit.engagement.complete','audit.engagement.complete',input,async ({ client, organisationId }) => {
     const engagement = (await client.query('SELECT id,status FROM internal_audit_engagements WHERE id=$1 AND organisation_id=$2 FOR UPDATE',[req.params.id,organisationId])).rows[0];
     if (!engagement) throw notFound('audit.engagement_not_found');
+    checkBlockClosure(engagement, { finalStates: ['completed', 'cancelled'] });
     return (await client.query(`UPDATE internal_audit_engagements SET status='completed',conclusion=$1,evidence=$2,updated_at=NOW() WHERE id=$3 AND organisation_id=$4 RETURNING *`,[input.conclusion,JSON.stringify(input.evidence||[]),req.params.id,organisationId])).rows[0];
   });
 }));
@@ -55,6 +57,7 @@ router.post('/findings', (req,res,next) => handle(res,next,() => transactionalWr
 router.post('/findings/:id/close', (req,res,next) => handle(res,next,() => transactionalWrite(req,'audit.finding.close',null,{...req.body,findingId:req.params.id},async ({ client, organisationId, idempotencyKey }) => {
   const finding = (await client.query('SELECT id,status FROM internal_audit_findings WHERE id=$1 AND organisation_id=$2 FOR UPDATE',[req.params.id,organisationId])).rows[0];
   if (!finding) throw notFound('audit.finding_not_found');
+  checkBlockClosure(finding, { finalStates: ['closed', 'cancelled'] });
   const openActionsCount = Number((await client.query(`SELECT COUNT(*)::int AS count FROM internal_audit_actions WHERE finding_id=$1 AND organisation_id=$2 AND status NOT IN ('closed','cancelled')`,[req.params.id,organisationId])).rows[0].count);
   const input = { ...req.body, findingId: req.params.id, openActionsCount };
   const decision = await evaluatePolicy({ policy: 'audit.finding.close@1', input, idempotencyKey, organisationId, actorUserId: actor(req), client });
@@ -76,6 +79,7 @@ router.post('/actions/:id/transition', (req,res,next) => handle(res,next,() => {
   return transactionalWrite(req,'audit.action.transition','audit.action.transition',input,async ({ client, organisationId }) => {
     const action = (await client.query('SELECT id,status FROM internal_audit_actions WHERE id=$1 AND organisation_id=$2 FOR UPDATE',[req.params.id,organisationId])).rows[0];
     if (!action) throw notFound('audit.action_not_found');
+    checkBlockClosure(action, { finalStates: ['closed', 'cancelled'] });
     return (await client.query(`UPDATE internal_audit_actions SET status=$1,implementation_result=COALESCE($2,implementation_result),effectiveness_result=COALESCE($3,effectiveness_result),implementation_evidence=CASE WHEN $4::jsonb='[]'::jsonb THEN implementation_evidence ELSE implementation_evidence || $4::jsonb END,verification_evidence=CASE WHEN $5::jsonb='[]'::jsonb THEN verification_evidence ELSE verification_evidence || $5::jsonb END,updated_at=NOW() WHERE id=$6 AND organisation_id=$7 RETURNING *`,[input.action,input.implementationResult||null,input.effectivenessResult||null,JSON.stringify(input.implementationEvidence||[]),JSON.stringify(input.verificationEvidence||[]),req.params.id,organisationId])).rows[0];
   });
 }));
