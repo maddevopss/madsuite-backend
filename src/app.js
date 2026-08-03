@@ -13,6 +13,7 @@ const ApiResponse = require("./utils/apiResponse");
 const auth = require("./middleware/auth");
 const errorHandler = require("./middleware/errorHandler");
 const apiResponseMiddleware = require("./middleware/apiResponse");
+const contractDeprecationMiddleware = require("./middleware/contractDeprecation.middleware");
 const requestId = require("./middleware/requestId");
 const requestLogger = require("./middleware/requestLogger");
 const promBundle = require("express-prom-bundle");
@@ -139,6 +140,9 @@ app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
 app.use(express.json());
 app.use(apiResponseMiddleware);
+
+// Stage 4 Contract Versioning & Deprecation — adds headers for deprecated contracts
+app.use(contractDeprecationMiddleware());
 
 // Routes Stripe ordinaires après express.json()
 app.use("/api/stripe", stripeRoutes.router);
