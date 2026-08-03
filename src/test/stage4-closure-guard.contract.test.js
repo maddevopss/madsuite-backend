@@ -27,7 +27,7 @@ describe('PR F: Block Closure & Error Contract', () => {
       const resource = { id: 42, status: 'archived', resourceType: 'governance_decision' };
       try {
         checkBlockClosure(resource);
-        fail('should have thrown');
+        expect.fail('should have thrown');
       } catch (err) {
         expect(err.details.resourceId).toBe(42);
         expect(err.details.currentStatus).toBe('archived');

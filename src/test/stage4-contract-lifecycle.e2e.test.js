@@ -23,17 +23,13 @@ const contractDeprecationMiddleware = require('../middleware/contractDeprecation
 const apiResponseMiddleware = require('../middleware/apiResponse');
 
 describe('PR H: Contract Lifecycle E2E', () => {
-  let app, server;
+  let app;
 
   beforeEach(() => {
     app = express();
     app.use(express.json());
     app.use(apiResponseMiddleware);
     app.use(contractDeprecationMiddleware());
-  });
-
-  afterEach(() => {
-    if (server) server.close();
   });
 
   describe('Phase 1: Contract Registration', () => {
