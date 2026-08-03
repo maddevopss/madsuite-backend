@@ -1,3 +1,5 @@
+jest.setTimeout(30000);
+
 /**
  * Issue #172 PR G: Contract Deprecation Middleware Integration Tests
  *

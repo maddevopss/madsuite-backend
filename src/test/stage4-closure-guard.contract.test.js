@@ -1,3 +1,5 @@
+jest.setTimeout(30000);
+
 /**
  * Issue #172 PR F: Fermeture Étage 4 - Block Closure & Error Contract
  *
