@@ -1,5 +1,5 @@
-const { v4: uuidv4 } = require('uuid');
-const prisma = require('../db/db');
+const { randomUUID: uuidv4 } = require('node:crypto');
+const prisma = require('../../db');
 const loggingService = require('../services/system/logging.service');
 const { createLogger } = require('../observability/loggingMiddleware');
 

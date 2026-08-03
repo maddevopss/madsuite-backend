@@ -1,9 +1,9 @@
 const request = require('supertest');
 const express = require('express');
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID: uuidv4 } = require('node:crypto');
 const metricsService = require('../services/system/metrics.service');
 const { createMetricsRoutes } = require('../observability/metricsRoutes');
-const prisma = require('../db/db');
+const prisma = require('../../db');
 
 describe('Stage 14 PR 14D — Metrics & Error Budget Dashboard', () => {
   let app;

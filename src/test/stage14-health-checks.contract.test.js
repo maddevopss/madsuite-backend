@@ -2,7 +2,7 @@ const request = require('supertest');
 const express = require('express');
 const healthService = require('../services/system/health.service');
 const { createHealthRoutes } = require('../observability/healthRoutes');
-const prisma = require('../db/db');
+const prisma = require('../../db');
 
 describe('Stage 14 PR 14C — Health Checks & Probes Contract Tests', () => {
   let app;

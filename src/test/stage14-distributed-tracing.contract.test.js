@@ -1,6 +1,6 @@
 const request = require('supertest');
-const { v4: uuidv4 } = require('uuid');
-const prisma = require('../db/db');
+const { randomUUID: uuidv4 } = require('node:crypto');
+const prisma = require('../../db');
 const tracingService = require('../services/system/tracing.service');
 const { createTraceMiddleware, CORRELATION_ID_HEADER } = require('../observability/tracingMiddleware');
 

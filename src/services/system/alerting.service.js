@@ -1,4 +1,4 @@
-const prisma = require('../../db/db');
+const prisma = require('../../../db');
 
 class AlertingService {
   constructor() {

@@ -1,6 +1,6 @@
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID: uuidv4 } = require('node:crypto');
 const alertingService = require('../services/system/alerting.service');
-const prisma = require('../db/db');
+const prisma = require('../../db');
 
 describe('Stage 14 PR 14E — Alerting & Escalation Contract Tests', () => {
   let testOrganisationId;

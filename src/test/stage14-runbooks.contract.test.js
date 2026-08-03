@@ -1,4 +1,4 @@
-const { v4: uuidv4 } = require('uuid');
+const { randomUUID: uuidv4 } = require('node:crypto');
 const runbooksService = require('../services/system/runbooks.service');
 
 describe('Stage 14 PR 14F — Runbooks & RCA Contract Tests', () => {
