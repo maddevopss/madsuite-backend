@@ -36,7 +36,7 @@ async function closeWorkOrder({ db, organisationId, workOrderId, closedBy, reaso
       throw error;
     }
     const updated = (await client.query(`UPDATE asset_work_orders SET status='completed',closed_at=NOW(),closed_by=$3,completion_reason=COALESCE($4,completion_reason),safety_lock=FALSE WHERE organisation_id=$1 AND id=$2 RETURNING *`, [orgId, workOrderId, closedBy, reason || null])).rows[0];
-    await client.query(`INSERT INTO asset_work_order_status_events (organisation_id,work_order_id,from_status,to_status,reason,evidence,actor_user_id) VALUES ($1,$2,'verified','completed',$3,$4,$5)`, [orgId, workOrderId, reason || null, returnToServiceCheck.evidence, closedBy]);
+    await client.query(`INSERT INTO asset_work_order_status_events (organisation_id,work_order_id,from_status,to_status,reason,evidence,actor_user_id) VALUES ($1,$2,'verified','completed',$3,$4,$5)`, [orgId, workOrderId, reason || null, JSON.stringify(returnToServiceCheck.evidence), closedBy]);
     await client.query(`UPDATE asset_records SET status='active',updated_at=NOW() WHERE organisation_id=$1 AND id=$2 AND status='out_of_service'`, [orgId, updated.asset_id]);
     await client.query('COMMIT');
     return { workOrder: updated, closureDecision: decision };
