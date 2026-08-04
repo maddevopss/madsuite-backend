@@ -1,6 +1,14 @@
 -- Migration: Stage 6 Sensitive Transition Security
 -- Prevention of self-approval, elevation, replay, and field bypass attacks
 
+CREATE TABLE IF NOT EXISTS organizations (
+  id VARCHAR(255) PRIMARY KEY,
+  name VARCHAR(255) NOT NULL DEFAULT 'Default organization',
+  slug VARCHAR(255) UNIQUE,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Table for sensitive operation definitions
 CREATE TABLE IF NOT EXISTS sensitive_operations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -71,7 +79,7 @@ CREATE TABLE IF NOT EXISTS operation_approvals (
 
   -- Approver information
   requester_user_id VARCHAR(255) NOT NULL,
-  requester_org_id UUID NOT NULL,
+  requester_org_id VARCHAR(255) NOT NULL,
   approver_user_id VARCHAR(255),
 
   -- Approval status
@@ -118,7 +126,7 @@ CREATE TABLE IF NOT EXISTS operation_idempotency_keys (
   idempotency_key VARCHAR(255) NOT NULL UNIQUE,
   operation_type VARCHAR(100) NOT NULL,
   user_id VARCHAR(255) NOT NULL,
-  organization_id UUID NOT NULL,
+  organization_id VARCHAR(255) NOT NULL,
 
   -- First submission
   first_submission_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -143,13 +151,13 @@ CREATE INDEX IF NOT EXISTS idx_idempotency_expired ON operation_idempotency_keys
 
 -- Table for sensitive operation audit trail
 CREATE TABLE IF NOT EXISTS sensitive_operation_audit (
-  id UUID PRIMARY KEY DEFAULT gen_remote_uuid(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
   -- Operation context
   operation_id VARCHAR(255) NOT NULL,
   operation_type VARCHAR(100) NOT NULL,
   user_id VARCHAR(255) NOT NULL,
-  organization_id UUID NOT NULL,
+  organization_id VARCHAR(255) NOT NULL,
 
   -- Changes tracked
   table_affected VARCHAR(100),
@@ -188,8 +196,8 @@ CREATE TABLE IF NOT EXISTS elevation_attempts (
 
   -- Attempt details
   user_id VARCHAR(255) NOT NULL,
-  organization_id UUID NOT NULL,
-  current_role VARCHAR(100),
+  organization_id VARCHAR(255) NOT NULL,
+  "current_role" VARCHAR(100),
   target_role VARCHAR(100),
 
   -- Detection

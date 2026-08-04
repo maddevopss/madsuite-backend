@@ -1,6 +1,14 @@
 -- Migration: Stage 6 Dependencies & Build Chain
 -- Dependency tracking, build verification, supply chain security, and integrity checks
 
+CREATE TABLE IF NOT EXISTS organizations (
+  id VARCHAR(255) PRIMARY KEY,
+  name VARCHAR(255) NOT NULL DEFAULT 'Default organization',
+  slug VARCHAR(255) UNIQUE,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Table for package dependencies and versions
 CREATE TABLE IF NOT EXISTS package_dependencies (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -12,7 +20,7 @@ CREATE TABLE IF NOT EXISTS package_dependencies (
   registry_source VARCHAR(255),                  -- 'npm', 'pypi', 'maven_central', 'rubygems', 'crates.io'
 
   -- Dependency details
-  organization_id UUID,
+  organization_id VARCHAR(255),
   environment VARCHAR(50),                       -- 'production', 'development', 'test', 'all'
   dependency_type VARCHAR(50),                   -- 'direct', 'transitive', 'optional'
   is_dev_dependency BOOLEAN DEFAULT false,
@@ -86,7 +94,7 @@ CREATE TABLE IF NOT EXISTS build_configurations (
 
   -- Build identification
   build_id VARCHAR(255) NOT NULL UNIQUE,
-  organization_id UUID NOT NULL,
+  organization_id VARCHAR(255) NOT NULL,
   build_type VARCHAR(50),                       -- 'ci', 'release', 'hotfix', 'nightly', 'manual'
   build_name VARCHAR(255),
 
@@ -177,7 +185,7 @@ CREATE TABLE IF NOT EXISTS dependency_locks (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
   -- Lock file identification
-  organization_id UUID NOT NULL,
+  organization_id VARCHAR(255) NOT NULL,
   lock_file_type VARCHAR(50),                   -- 'package-lock.json', 'yarn.lock', 'Pipfile.lock', 'Gemfile.lock', 'Cargo.lock'
   lock_file_version VARCHAR(100),
   lock_file_hash VARCHAR(255),
@@ -251,7 +259,7 @@ CREATE TABLE IF NOT EXISTS build_policies (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
   -- Policy identification
-  organization_id UUID NOT NULL,
+  organization_id VARCHAR(255) NOT NULL,
   policy_name VARCHAR(255) NOT NULL,
   policy_description TEXT,
 
