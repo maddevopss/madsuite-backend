@@ -363,10 +363,9 @@ async function runAllMetrics() {
     results.push(await collectDeliveryMetrics());
     results.push(await collectJobMetrics());
 
-    // Daily collection (runs every hour but only inserts/updates for today)
-    if (new Date().getHours() === 0) {
-      results.push(await collectSchemaMetrics());
-    }
+    // Collect every component on every run so the aggregate is complete.
+    // The daily upsert remains idempotent for the current date.
+    results.push(await collectSchemaMetrics());
 
     const duration = Date.now() - start;
     return {
