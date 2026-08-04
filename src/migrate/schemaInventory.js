@@ -192,17 +192,17 @@ async function getAllIndexes(client) {
 async function getAllPolicies(client) {
   const result = await client.query(`
     SELECT
-      p.policyname,
+      p.polname as policyname,
       c.relname as table_name,
-      p.permissive,
-      p.cmd,
-      p.qual,
-      p.with_check
+      p.polpermissive as permissive,
+      p.polcmd as cmd,
+      pg_get_expr(p.polqual, p.polrelid) as qual,
+      pg_get_expr(p.polwithcheck, p.polrelid) as with_check
     FROM pg_policy p
     JOIN pg_class c ON c.oid = p.polrelid
     JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname = current_schema()
-    ORDER BY c.relname, p.policyname
+    ORDER BY c.relname, p.polname
   `);
 
   const policies = {};
@@ -272,13 +272,12 @@ async function getAllRoles(client) {
       r.rolcreaterole,
       r.rolcanlogin,
       r.rolsuper,
-      r.rolacanlogin,
       array_agg(DISTINCT m.rolname) FILTER (WHERE m.rolname IS NOT NULL) as member_of
     FROM pg_roles r
     LEFT JOIN pg_auth_members am ON r.oid = am.member
     LEFT JOIN pg_roles m ON am.roleid = m.oid
     WHERE r.rolname NOT LIKE 'pg_%'
-    GROUP BY r.oid, r.rolname, r.rolinherit, r.rolcanlogin, r.rolcreatedb, r.rolcreaterole, r.rolsuper, r.rolacanlogin
+    GROUP BY r.oid, r.rolname, r.rolinherit, r.rolcanlogin, r.rolcreatedb, r.rolcreaterole, r.rolsuper
     ORDER BY r.rolname
   `);
 
