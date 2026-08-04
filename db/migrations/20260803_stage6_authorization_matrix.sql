@@ -3,7 +3,7 @@
 
 -- Table for organizations (required by foreign keys below)
 CREATE TABLE IF NOT EXISTS organizations (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  id VARCHAR(255) PRIMARY KEY,
   name VARCHAR(255) NOT NULL,
   is_active BOOLEAN DEFAULT true,
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -20,7 +20,7 @@ CREATE TABLE IF NOT EXISTS role_definitions (
 
   -- Role classification
   role_type VARCHAR(50) NOT NULL,           -- 'system', 'organization', 'department', 'custom'
-  organization_id UUID,                     -- NULL for system roles
+  organization_id VARCHAR(255),             -- NULL for system roles
   is_active BOOLEAN DEFAULT true,
 
   -- Metadata
@@ -117,12 +117,12 @@ CREATE TABLE IF NOT EXISTS user_role_assignments (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
   user_id VARCHAR(255) NOT NULL,
-  organization_id UUID NOT NULL,
+  organization_id VARCHAR(255) NOT NULL,
   role_id UUID NOT NULL,
 
   -- Assignment scope
   scope VARCHAR(50) DEFAULT 'organization',  -- 'organization', 'department', 'team', 'resource'
-  scope_id UUID,                             -- Department/team/resource ID if scoped
+  scope_id VARCHAR(255),                     -- Department/team/resource ID if scoped
 
   -- Lifecycle
   assigned_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -149,7 +149,7 @@ CREATE TABLE IF NOT EXISTS authorization_audit (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
   user_id VARCHAR(255) NOT NULL,
-  organization_id UUID,
+  organization_id VARCHAR(255),
 
   -- Action details
   action_type VARCHAR(100) NOT NULL,        -- 'permission_check', 'permission_denied', 'role_assigned', 'role_revoked'
@@ -179,7 +179,7 @@ CREATE TABLE IF NOT EXISTS permission_escalation_attempts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
   user_id VARCHAR(255) NOT NULL,
-  organization_id UUID,
+  organization_id VARCHAR(255),
 
   -- Escalation details
   attempted_permission VARCHAR(100) NOT NULL,
