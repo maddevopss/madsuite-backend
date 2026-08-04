@@ -196,12 +196,11 @@ function registerContractVersion(name, version, metadata = {}) {
  * Deprecate contract version
  */
 function deprecateContractVersion(name, version, { sunsetDate, replacedBy } = {}) {
-  const contract = CONTRACT_VERSIONS[name];
-  if (!contract || !contract.versions[version]) {
-    throw new Error(`Contract version '${name}@${version}' not found`);
+  if (!CONTRACT_VERSIONS[name] || !CONTRACT_VERSIONS[name].versions[version]) {
+    registerContractVersion(name, version);
   }
 
-  const info = contract.versions[version];
+  const info = CONTRACT_VERSIONS[name].versions[version];
 
   info.deprecated = true;
   if (sunsetDate) {
