@@ -120,7 +120,7 @@ async function createSession(userId, organizationId, sessionConfig = {}) {
       sessionTokenHash,
       sessionType,
       sessionName,
-      effectiveDeviceId,
+      deviceId,
       deviceFingerprint,
       deviceName,
       deviceType,
@@ -418,7 +418,7 @@ async function registerTrustedDevice(userId, organizationId, deviceConfig = {}) 
     const result = await db.pool.query(query, [
       userId,
       organizationId,
-      deviceId,
+      effectiveDeviceId,
       deviceFingerprint,
       deviceName,
       deviceType,
