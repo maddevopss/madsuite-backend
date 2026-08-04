@@ -77,24 +77,24 @@ describe("Stage 6: Sensitive Transition Security", () => {
 
       // Assign roles to users
       await db.pool.query(
-        `INSERT INTO user_role_assignments (user_id, role_id, organization_id, is_active)
-         VALUES ($1, $2, $3, true)
+        `INSERT INTO user_role_assignments (user_id, role_id, organization_id, is_active, assigned_by)
+         VALUES ($1, $2, $3, true, $4)
          ON CONFLICT DO NOTHING`,
-        [testUserId, approverRole.rows[0]?.id || "role-approver", testOrgId]
+        [testUserId, approverRole.rows[0]?.id || "role-approver", testOrgId, testUserIdAdmin]
       );
 
       await db.pool.query(
-        `INSERT INTO user_role_assignments (user_id, role_id, organization_id, is_active)
-         VALUES ($1, $2, $3, true)
+        `INSERT INTO user_role_assignments (user_id, role_id, organization_id, is_active, assigned_by)
+         VALUES ($1, $2, $3, true, $4)
          ON CONFLICT DO NOTHING`,
-        [testUserIdAdmin, adminRole.rows[0]?.id || "role-admin", testOrgId]
+        [testUserIdAdmin, adminRole.rows[0]?.id || "role-admin", testOrgId, testUserIdAdmin]
       );
 
       await db.pool.query(
-        `INSERT INTO user_role_assignments (user_id, role_id, organization_id, is_active)
-         VALUES ($1, $2, $3, true)
+        `INSERT INTO user_role_assignments (user_id, role_id, organization_id, is_active, assigned_by)
+         VALUES ($1, $2, $3, true, $4)
          ON CONFLICT DO NOTHING`,
-        [testUserIdRegular, editorRole.rows[0]?.id || "role-editor", testOrgId]
+        [testUserIdRegular, editorRole.rows[0]?.id || "role-editor", testOrgId, testUserIdAdmin]
       );
     } catch (error) {
       throw new Error(`Stage 6 fixture setup failed: ${error.message}`, { cause: error });
