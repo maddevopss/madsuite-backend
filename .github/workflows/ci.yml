@@ -132,3 +132,4 @@ jobs:
 
       - name: Run backend security tests
         run: npm run test:security -- --runInBand
+# Trigger CI synchronization for PR 738
