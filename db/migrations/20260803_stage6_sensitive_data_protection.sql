@@ -1,6 +1,17 @@
 -- Migration: Stage 6 Sensitive Data Protection
 -- Encryption, masking, retention, and data classification for sensitive information
 
+CREATE TABLE IF NOT EXISTS organizations (
+  id VARCHAR(255) PRIMARY KEY,
+  name VARCHAR(255) NOT NULL DEFAULT 'Default organization',
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO organizations (id, name)
+VALUES ('org-123', 'Test organization')
+ON CONFLICT (id) DO NOTHING;
+
 -- Table for data classification and sensitivity levels
 CREATE TABLE IF NOT EXISTS data_classifications (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -35,7 +46,7 @@ CREATE TABLE IF NOT EXISTS data_field_classifications (
   -- Field identification
   table_name VARCHAR(100) NOT NULL,
   column_name VARCHAR(100) NOT NULL,
-  organization_id UUID,                          -- NULL = global classification
+  organization_id VARCHAR(255),                  -- NULL = global classification
 
   -- Classification
   data_classification_id UUID NOT NULL REFERENCES data_classifications(id),
@@ -84,9 +95,7 @@ CREATE TABLE IF NOT EXISTS encryption_keys (
   uses_external_kms BOOLEAN DEFAULT true,        -- Uses AWS KMS, Azure Key Vault, etc
 
   -- Metadata
-  organization_id UUID REFERENCES organizations(id) ON DELETE CASCADE,
-
-  CONSTRAINT fk_key_org FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE
+  organization_id VARCHAR(255) REFERENCES organizations(id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_encryption_keys_active ON encryption_keys(is_active);
@@ -100,7 +109,7 @@ CREATE TABLE IF NOT EXISTS data_retention_policies (
   -- Policy identification
   policy_name VARCHAR(255) NOT NULL,
   table_name VARCHAR(100) NOT NULL,
-  organization_id UUID,
+  organization_id VARCHAR(255),
 
   -- Retention rules
   retention_type VARCHAR(50),                    -- 'delete', 'archive', 'anonymize'
@@ -154,7 +163,7 @@ CREATE TABLE IF NOT EXISTS encrypted_data_log (
   pii_type VARCHAR(100),
 
   -- Metadata
-  organization_id UUID NOT NULL,
+  organization_id VARCHAR(255) NOT NULL,
 
   CONSTRAINT fk_encrypted_org FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE
 );
@@ -169,7 +178,7 @@ CREATE TABLE IF NOT EXISTS data_access_log (
 
   -- Access details
   user_id VARCHAR(255) NOT NULL,
-  organization_id UUID NOT NULL,
+  organization_id VARCHAR(255) NOT NULL,
   access_type VARCHAR(50) NOT NULL,              -- 'read', 'export', 'download', 'api_access'
   access_timestamp TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -228,7 +237,7 @@ CREATE TABLE IF NOT EXISTS pii_detection_rules (
   is_active BOOLEAN DEFAULT true,
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-  CONSTRAINT fk_pii_org FOREIGN KEY (NULL) REFERENCES organizations(id) ON DELETE CASCADE
+  CONSTRAINT valid_pii_type CHECK (pii_type <> '')
 );
 
 CREATE INDEX IF NOT EXISTS idx_pii_rules_type ON pii_detection_rules(pii_type);
@@ -268,7 +277,7 @@ CREATE TABLE IF NOT EXISTS data_export_log (
   -- Export details
   export_id VARCHAR(255) NOT NULL UNIQUE,
   user_id VARCHAR(255) NOT NULL,
-  organization_id UUID NOT NULL,
+  organization_id VARCHAR(255) NOT NULL,
   export_timestamp TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
   -- What was exported
@@ -305,7 +314,7 @@ CREATE TABLE IF NOT EXISTS data_breach_incidents (
 
   -- Incident details
   incident_name VARCHAR(255) NOT NULL,
-  organization_id UUID NOT NULL,
+  organization_id VARCHAR(255) NOT NULL,
   detection_timestamp TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
   reported_timestamp TIMESTAMP WITH TIME ZONE,
 
