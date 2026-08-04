@@ -428,8 +428,11 @@ describe("PR F: Stage 5 Metrics Pipeline", () => {
 
       const result = await client.query(query);
 
-      if (result.rows[0].total_count > 0) {
-        expect(result.rows[0].unique_count).toBeLessThanOrEqual(result.rows[0].total_count);
+      const totalCount = Number(result.rows[0].total_count);
+      const uniqueCount = Number(result.rows[0].unique_count);
+
+      if (totalCount > 0) {
+        expect(uniqueCount).toBeLessThanOrEqual(totalCount);
       }
     });
 
