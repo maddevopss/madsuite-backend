@@ -71,7 +71,7 @@ CREATE TABLE IF NOT EXISTS operation_approvals (
 
   -- Approver information
   requester_user_id VARCHAR(255) NOT NULL,
-  requester_org_id UUID NOT NULL,
+  requester_org_id VARCHAR(255) NOT NULL,
   approver_user_id VARCHAR(255),
 
   -- Approval status
@@ -97,7 +97,7 @@ CREATE TABLE IF NOT EXISTS operation_approvals (
   requested_details JSONB,
   approved_changes JSONB,
 
-  CONSTRAINT fk_approval_org FOREIGN KEY (requester_org_id) REFERENCES organizations(id) ON DELETE CASCADE
+  CONSTRAINT valid_approval_status CHECK (status IN ('pending', 'approved', 'rejected', 'cancelled'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_approvals_status ON operation_approvals(status, requested_at DESC);
@@ -118,7 +118,7 @@ CREATE TABLE IF NOT EXISTS operation_idempotency_keys (
   idempotency_key VARCHAR(255) NOT NULL UNIQUE,
   operation_type VARCHAR(100) NOT NULL,
   user_id VARCHAR(255) NOT NULL,
-  organization_id UUID NOT NULL,
+  organization_id VARCHAR(255) NOT NULL,
 
   -- First submission
   first_submission_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -134,7 +134,7 @@ CREATE TABLE IF NOT EXISTS operation_idempotency_keys (
   expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
   is_expired BOOLEAN DEFAULT false,
 
-  CONSTRAINT fk_idempotency_org FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE
+  CONSTRAINT valid_idempotency_org CHECK (organization_id <> '')
 );
 
 CREATE INDEX IF NOT EXISTS idx_idempotency_key ON operation_idempotency_keys(idempotency_key);
@@ -143,13 +143,13 @@ CREATE INDEX IF NOT EXISTS idx_idempotency_expired ON operation_idempotency_keys
 
 -- Table for sensitive operation audit trail
 CREATE TABLE IF NOT EXISTS sensitive_operation_audit (
-  id UUID PRIMARY KEY DEFAULT gen_remote_uuid(),
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
   -- Operation context
   operation_id VARCHAR(255) NOT NULL,
   operation_type VARCHAR(100) NOT NULL,
   user_id VARCHAR(255) NOT NULL,
-  organization_id UUID NOT NULL,
+  organization_id VARCHAR(255) NOT NULL,
 
   -- Changes tracked
   table_affected VARCHAR(100),
@@ -173,7 +173,7 @@ CREATE TABLE IF NOT EXISTS sensitive_operation_audit (
   status VARCHAR(50),                -- 'success', 'rejected', 'blocked'
   blocking_reason TEXT,
 
-  CONSTRAINT fk_audit_org FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE
+  CONSTRAINT valid_audit_status CHECK (status IN ('success', 'rejected', 'blocked') OR status IS NULL)
 );
 
 CREATE INDEX IF NOT EXISTS idx_audit_operation ON sensitive_operation_audit(operation_id);
@@ -188,8 +188,8 @@ CREATE TABLE IF NOT EXISTS elevation_attempts (
 
   -- Attempt details
   user_id VARCHAR(255) NOT NULL,
-  organization_id UUID NOT NULL,
-  current_role VARCHAR(100),
+  organization_id VARCHAR(255) NOT NULL,
+  "current_role" VARCHAR(100),
   target_role VARCHAR(100),
 
   -- Detection
@@ -203,7 +203,7 @@ CREATE TABLE IF NOT EXISTS elevation_attempts (
   -- Timestamp
   detected_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-  CONSTRAINT fk_elevation_org FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE
+  CONSTRAINT valid_elevation_org CHECK (organization_id <> '')
 );
 
 CREATE INDEX IF NOT EXISTS idx_elevation_user ON elevation_attempts(user_id, detected_at DESC);
