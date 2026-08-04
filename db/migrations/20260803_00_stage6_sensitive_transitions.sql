@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS organizations (
 CREATE TABLE IF NOT EXISTS role_definitions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   role_name VARCHAR(100) NOT NULL UNIQUE,
-  display_name VARCHAR(255),
+  display_name VARCHAR(255) NOT NULL DEFAULT '',
   role_type VARCHAR(50) DEFAULT 'organization',
   organization_id VARCHAR(255) REFERENCES organizations(id) ON DELETE CASCADE,
   is_active BOOLEAN DEFAULT true,
