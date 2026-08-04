@@ -132,11 +132,12 @@ describe('PR G: Contract Versioning & Deprecation', () => {
 
     it('should add Deprecation header for deprecated contracts', () => {
       // Setup a deprecated contract scenario
-      deprecateContractVersion('test-contract', '1', {});
       registerContractVersion('test-contract', '1', {
         deprecated: true,
         releaseDate: '2024-01-01',
       });
+       deprecateContractVersion('test-contract', '1');
+
 
       addDeprecationHeaders(mockRes, 'test-contract', '1');
       expect(mockRes.set).toHaveBeenCalledWith('Deprecation', 'true');
