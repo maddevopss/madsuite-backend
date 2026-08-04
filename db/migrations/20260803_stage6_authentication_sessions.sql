@@ -288,7 +288,7 @@ CREATE TABLE IF NOT EXISTS authentication_events (
   security_alert_sent BOOLEAN DEFAULT false,
 
   -- Context
-  session_id UUID REFERENCES user_sessions(id),
+  session_id INTEGER REFERENCES user_sessions(id),
   metadata JSONB,
 
   CONSTRAINT fk_auth_event_org FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE
