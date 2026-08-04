@@ -116,6 +116,13 @@ async function requestApproval(operationId, operationType, requesterUserId, orga
         operation_id, operation_type, requester_user_id, requester_org_id,
         status, requested_details, self_approval_detected
       ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+      ON CONFLICT (operation_id) DO UPDATE SET
+        operation_type = EXCLUDED.operation_type,
+        requester_user_id = EXCLUDED.requester_user_id,
+        requester_org_id = EXCLUDED.requester_org_id,
+        status = EXCLUDED.status,
+        requested_details = EXCLUDED.requested_details,
+        self_approval_detected = EXCLUDED.self_approval_detected
       RETURNING id, requested_at;
     `;
 
@@ -139,7 +146,7 @@ async function requestApproval(operationId, operationType, requesterUserId, orga
         idempotency_key, operation_type, user_id, organization_id,
         first_submission_details, expires_at
       ) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP + INTERVAL '1 hour')
-      ON CONFLICT (idempotency_key) DO UPDATE SET replay_attempt_count = replay_attempt_count + 1
+      ON CONFLICT (idempotency_key) DO UPDATE SET replay_attempt_count = operation_idempotency_keys.replay_attempt_count + 1
       RETURNING id;
     `;
 
