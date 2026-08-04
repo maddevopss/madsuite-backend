@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS retry_attempts (
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
   CONSTRAINT valid_status CHECK (status IN ('pending', 'in_progress', 'success', 'failed_transient', 'failed_permanent')),
-  CONSTRAINT valid_classification CHECK (error_classification IN ('network', 'validation', 'internal', 'rate_limit', 'timeout', 'unknown')),
+  CONSTRAINT valid_classification CHECK (error_classification IN ('network', 'validation', 'internal', 'rate_limit', 'timeout', 'permanent', 'unknown')),
   CONSTRAINT valid_backoff CHECK (backoff_strategy IN ('exponential', 'linear', 'fixed'))
 );
 
