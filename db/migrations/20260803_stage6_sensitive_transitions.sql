@@ -305,3 +305,5 @@ COMMENT ON TABLE operation_approvals IS 'Track approval status and security risk
 COMMENT ON TABLE operation_idempotency_keys IS 'Prevent replay attacks by tracking operation idempotency keys';
 COMMENT ON TABLE sensitive_operation_audit IS 'Complete audit trail of all sensitive operations with security events';
 COMMENT ON TABLE elevation_attempts IS 'Track and block authority elevation and privilege escalation attempts';
+-- Compatibility with the existing role catalog: test and legacy rows may omit a display label.
+ALTER TABLE role_definitions ALTER COLUMN display_name DROP NOT NULL;
