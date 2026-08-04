@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS dependency_vulnerabilities (
   -- Discovery and tracking
   discovered_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
   first_alerted_at TIMESTAMP WITH TIME ZONE,
+  updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
   remediated_at TIMESTAMP WITH TIME ZONE,
 
   -- Remediation status
