@@ -181,6 +181,7 @@ CREATE TABLE IF NOT EXISTS authentication_methods (
 CREATE INDEX IF NOT EXISTS idx_auth_methods_user ON authentication_methods(user_id, is_active);
 CREATE INDEX IF NOT EXISTS idx_auth_methods_type ON authentication_methods(auth_method_type);
 CREATE INDEX IF NOT EXISTS idx_auth_methods_primary ON authentication_methods(user_id, is_primary);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_auth_methods_user_type ON authentication_methods(user_id, auth_method_type);
 
 -- Table for API keys
 CREATE TABLE IF NOT EXISTS api_keys (
