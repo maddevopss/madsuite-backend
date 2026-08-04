@@ -104,13 +104,13 @@ async function createSession(userId, organizationId, sessionConfig = {}) {
 
     const query = `
       INSERT INTO user_sessions (
-        user_id, organization_id, session_token,
+        user_id, organization_id, organisation_id, session_token,
         session_type, session_name,
         device_id, device_fingerprint, device_name, device_type,
         device_os, device_browser, ip_address, user_agent,
         geolocation, authentication_method, expires_at,
         session_metadata, authenticated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, CURRENT_TIMESTAMP)
+      ) VALUES ($1, $2, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, CURRENT_TIMESTAMP)
       RETURNING id;
     `;
 
@@ -120,7 +120,7 @@ async function createSession(userId, organizationId, sessionConfig = {}) {
       sessionTokenHash,
       sessionType,
       sessionName,
-      deviceId,
+      effectiveDeviceId,
       deviceFingerprint,
       deviceName,
       deviceType,
@@ -400,6 +400,8 @@ async function registerTrustedDevice(userId, organizationId, deviceConfig = {}) 
       trustApprovedBy = null,
       trustApprovalMethod = "manual"
     } = deviceConfig;
+
+    const effectiveDeviceId = deviceId || deviceFingerprint || crypto.randomUUID();
 
     const query = `
       INSERT INTO trusted_devices (
