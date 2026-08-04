@@ -47,7 +47,8 @@ describe("Stage 6: Sensitive Transition Security", () => {
          VALUES ($1, $2, $2, $3)
          ON CONFLICT (role_name) DO UPDATE SET
            display_name = EXCLUDED.display_name,
-           role_type = EXCLUDED.role_type
+           role_type = EXCLUDED.role_type,
+           is_active = true
          RETURNING id`,
         [testOrgId, "approver", "organization"]
       );
@@ -57,7 +58,8 @@ describe("Stage 6: Sensitive Transition Security", () => {
          VALUES ($1, $2, $2, $3)
          ON CONFLICT (role_name) DO UPDATE SET
            display_name = EXCLUDED.display_name,
-           role_type = EXCLUDED.role_type
+           role_type = EXCLUDED.role_type,
+           is_active = true
          RETURNING id`,
         [testOrgId, "admin", "system"]
       );
@@ -67,7 +69,8 @@ describe("Stage 6: Sensitive Transition Security", () => {
          VALUES ($1, $2, $2, $3)
          ON CONFLICT (role_name) DO UPDATE SET
            display_name = EXCLUDED.display_name,
-           role_type = EXCLUDED.role_type
+           role_type = EXCLUDED.role_type,
+           is_active = true
          RETURNING id`,
         [testOrgId, "editor", "organization"]
       );
