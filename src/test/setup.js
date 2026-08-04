@@ -66,7 +66,19 @@ afterAll(async () => {
   } catch (err) {
     console.error("Erreur lors du nettoyage de la DB de test:", err);
   } finally {
-    // The pool is shared by every Jest file and is closed by globalTeardown.
-    // Closing it here causes later suites to fail with "Cannot use a pool after calling end".
+    // Jest recharge ce module (et donc db.js) à neuf pour CHAQUE fichier de test :
+    // db.pool n'est PAS partagé entre fichiers. jest.globalTeardown.js tourne dans
+    // un contexte Node séparé et ne peut fermer que son propre pool, jamais celui
+    // des fichiers de test — sans fermeture ici, chaque fichier laisse une connexion
+    // Postgres ouverte jusqu'au reap idleTimeoutMillis (30s), ce qui épuise
+    // max_connections quand une suite complète enchaîne les fichiers plus vite que
+    // ce délai. Tous les afterAll propres à un fichier sont imbriqués dans un
+    // describe() (vérifié), donc s'exécutent avant ce hook racine — fermer ici
+    // n'interrompt aucun nettoyage local.
+    try {
+      await db.end();
+    } catch {
+      // Pool déjà fermé ou inutilisable : sans impact.
+    }
   }
 });
