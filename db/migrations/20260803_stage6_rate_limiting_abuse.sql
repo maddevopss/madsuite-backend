@@ -1,12 +1,20 @@
 -- Migration: Stage 6 Rate Limiting & Abuse Prevention
 -- Rate limiting, DDoS detection, abuse prevention, and traffic management
 
+CREATE TABLE IF NOT EXISTS organizations (
+  id VARCHAR(255) PRIMARY KEY,
+  name VARCHAR(255) NOT NULL DEFAULT 'Default organization',
+  slug VARCHAR(255) UNIQUE,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Table for rate limit policies
 CREATE TABLE IF NOT EXISTS rate_limit_policies (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
   -- Policy identification
-  organization_id UUID NOT NULL,
+  organization_id VARCHAR(255) NOT NULL,
   policy_name VARCHAR(255) NOT NULL,
   policy_type VARCHAR(50),                      -- 'global', 'endpoint', 'user', 'ip', 'api_key'
   description TEXT,
@@ -54,7 +62,7 @@ CREATE TABLE IF NOT EXISTS rate_limit_tracking (
   user_id VARCHAR(255),                        -- NULL for IP-based limiting
   api_key_id UUID,                             -- For API key based limiting
   ip_address INET,
-  organization_id UUID NOT NULL,
+  organization_id VARCHAR(255) NOT NULL,
 
   -- Request counting
   requests_in_window INT DEFAULT 0,
@@ -92,7 +100,7 @@ CREATE TABLE IF NOT EXISTS abuse_detection_alerts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
   -- Alert identification
-  organization_id UUID NOT NULL,
+  organization_id VARCHAR(255) NOT NULL,
   alert_type VARCHAR(100),                     -- 'brute_force', 'credential_stuffing', 'bot_activity', 'ddos', 'api_abuse', 'spam', 'scraping'
   severity_level VARCHAR(50),                  -- 'critical', 'high', 'medium', 'low', 'info'
 
@@ -144,7 +152,7 @@ CREATE TABLE IF NOT EXISTS ip_access_control (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
   -- Identification
-  organization_id UUID NOT NULL,
+  organization_id VARCHAR(255) NOT NULL,
   ip_address INET NOT NULL,
   ip_range CIDR,                               -- For CIDR ranges
   list_type VARCHAR(50),                       -- 'allowlist', 'blocklist'
@@ -176,7 +184,7 @@ CREATE TABLE IF NOT EXISTS traffic_anomaly_detection (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
   -- Anomaly identification
-  organization_id UUID NOT NULL,
+  organization_id VARCHAR(255) NOT NULL,
   anomaly_type VARCHAR(100),                  -- 'traffic_spike', 'unusual_pattern', 'distributed_attack', 'slow_attack', 'resource_exhaustion'
   severity_level VARCHAR(50),
 
@@ -218,7 +226,7 @@ CREATE TABLE IF NOT EXISTS bot_detection_records (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
   -- Bot identification
-  organization_id UUID NOT NULL,
+  organization_id VARCHAR(255) NOT NULL,
   bot_id VARCHAR(255),
   source_ip INET,
   user_agent TEXT,
@@ -257,7 +265,7 @@ CREATE TABLE IF NOT EXISTS throttle_queue (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
   -- Queue entry
-  organization_id UUID NOT NULL,
+  organization_id VARCHAR(255) NOT NULL,
   user_id VARCHAR(255),
   api_key_id UUID,
   ip_address INET,

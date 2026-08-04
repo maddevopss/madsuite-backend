@@ -1,12 +1,20 @@
 -- Migration: Stage 6 Authentication & Sessions
 -- Session management, authentication methods, device tracking, and 2FA configuration
 
+CREATE TABLE IF NOT EXISTS organizations (
+  id VARCHAR(255) PRIMARY KEY,
+  name VARCHAR(255) NOT NULL DEFAULT 'Default organization',
+  slug VARCHAR(255) UNIQUE,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Table for session definitions and configuration
 CREATE TABLE IF NOT EXISTS session_configurations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
   -- Configuration identification
-  organization_id UUID NOT NULL,
+  organization_id VARCHAR(255) NOT NULL,
   session_type VARCHAR(100),                     -- 'web', 'mobile', 'api', 'admin', 'service_account'
   session_name VARCHAR(255) NOT NULL,
 
@@ -45,7 +53,7 @@ CREATE TABLE IF NOT EXISTS user_sessions (
 
   -- Session identification
   user_id VARCHAR(255) NOT NULL,
-  organization_id UUID NOT NULL,
+  organization_id VARCHAR(255) NOT NULL,
   session_token VARCHAR(255) NOT NULL UNIQUE,   -- Hashed token for security
 
   -- Session details
@@ -106,7 +114,7 @@ CREATE TABLE IF NOT EXISTS authentication_methods (
 
   -- Method identification
   user_id VARCHAR(255) NOT NULL,
-  organization_id UUID NOT NULL,
+  organization_id VARCHAR(255) NOT NULL,
   auth_method_type VARCHAR(50) NOT NULL,        -- 'password', '2fa_totp', '2fa_sms', '2fa_email', 'sso_saml', 'sso_oauth', 'api_key', 'certificate'
 
   -- Configuration
@@ -148,7 +156,7 @@ CREATE TABLE IF NOT EXISTS api_keys (
 
   -- Key identification
   user_id VARCHAR(255) NOT NULL,
-  organization_id UUID NOT NULL,
+  organization_id VARCHAR(255) NOT NULL,
   api_key_name VARCHAR(255) NOT NULL,
   api_key_hash VARCHAR(255) NOT NULL,           -- Hash of actual key
 
@@ -187,7 +195,7 @@ CREATE TABLE IF NOT EXISTS trusted_devices (
 
   -- Device identification
   user_id VARCHAR(255) NOT NULL,
-  organization_id UUID NOT NULL,
+  organization_id VARCHAR(255) NOT NULL,
   device_id VARCHAR(255) NOT NULL,
   device_fingerprint VARCHAR(255),
 
@@ -227,7 +235,7 @@ CREATE TABLE IF NOT EXISTS authentication_events (
 
   -- Event identification
   user_id VARCHAR(255),                         -- NULL for failed login (unknown user)
-  organization_id UUID,
+  organization_id VARCHAR(255),
   event_type VARCHAR(100) NOT NULL,             -- 'login_success', 'login_failed', 'login_required_2fa', 'twofa_verified', 'twofa_failed', 'password_changed', 'api_key_created', 'device_added', 'device_removed', 'suspicious_activity'
   event_timestamp TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
@@ -265,7 +273,7 @@ CREATE TABLE IF NOT EXISTS twofactor_configuration (
 
   -- Configuration identification
   user_id VARCHAR(255) NOT NULL,
-  organization_id UUID NOT NULL,
+  organization_id VARCHAR(255) NOT NULL,
   twofa_method VARCHAR(50) NOT NULL,            -- 'totp', 'sms', 'email', 'push', 'hardware_key'
   is_primary BOOLEAN DEFAULT false,
   is_active BOOLEAN DEFAULT true,
@@ -313,7 +321,7 @@ CREATE TABLE IF NOT EXISTS password_policies (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
   -- Policy identification
-  organization_id UUID NOT NULL UNIQUE,
+  organization_id VARCHAR(255) NOT NULL UNIQUE,
   policy_name VARCHAR(255),
 
   -- Password requirements
@@ -356,7 +364,7 @@ CREATE TABLE IF NOT EXISTS password_history (
 
   -- Password history identification
   user_id VARCHAR(255) NOT NULL,
-  organization_id UUID NOT NULL,
+  organization_id VARCHAR(255) NOT NULL,
   password_hash VARCHAR(255) NOT NULL,
   password_change_type VARCHAR(50),             -- 'user_change', 'admin_reset', 'forced_reset', 'password_recovery'
 
@@ -382,7 +390,7 @@ CREATE TABLE IF NOT EXISTS sso_configurations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
   -- Configuration identification
-  organization_id UUID NOT NULL,
+  organization_id VARCHAR(255) NOT NULL,
   provider_name VARCHAR(100) NOT NULL,          -- 'saml', 'oauth2', 'oidc', 'ldap'
   provider_type VARCHAR(50),                    -- 'okta', 'azure_ad', 'google', 'custom'
   display_name VARCHAR(255),
