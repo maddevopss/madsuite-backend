@@ -8,6 +8,9 @@
 const db = require("../../db");
 const crypto = require("crypto");
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const isUuid = value => UUID_PATTERN.test(String(value || ""));
+
 /**
  * Register a sensitive operation
  */
@@ -362,6 +365,10 @@ async function preventReplayAttack(idempotencyKey, operationType, userId) {
  * Approve an operation
  */
 async function approveOperation(approvalId, approverId, organizationId, approvalMethod = "manual") {
+  if (!isUuid(approvalId)) {
+    return { approved: false, reason: "approval_not_found" };
+  }
+
   try {
     const query = `
       UPDATE operation_approvals
@@ -398,6 +405,10 @@ async function approveOperation(approvalId, approverId, organizationId, approval
  * Reject an operation
  */
 async function rejectOperation(approvalId, organizationId, rejectionReason = "") {
+  if (!isUuid(approvalId)) {
+    return { rejected: false, reason: "approval_not_found" };
+  }
+
   try {
     const query = `
       UPDATE operation_approvals
