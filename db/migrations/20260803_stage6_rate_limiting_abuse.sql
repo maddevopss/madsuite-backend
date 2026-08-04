@@ -60,7 +60,7 @@ CREATE TABLE IF NOT EXISTS rate_limit_tracking (
   -- Identification
   rate_limit_policy_id UUID NOT NULL REFERENCES rate_limit_policies(id) ON DELETE CASCADE,
   user_id VARCHAR(255),                        -- NULL for IP-based limiting
-  api_key_id UUID,                             -- For API key based limiting
+  api_key_id VARCHAR(255),                             -- For API key based limiting
   ip_address INET,
   organization_id VARCHAR(255) NOT NULL,
 
@@ -107,7 +107,7 @@ CREATE TABLE IF NOT EXISTS abuse_detection_alerts (
   -- Source identification
   source_ip INET,
   source_user_id VARCHAR(255),
-  source_api_key_id UUID,
+  source_api_key_id VARCHAR(255),
   user_agent TEXT,
   geolocation JSONB,
 
@@ -267,7 +267,7 @@ CREATE TABLE IF NOT EXISTS throttle_queue (
   -- Queue entry
   organization_id VARCHAR(255) NOT NULL,
   user_id VARCHAR(255),
-  api_key_id UUID,
+  api_key_id VARCHAR(255),
   ip_address INET,
 
   -- Request details
