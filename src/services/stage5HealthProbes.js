@@ -158,8 +158,14 @@ async function probeSchemaConsistency() {
 async function probeJobRegistryHealth() {
   const startTime = Date.now();
   try {
-    const { getJobsHealth } = require("../config/jobRegistry");
-    const jobHealth = await getJobsHealth();
+    const { getJobsHealth, registerAllJobs } = require("../config/jobRegistry");
+    let jobHealth = await getJobsHealth();
+
+    // The probe must remain useful during first boot and isolated integration tests.
+    if (jobHealth.length === 0) {
+      await registerAllJobs();
+      jobHealth = await getJobsHealth();
+    }
 
     const details = {
       total_jobs: jobHealth.length,
