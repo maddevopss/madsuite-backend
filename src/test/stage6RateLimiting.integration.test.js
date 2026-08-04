@@ -23,6 +23,12 @@ describe("Stage 6 PR G - Rate Limiting & Abuse Prevention", () => {
        ON CONFLICT (id) DO NOTHING`,
       [organizationId, "Rate Limit Test Org", "rate-limit-test"]
     );
+    await db.pool.query(
+      `INSERT INTO organizations (id, name, slug)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (id) DO NOTHING`,
+      [organizationId, "Rate Limit Test Org", "rate-limit-test"]
+    );
   });
 
   afterAll(async () => {
