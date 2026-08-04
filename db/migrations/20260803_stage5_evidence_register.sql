@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS evidence_entries (
 
   -- Compliance hold (prevent deletion during litigation)
   on_hold BOOLEAN DEFAULT false,
-  hold_id UUID REFERENCES compliance_holds(id)
+  hold_id UUID
 );
 
 -- Create indexes for evidence queries
@@ -157,6 +157,19 @@ CREATE TABLE IF NOT EXISTS compliance_holds (
 CREATE INDEX IF NOT EXISTS idx_holds_active ON compliance_holds(active);
 CREATE INDEX IF NOT EXISTS idx_holds_placed ON compliance_holds(placed_at DESC);
 CREATE INDEX IF NOT EXISTS idx_holds_released ON compliance_holds(released_at DESC);
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_constraint
+    WHERE conname = 'fk_evidence_entries_hold'
+  ) THEN
+    ALTER TABLE evidence_entries
+      ADD CONSTRAINT fk_evidence_entries_hold
+      FOREIGN KEY (hold_id) REFERENCES compliance_holds(id);
+  END IF;
+END $$;
 
 -- Table for archival tracking
 CREATE TABLE IF NOT EXISTS evidence_archival (
