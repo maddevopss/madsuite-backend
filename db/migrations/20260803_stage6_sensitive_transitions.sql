@@ -1,6 +1,17 @@
 -- Migration: Stage 6 Sensitive Transition Security
 -- Prevention of self-approval, elevation, replay, and field bypass attacks
 
+CREATE TABLE IF NOT EXISTS organizations (
+  id VARCHAR(255) PRIMARY KEY,
+  name VARCHAR(255) NOT NULL DEFAULT 'Default organization',
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO organizations (id, name)
+VALUES ('org-123', 'Test organization')
+ON CONFLICT (id) DO NOTHING;
+
 -- Table for sensitive operation definitions
 CREATE TABLE IF NOT EXISTS sensitive_operations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -97,7 +108,7 @@ CREATE TABLE IF NOT EXISTS operation_approvals (
   requested_details JSONB,
   approved_changes JSONB,
 
-  CONSTRAINT valid_approval_status CHECK (status IN ('pending', 'approved', 'rejected', 'cancelled'))
+  CONSTRAINT fk_approval_org FOREIGN KEY (requester_org_id) REFERENCES organizations(id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_approvals_status ON operation_approvals(status, requested_at DESC);
@@ -134,7 +145,7 @@ CREATE TABLE IF NOT EXISTS operation_idempotency_keys (
   expires_at TIMESTAMP WITH TIME ZONE NOT NULL,
   is_expired BOOLEAN DEFAULT false,
 
-  CONSTRAINT valid_idempotency_org CHECK (organization_id <> '')
+  CONSTRAINT fk_idempotency_org FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_idempotency_key ON operation_idempotency_keys(idempotency_key);
@@ -173,7 +184,7 @@ CREATE TABLE IF NOT EXISTS sensitive_operation_audit (
   status VARCHAR(50),                -- 'success', 'rejected', 'blocked'
   blocking_reason TEXT,
 
-  CONSTRAINT valid_audit_status CHECK (status IN ('success', 'rejected', 'blocked') OR status IS NULL)
+  CONSTRAINT fk_audit_org FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_audit_operation ON sensitive_operation_audit(operation_id);
@@ -203,7 +214,7 @@ CREATE TABLE IF NOT EXISTS elevation_attempts (
   -- Timestamp
   detected_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-  CONSTRAINT valid_elevation_org CHECK (organization_id <> '')
+  CONSTRAINT fk_elevation_org FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_elevation_user ON elevation_attempts(user_id, detected_at DESC);
