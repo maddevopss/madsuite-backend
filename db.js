@@ -101,7 +101,9 @@ const poolConfig = connectionString
 
 Object.assign(poolConfig, {
   // Keep parallel Jest workers below PostgreSQL's connection limit.
-  max: Number(process.env.DB_POOL_MAX || (process.env.NODE_ENV === "test" ? 4 : 10)),
+  max: process.env.NODE_ENV === "test"
+    ? 1
+    : Number(process.env.DB_POOL_MAX || 10),
   connectionTimeoutMillis: Number(process.env.DB_CONNECTION_TIMEOUT_MS || 5000),
   idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS || 30000),
   query_timeout: Number(process.env.DB_QUERY_TIMEOUT_MS || 15000),
