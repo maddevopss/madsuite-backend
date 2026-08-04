@@ -263,9 +263,12 @@ async function detectElevationAttempt(userId, organizationId, targetRole, operat
     `;
 
     const currentResult = await db.pool.query(currentQuery, [userId, organizationId]);
-    const currentRole = currentResult.rows
-      .map(row => normalizeRoleName(row.role_name))
-      .sort((left, right) => getRoleLevel(right) - getRoleLevel(left))[0] || "viewer";
+    const requestedCurrentRole = operationDetails && operationDetails.currentRole;
+    const currentRole = requestedCurrentRole
+      ? normalizeRoleName(requestedCurrentRole)
+      : currentResult.rows
+        .map(row => normalizeRoleName(row.role_name))
+        .sort((left, right) => getRoleLevel(right) - getRoleLevel(left))[0] || "viewer";
     const normalizedTargetRole = normalizeRoleName(targetRole);
 
     const currentLevel = getRoleLevel(currentRole) || ROLE_HIERARCHY.viewer;
