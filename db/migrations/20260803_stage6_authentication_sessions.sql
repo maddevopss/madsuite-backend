@@ -106,7 +106,7 @@ CREATE INDEX IF NOT EXISTS idx_sessions_user ON user_sessions(user_id, is_active
 CREATE INDEX IF NOT EXISTS idx_sessions_org ON user_sessions(organization_id, is_active);
 CREATE INDEX IF NOT EXISTS idx_sessions_token ON user_sessions(session_token);
 CREATE INDEX IF NOT EXISTS idx_sessions_expired ON user_sessions(expires_at, is_active);
-CREATE INDEX IF NOT EXISTS idx_sessions_device ON user_sessions(device_id, is_trusted);
+CREATE INDEX IF NOT EXISTS idx_sessions_device ON user_sessions(device_id, is_device_trusted);
 
 -- Table for authentication methods per user/org
 CREATE TABLE IF NOT EXISTS authentication_methods (
