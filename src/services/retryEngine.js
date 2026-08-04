@@ -470,7 +470,6 @@ async function cleanupRetryAttempts(retentionDays = 30) {
       WITH deleted AS (
         DELETE FROM retry_attempts
         WHERE attempt_at < CURRENT_TIMESTAMP - ($1 * INTERVAL '1 day')
-          AND status IN ('success', 'failed_permanent')
         RETURNING id
       )
       SELECT COUNT(*)::INT as deleted FROM deleted
