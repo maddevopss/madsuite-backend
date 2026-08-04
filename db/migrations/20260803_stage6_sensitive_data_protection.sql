@@ -392,14 +392,16 @@ GROUP BY table_name, access_type;
 -- View for PII exposure tracking
 CREATE OR REPLACE VIEW pii_exposure_summary AS
 SELECT
-  pii_type,
+  pii_types.pii_type,
   COUNT(DISTINCT table_name) as tables_with_pii,
   COUNT(DISTINCT record_id) as records_with_pii,
   COUNT(CASE WHEN access_timestamp >= CURRENT_TIMESTAMP - INTERVAL '24 hours' THEN 1 END) as accesses_last_24h,
   COUNT(DISTINCT user_id) as users_accessed_pii
 FROM data_access_log
+CROSS JOIN LATERAL jsonb_array_elements_text(affected_pii_types) AS pii_types(pii_type)
 WHERE affected_pii_types IS NOT NULL
-GROUP BY pii_type;
+  AND jsonb_typeof(affected_pii_types) = 'array'
+GROUP BY pii_types.pii_type;
 
 -- Update trigger for data classifications
 CREATE OR REPLACE FUNCTION update_classification_timestamp()
