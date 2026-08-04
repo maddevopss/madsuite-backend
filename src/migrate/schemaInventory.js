@@ -231,11 +231,25 @@ async function getAllSequences(client) {
       s.maximum_value,
       s.increment,
       s.cycle_option,
-      t.table_name,
-      c.column_name
+      ns.nspname AS sequence_schema,
+      owner_table.relname AS table_name,
+      owner_column.attname AS column_name
     FROM information_schema.sequences s
-    LEFT JOIN information_schema.columns c ON s.sequence_name = c.column_default
-    LEFT JOIN information_schema.tables t ON c.table_name = t.table_name
+    JOIN pg_namespace ns
+      ON ns.nspname = s.sequence_schema
+    JOIN pg_class seq
+      ON seq.relname = s.sequence_name
+      AND seq.relnamespace = ns.oid
+      AND seq.relkind = 'S'
+    LEFT JOIN pg_depend dep
+      ON dep.objid = seq.oid
+      AND dep.deptype IN ('a', 'i')
+    LEFT JOIN pg_class owner_table
+      ON owner_table.oid = dep.refobjid
+      AND owner_table.relkind IN ('r', 'p')
+    LEFT JOIN pg_attribute owner_column
+      ON owner_column.attrelid = owner_table.oid
+      AND owner_column.attnum = dep.refobjsubid
     WHERE s.sequence_schema = current_schema()
     ORDER BY s.sequence_name
   `);
@@ -249,7 +263,7 @@ async function getAllSequences(client) {
         startValue: row.start_value,
         minValue: row.minimum_value,
         maxValue: row.maximum_value,
-        increment: row.increment,
+        increment: Number(row.increment),
         cycle: row.cycle_option === 'YES',
         ownedBy: null
       };
