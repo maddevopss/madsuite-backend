@@ -6,6 +6,7 @@ const db = require("../../db");
 const { runOrganisationScopePreflight } = require("./preflightOrganisationScope");
 const { diagnosticDatabaseConnection } = require("./diagnosticDb");
 const { detectDuplicateMigrations } = require("./detectDuplicateMigrations");
+const { getSchemaInventory, validateInventory } = require("./schemaInventory");
 
 function log(message, details) {
   // pas de secrets
@@ -213,6 +214,15 @@ async function assertRuntimeSchema(client) {
 
   const failures = [];
 
+  // Collect full inventory for validation
+  let inventory;
+  try {
+    inventory = await getSchemaInventory(client);
+  } catch (err) {
+    log(`Avertissement: impossible de collecter l'inventaire du schéma: ${err.message}`);
+    inventory = null;
+  }
+
   for (const req of required) {
     if (req.column) {
       // Check for specific column
@@ -257,6 +267,11 @@ async function assertRuntimeSchema(client) {
       "Schéma incomplet: le runtime schema ne correspond pas aux tables/colonnes clés.\n" +
         failures.map((f) => `- ${f}`).join("\n"),
     );
+  }
+
+  // If enabled, log schema inventory for debugging
+  if (process.env.LOG_SCHEMA_INVENTORY === "1" && inventory) {
+    log(`Inventaire du schéma collecté: ${inventory.stats.tableCount} tables, ${inventory.stats.constraintCount} contraintes, ${inventory.stats.indexCount} index`);
   }
 }
 

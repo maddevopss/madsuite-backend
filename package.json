@@ -41,7 +41,9 @@
     "lint": "eslint src/**/*.js",
     "db:preflight:org": "node src/migrate/preflightOrganisationScope.js",
     "db:migrate": "node src/migrate/runMigrationsFromFiles.js",
-    "deploy:migrate": "cross-env NODE_ENV=production npm run db:migrate"
+    "deploy:migrate": "cross-env NODE_ENV=production npm run db:migrate",
+    "verify:migration-order": "node src/migrate/verifyMigrationOrder.js",
+    "verify:schema-inventory": "cross-env NODE_ENV=test LOG_SCHEMA_INVENTORY=1 npm run db:migrate"
   },
   "keywords": [],
   "author": "MAD",

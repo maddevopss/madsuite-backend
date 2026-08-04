@@ -2,7 +2,30 @@ openapi: 3.0.3
 info:
   title: MADSuite — Contrats institutionnels de l’étage 4
   version: "1.0.0"
-  description: Contrats versionnés pour les listes, ressources, capacités, transitions et erreurs.
+  description: |
+    Contrats versionnés pour les listes, ressources, capacités, transitions et erreurs.
+
+    ## Versioning & Deprecation
+
+    Tous les contrats sont versionnés avec le format `{name}@{major}.{minor}` dans le champ `meta.contract`.
+
+    ### Contrats Actuels
+    - `integration-list@1` — Format de réponse pour les listes paginées
+    - `integration-resource@1` — Format de réponse pour une ressource unique
+    - `server-capabilities@1` — Format des capacités calculées côté serveur
+    - `transition@1` — Format des demandes et réponses de transition
+    - `block-closure@1` — Format des erreurs de fermeture de bloc
+
+    ### Dépréciations et Migration
+
+    Lorsqu’une version de contrat est dépréciée, le serveur retourne :
+    - Header `Deprecation: true`
+    - Header `Sunset: <RFC-2822-date>` — date de suppression planifiée
+    - Header `X-Contract-Deprecated: <contract@version>` — identifiant du contrat
+    - Champ `meta.deprecated: true` dans la réponse
+    - Champ `meta.replacedBy: <new-contract@version>` si applicable
+
+    Les clients doivent surveiller ces indicateurs et migrer vers la nouvelle version avant la date Sunset.
 components:
   parameters:
     PageLimit:
@@ -94,4 +117,50 @@ components:
               code: transition.evidence_required
               message: transition.evidence_required
               details: { field: evidence }
+    DeprecatedContractWarning:
+      description: |
+        Contrat déprécié — client doit migrer vers la nouvelle version.
+        Retourne les headers HTTP de dépréciation.
+      headers:
+        Deprecation:
+          schema: { type: string, enum: ['true'] }
+          description: Indique que le contrat est déprécié
+        Sunset:
+          schema: { type: string, format: date-time }
+          description: Date RFC-2822 de suppression planifiée
+        X-Contract-Deprecated:
+          schema: { type: string, example: 'integration-list@1' }
+          description: Identifiant du contrat déprécié
+        Link:
+          schema: { type: string, example: '<integration-list@2>; rel="successor-version"' }
+          description: Lien vers la version successive
+  examples:
+    ListResponseV1:
+      summary: Réponse de liste avec versioning (v1)
+      value:
+        items:
+          - id: 123
+            name: "Exemple"
+            createdAt: "2026-08-03T00:00:00Z"
+        meta:
+          contract: "integration-list@1"
+          count: 1
+          limit: 25
+          hasMore: false
+          deprecated: false
+          nextCursor: null
+    ListResponseV1Deprecated:
+      summary: Réponse de liste dépréciée avec metadata
+      value:
+        items:
+          - id: 123
+            name: "Exemple"
+        meta:
+          contract: "integration-list@1"
+          count: 1
+          limit: 25
+          hasMore: false
+          deprecated: true
+          sunset: "2026-12-31T23:59:59Z"
+          replacedBy: "integration-list@2"
 paths: {}
