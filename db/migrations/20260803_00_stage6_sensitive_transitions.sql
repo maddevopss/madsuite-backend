@@ -8,6 +8,31 @@ CREATE TABLE IF NOT EXISTS organizations (
   is_active BOOLEAN DEFAULT true,
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE TABLE IF NOT EXISTS role_definitions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  role_name VARCHAR(100) NOT NULL UNIQUE,
+  display_name VARCHAR(255),
+  role_type VARCHAR(50) DEFAULT 'organization',
+  organization_id VARCHAR(255) REFERENCES organizations(id) ON DELETE CASCADE,
+  is_active BOOLEAN DEFAULT true,
+  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS user_role_assignments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id VARCHAR(255) NOT NULL,
+  organization_id VARCHAR(255) NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  role_id UUID NOT NULL REFERENCES role_definitions(id) ON DELETE RESTRICT,
+  scope VARCHAR(50) DEFAULT 'organization',
+  scope_id VARCHAR(255),
+  assigned_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  assigned_by VARCHAR(255),
+  revoked_at TIMESTAMP WITH TIME ZONE,
+  revoked_by VARCHAR(255),
+  is_active BOOLEAN DEFAULT true,
+  UNIQUE(user_id, organization_id, role_id, scope, scope_id)
+);
 
 -- Table for sensitive operation definitions
 CREATE TABLE IF NOT EXISTS sensitive_operations (
