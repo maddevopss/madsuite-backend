@@ -224,7 +224,7 @@ async function detectElevationAttempt(userId, organizationId, targetRole, operat
       // Record elevation attempt
       const recordQuery = `
         INSERT INTO elevation_attempts (
-          user_id, organization_id, current_role, target_role,
+          user_id, organization_id, "current_role", target_role,
           elevation_type, blocked
         ) VALUES ($1, $2, $3, $4, $5, $6)
       `;
