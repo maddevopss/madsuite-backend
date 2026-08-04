@@ -12,6 +12,39 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const isUuid = value => UUID_PATTERN.test(String(value || ""));
 
+const ROLE_ALIASES = Object.freeze({
+  administrator: "admin",
+  organization_admin: "admin",
+  organisation_admin: "admin",
+  org_admin: "admin",
+  superadmin: "super_admin",
+  superadministrator: "super_admin",
+  organization_super_admin: "super_admin",
+  organisation_super_admin: "super_admin",
+});
+
+function normalizeRoleName(value) {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+
+  return ROLE_ALIASES[normalized] || normalized;
+}
+
+const ROLE_HIERARCHY = Object.freeze({
+  viewer: 1,
+  editor: 2,
+  manager: 3,
+  approver: 4,
+  admin: 5,
+  super_admin: 6,
+});
+
+function getRoleLevel(value) {
+  return ROLE_HIERARCHY[normalizeRoleName(value)] || 0;
+}
+
 /**
  * Register a sensitive operation
  */
@@ -195,15 +228,12 @@ async function detectSelfApprovalRisk(userId, organizationId, operationType) {
 
     // Check if user has approval authority for this operation type
     const hasApprovalAuthority = result.rows.some(({ role_name, role_type }) => {
-      const role = String(role_name || "").toLowerCase();
-      const type = String(role_type || "").toLowerCase();
+      const role = normalizeRoleName(role_name);
+      const type = normalizeRoleName(role_type);
 
       return (
-        role === "approver" ||
-        role === "admin" ||
-        role === "super_admin" ||
+        getRoleLevel(role) >= ROLE_HIERARCHY.approver ||
         role.includes("approver") ||
-        role.includes("admin") ||
         type === "admin" ||
         type === "system"
       );
@@ -230,34 +260,16 @@ async function detectElevationAttempt(userId, organizationId, targetRole, operat
         AND ura.organization_id = $2
         AND ura.is_active = true
         AND rd.is_active = true
-      ORDER BY CASE LOWER(rd.role_name)
-        WHEN 'super_admin' THEN 6
-        WHEN 'admin' THEN 5
-        WHEN 'approver' THEN 4
-        WHEN 'manager' THEN 3
-        WHEN 'editor' THEN 2
-        WHEN 'viewer' THEN 1
-        ELSE 0
-      END DESC
-      LIMIT 1
     `;
 
     const currentResult = await db.pool.query(currentQuery, [userId, organizationId]);
-    const currentRole = String(currentResult.rows[0]?.role_name || "viewer").toLowerCase();
-    const normalizedTargetRole = String(targetRole || "viewer").toLowerCase();
+    const currentRole = currentResult.rows
+      .map(row => normalizeRoleName(row.role_name))
+      .sort((left, right) => getRoleLevel(right) - getRoleLevel(left))[0] || "viewer";
+    const normalizedTargetRole = normalizeRoleName(targetRole);
 
-    // Define role hierarchy (higher = more privileged)
-    const roleHierarchy = {
-      "viewer": 1,
-      "editor": 2,
-      "manager": 3,
-      "approver": 4,
-      "admin": 5,
-      "super_admin": 6
-    };
-
-    const currentLevel = roleHierarchy[currentRole] || 1;
-    const targetLevel = roleHierarchy[normalizedTargetRole] || 1;
+    const currentLevel = getRoleLevel(currentRole) || ROLE_HIERARCHY.viewer;
+    const targetLevel = getRoleLevel(normalizedTargetRole) || ROLE_HIERARCHY.viewer;
 
     const isElevation = targetLevel > currentLevel;
 
