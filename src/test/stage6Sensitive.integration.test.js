@@ -37,7 +37,7 @@ describe("Stage 6: Sensitive Transition Security", () => {
       const approverRole = await db.pool.query(
         `INSERT INTO role_definitions (organization_id, role_name, role_type)
          VALUES ($1, $2, $3)
-         ON CONFLICT DO NOTHING
+         ON CONFLICT (role_name) DO UPDATE SET role_name = EXCLUDED.role_name
          RETURNING id`,
         [testOrgId, "approver", "organization"]
       );
@@ -45,7 +45,7 @@ describe("Stage 6: Sensitive Transition Security", () => {
       const adminRole = await db.pool.query(
         `INSERT INTO role_definitions (organization_id, role_name, role_type)
          VALUES ($1, $2, $3)
-         ON CONFLICT DO NOTHING
+         ON CONFLICT (role_name) DO UPDATE SET role_name = EXCLUDED.role_name
          RETURNING id`,
         [testOrgId, "admin", "system"]
       );
@@ -53,7 +53,7 @@ describe("Stage 6: Sensitive Transition Security", () => {
       const editorRole = await db.pool.query(
         `INSERT INTO role_definitions (organization_id, role_name, role_type)
          VALUES ($1, $2, $3)
-         ON CONFLICT DO NOTHING
+         ON CONFLICT (role_name) DO UPDATE SET role_name = EXCLUDED.role_name
          RETURNING id`,
         [testOrgId, "editor", "organization"]
       );
