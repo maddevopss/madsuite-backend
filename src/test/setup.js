@@ -66,6 +66,7 @@ afterAll(async () => {
   } catch (err) {
     console.error("Erreur lors du nettoyage de la DB de test:", err);
   } finally {
-    await db.end().catch(() => null);
+    // The pool is shared by every Jest file and is closed by globalTeardown.
+    // Closing it here causes later suites to fail with "Cannot use a pool after calling end".
   }
 });
