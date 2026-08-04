@@ -131,7 +131,8 @@ async function createSession(userId, organizationId, sessionConfig = {}) {
       JSON.stringify(geolocation),
       authenticationMethod,
       expiresAt,
-      JSON.stringify(sessionMetadata)
+      JSON.stringify(sessionMetadata),
+      organizationId
     ]);
 
     return {
