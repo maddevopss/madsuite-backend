@@ -4,13 +4,10 @@
 CREATE TABLE IF NOT EXISTS organizations (
   id VARCHAR(255) PRIMARY KEY,
   name VARCHAR(255) NOT NULL DEFAULT 'Default organization',
+  slug VARCHAR(255) UNIQUE,
   is_active BOOLEAN DEFAULT true,
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-
-INSERT INTO organizations (id, name)
-VALUES ('org-123', 'Test organization')
-ON CONFLICT (id) DO NOTHING;
 
 -- Table for data classification and sensitivity levels
 CREATE TABLE IF NOT EXISTS data_classifications (
