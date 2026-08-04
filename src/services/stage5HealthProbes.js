@@ -59,12 +59,17 @@ async function probeSchemaConsistency() {
 
     // Validate inventory for consistency
     const validation = validateInventory(inventory);
+    const validationIssues = Object.values(validation)
+      .filter(Array.isArray)
+      .flat();
+    const tableCount = inventory.stats.table_count ?? inventory.stats.tableCount ?? 0;
+    const columnCount = inventory.stats.column_count ?? inventory.stats.columnCount ?? 0;
 
-    if (!validation.isValid) {
+    if (validationIssues.length > 0) {
       const details = {
-        issues: validation.issues,
-        tablesCount: inventory.stats.table_count,
-        columnsCount: inventory.stats.column_count
+        issues: validationIssues,
+        tablesCount: tableCount,
+        columnsCount: columnCount
       };
 
       await recordHealthCheck(
@@ -80,7 +85,7 @@ async function probeSchemaConsistency() {
         status: "unhealthy",
         component: "schema_inventory",
         probe: "schema_consistency",
-        message: `Schema validation failed: ${validation.issues.join(", ")}`,
+        message: `Schema validation failed: ${validationIssues.join(", ")}`,
         details,
         latency_ms: Date.now() - startTime
       };
@@ -92,7 +97,7 @@ async function probeSchemaConsistency() {
     if (breakingChanges.length > 0) {
       const details = {
         breaking_changes: breakingChanges,
-        table_count: inventory.stats.table_count
+        table_count: tableCount
       };
 
       await recordHealthCheck(
@@ -118,7 +123,7 @@ async function probeSchemaConsistency() {
       "schema_inventory",
       "schema_consistency",
       "healthy",
-      { table_count: inventory.stats.table_count, column_count: inventory.stats.column_count },
+      { table_count: tableCount, column_count: columnCount },
       Date.now() - startTime
     );
 
@@ -126,7 +131,7 @@ async function probeSchemaConsistency() {
       status: "healthy",
       component: "schema_inventory",
       probe: "schema_consistency",
-      details: { table_count: inventory.stats.table_count, column_count: inventory.stats.column_count },
+      details: { table_count: tableCount, column_count: columnCount },
       latency_ms: Date.now() - startTime
     };
   } catch (error) {
@@ -158,8 +163,13 @@ async function probeSchemaConsistency() {
 async function probeJobRegistryHealth() {
   const startTime = Date.now();
   try {
-    const { getJobsHealth } = require("../config/jobRegistry");
-    const jobHealth = await getJobsHealth();
+    const { getJobsHealth, registerAllJobs } = require("../config/jobRegistry");
+    let jobHealth = await getJobsHealth();
+
+    if (jobHealth.length === 0) {
+      await registerAllJobs();
+      jobHealth = await getJobsHealth();
+    }
 
     const details = {
       total_jobs: jobHealth.length,
@@ -728,12 +738,20 @@ async function probeRecoveryOperations() {
  */
 function detectBreakingSchemaChanges(inventory) {
   const changes = [];
+  const tables = Array.isArray(inventory.tables)
+    ? inventory.tables
+    : Object.values(inventory.tables || {});
 
   // Check for NOT NULL columns without defaults (would prevent inserts)
-  for (const table of inventory.tables) {
-    for (const column of table.columns) {
-      if (column.is_nullable === false && !column.column_default) {
-        changes.push(`Table ${table.table_name}: Column ${column.column_name} is NOT NULL without default`);
+  for (const table of tables) {
+    for (const column of table.columns || []) {
+      const isNullable = column.is_nullable ?? column.nullable;
+      const columnDefault = column.column_default ?? column.default;
+      const tableName = table.table_name ?? table.name;
+      const columnName = column.column_name ?? column.name;
+
+      if (isNullable === false && !columnDefault) {
+        changes.push(`Table ${tableName}: Column ${columnName} is NOT NULL without default`);
       }
     }
   }

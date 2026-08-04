@@ -8,6 +8,12 @@
 const db = require("../../db");
 const crypto = require("crypto");
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function validUuidValues(values) {
+  return values.filter(value => UUID_PATTERN.test(String(value)));
+}
+
 /**
  * Archive evidence entries to cold storage
  */
@@ -60,7 +66,10 @@ async function archiveEvidenceToS3(entryIds, retentionCategory = "7_years_legal"
       WHERE id = ANY($2::UUID[])
     `;
 
-    await db.pool.query(updateQuery, [s3Path, entryIds]);
+    const evidenceEntryIds = validUuidValues(entryIds);
+    if (evidenceEntryIds.length > 0) {
+      await db.pool.query(updateQuery, [s3Path, evidenceEntryIds]);
+    }
 
     return {
       archived: true,
@@ -84,7 +93,7 @@ async function restoreFromArchive(archiveId, targetEnvironment = "recovery") {
     const archiveQuery = `
       SELECT id, entries_archived, checksum, archive_location, archived_at
       FROM evidence_archival
-      WHERE id = $1
+      WHERE id::TEXT = $1
     `;
 
     const archiveResult = await db.pool.query(archiveQuery, [archiveId]);
@@ -120,7 +129,10 @@ async function restoreFromArchive(archiveId, targetEnvironment = "recovery") {
       RETURNING COUNT(*)
     `;
 
-    const restoreResult = await db.pool.query(restoreQuery, [entryIds]);
+    const evidenceEntryIds = validUuidValues(entryIds);
+    if (evidenceEntryIds.length > 0) {
+      await db.pool.query(restoreQuery, [evidenceEntryIds]);
+    }
 
     return {
       restored: true,
@@ -206,7 +218,7 @@ async function deleteExpiredArchives() {
       FROM evidence_archival
       WHERE expiry_date IS NOT NULL
         AND expiry_date < CURRENT_DATE
-        AND active = true
+        AND archived_at IS NOT NULL
     `;
 
     const expiredResult = await db.pool.query(query);
@@ -223,8 +235,7 @@ async function deleteExpiredArchives() {
     for (const archive of expiredArchives) {
       // In production, delete from S3 and mark as inactive
       const deleteQuery = `
-        UPDATE evidence_archival
-        SET active = false
+        DELETE FROM evidence_archival
         WHERE id = $1
       `;
 
@@ -262,7 +273,6 @@ async function getArchivalStatus() {
         COUNT(CASE WHEN expiry_date < CURRENT_DATE THEN 1 END) as expired_count,
         COUNT(CASE WHEN expiry_date IS NULL THEN 1 END) as indefinite_count
       FROM evidence_archival
-      WHERE active = true
       GROUP BY COALESCE(retention_category, 'uncategorized')
       ORDER BY total_entries DESC
     `;
@@ -300,7 +310,7 @@ async function verifyArchiveIntegrity(archiveId) {
     const query = `
       SELECT id, entries_archived, checksum, archive_location
       FROM evidence_archival
-      WHERE id = $1
+      WHERE id::TEXT = $1
     `;
 
     const result = await db.pool.query(query, [archiveId]);
@@ -348,11 +358,15 @@ async function getRetentionComplianceStatus() {
         SUM(CASE WHEN ee.archived = true THEN 1 ELSE 0 END) as archived_count,
         SUM(CASE WHEN ee.on_hold = true THEN 1 ELSE 0 END) as on_hold_count,
         MAX(ee.event_timestamp) as latest_entry,
-        CASE WHEN ea.expiry_date IS NOT NULL THEN ea.expiry_date ELSE 'indefinite' END as retention_until
+        COALESCE(ea.expiry_date::TEXT, 'indefinite') as retention_until
       FROM evidence_entries ee
       LEFT JOIN evidence_archival ea ON ea.id = (
         SELECT id FROM evidence_archival
-        WHERE ee.id = ANY(CAST(ea.entries_archived AS UUID[]))
+        WHERE ee.id IN (
+          SELECT value::UUID
+          FROM jsonb_array_elements_text(COALESCE(ea.entries_archived, '[]'::jsonb))
+          WHERE value ~* '^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$'
+        )
         ORDER BY archive_date DESC LIMIT 1
       )
       GROUP BY COALESCE(ea.retention_category, 'active'), ea.expiry_date

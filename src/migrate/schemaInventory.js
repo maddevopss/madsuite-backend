@@ -11,7 +11,15 @@
  * - Triggers and their timing
  */
 
-async function getSchemaInventory(client) {
+async function getSchemaInventory(providedClient = null) {
+  let client = providedClient;
+  let shouldRelease = false;
+
+  if (!client) {
+    client = await require("../../db").pool.connect();
+    shouldRelease = true;
+  }
+
   const inventory = {
     timestamp: new Date().toISOString(),
     tables: {},
@@ -55,6 +63,10 @@ async function getSchemaInventory(client) {
 
   } catch (err) {
     throw new Error(`Schema inventory error: ${err.message}`, { cause: err });
+  } finally {
+    if (shouldRelease) {
+      client.release();
+    }
   }
 
   return inventory;
@@ -192,17 +204,17 @@ async function getAllIndexes(client) {
 async function getAllPolicies(client) {
   const result = await client.query(`
     SELECT
-      p.policyname,
+      p.polname as policyname,
       c.relname as table_name,
-      p.permissive,
-      p.cmd,
-      p.qual,
-      p.with_check
+      p.polpermissive as permissive,
+      p.polcmd as cmd,
+      pg_get_expr(p.polqual, p.polrelid) as qual,
+      pg_get_expr(p.polwithcheck, p.polrelid) as with_check
     FROM pg_policy p
     JOIN pg_class c ON c.oid = p.polrelid
     JOIN pg_namespace n ON n.oid = c.relnamespace
     WHERE n.nspname = current_schema()
-    ORDER BY c.relname, p.policyname
+    ORDER BY c.relname, p.polname
   `);
 
   const policies = {};
@@ -231,11 +243,14 @@ async function getAllSequences(client) {
       s.maximum_value,
       s.increment,
       s.cycle_option,
-      t.table_name,
-      c.column_name
+      tbl.relname as table_name,
+      col.attname as column_name
     FROM information_schema.sequences s
-    LEFT JOIN information_schema.columns c ON s.sequence_name = c.column_default
-    LEFT JOIN information_schema.tables t ON c.table_name = t.table_name
+    LEFT JOIN pg_class seq ON seq.relname = s.sequence_name AND seq.relkind = 'S'
+    LEFT JOIN pg_namespace ns ON ns.oid = seq.relnamespace AND ns.nspname = s.sequence_schema
+    LEFT JOIN pg_depend dep ON dep.objid = seq.oid AND dep.deptype = 'a'
+    LEFT JOIN pg_class tbl ON tbl.oid = dep.refobjid
+    LEFT JOIN pg_attribute col ON col.attrelid = tbl.oid AND col.attnum = dep.refobjsubid
     WHERE s.sequence_schema = current_schema()
     ORDER BY s.sequence_name
   `);
@@ -246,10 +261,10 @@ async function getAllSequences(client) {
       sequences[row.sequence_name] = {
         name: row.sequence_name,
         type: row.data_type,
-        startValue: row.start_value,
-        minValue: row.minimum_value,
-        maxValue: row.maximum_value,
-        increment: row.increment,
+        startValue: Number(row.start_value),
+        minValue: Number(row.minimum_value),
+        maxValue: Number(row.maximum_value),
+        increment: Number(row.increment),
         cycle: row.cycle_option === 'YES',
         ownedBy: null
       };
@@ -270,15 +285,13 @@ async function getAllRoles(client) {
       r.rolcanlogin,
       r.rolcreatedb,
       r.rolcreaterole,
-      r.rolcanlogin,
       r.rolsuper,
-      r.rolacanlogin,
       array_agg(DISTINCT m.rolname) FILTER (WHERE m.rolname IS NOT NULL) as member_of
     FROM pg_roles r
     LEFT JOIN pg_auth_members am ON r.oid = am.member
     LEFT JOIN pg_roles m ON am.roleid = m.oid
     WHERE r.rolname NOT LIKE 'pg_%'
-    GROUP BY r.oid, r.rolname, r.rolinherit, r.rolcanlogin, r.rolcreatedb, r.rolcreaterole, r.rolsuper, r.rolacanlogin
+    GROUP BY r.oid, r.rolname, r.rolinherit, r.rolcanlogin, r.rolcreatedb, r.rolcreaterole, r.rolsuper
     ORDER BY r.rolname
   `);
 

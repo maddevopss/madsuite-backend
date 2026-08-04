@@ -343,7 +343,7 @@ async function getEvidenceEntry(entryId) {
       FROM evidence_entries ee
       LEFT JOIN evidence_chains ec ON ec.entry_id = ee.id
       LEFT JOIN evidence_signatures es ON es.entry_id = ee.id AND es.verified = true
-      WHERE ee.id = $1
+      WHERE ee.id::TEXT = $1
     `;
 
     const result = await db.pool.query(query, [entryId]);

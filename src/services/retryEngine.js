@@ -467,10 +467,13 @@ async function getQuarantineStats() {
 async function cleanupRetryAttempts(retentionDays = 30) {
   try {
     const result = await db.pool.query(`
-      DELETE FROM retry_attempts
-      WHERE created_at < CURRENT_TIMESTAMP - ($1 * INTERVAL '1 day')
-        AND status IN ('success', 'failed_permanent')
-      RETURNING COUNT(*) as deleted
+      WITH deleted AS (
+        DELETE FROM retry_attempts
+        WHERE attempt_at < CURRENT_TIMESTAMP - ($1 * INTERVAL '1 day')
+          AND status IN ('success', 'failed_permanent')
+        RETURNING id
+      )
+      SELECT COUNT(*)::INT as deleted FROM deleted
     `, [retentionDays]);
 
     const deleted = result.rows[0]?.deleted || 0;

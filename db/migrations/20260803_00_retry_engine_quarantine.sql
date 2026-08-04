@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS retry_attempts (
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
   CONSTRAINT valid_status CHECK (status IN ('pending', 'in_progress', 'success', 'failed_transient', 'failed_permanent')),
-  CONSTRAINT valid_classification CHECK (error_classification IN ('network', 'validation', 'internal', 'rate_limit', 'timeout', 'unknown')),
+  CONSTRAINT valid_classification CHECK (error_classification IN ('network', 'validation', 'internal', 'rate_limit', 'timeout', 'permanent', 'unknown')),
   CONSTRAINT valid_backoff CHECK (backoff_strategy IN ('exponential', 'linear', 'fixed'))
 );
 
@@ -81,6 +81,7 @@ CREATE TABLE IF NOT EXISTS quarantine_queue (
 
 -- Indexes for quarantine queue
 CREATE INDEX IF NOT EXISTS idx_quarantine_work ON quarantine_queue(work_type, work_id);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_quarantine_work ON quarantine_queue(work_type, work_id);
 CREATE INDEX IF NOT EXISTS idx_quarantine_reason ON quarantine_queue(reason);
 CREATE INDEX IF NOT EXISTS idx_quarantine_recovery_status ON quarantine_queue(recovery_status);
 CREATE INDEX IF NOT EXISTS idx_quarantine_created_at ON quarantine_queue(created_at);

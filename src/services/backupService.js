@@ -13,6 +13,17 @@
 const db = require("../../db");
 const crypto = require("crypto");
 
+const STAGE5_COMPONENTS = [
+  "schema_inventory",
+  "job_registry",
+  "retry_engine",
+  "outbox_processor"
+];
+
+function toNumber(value) {
+  return Number(value || 0);
+}
+
 /**
  * Create a full backup of all Stage 5 components
  * Captures complete state at point in time
@@ -54,17 +65,10 @@ async function createFullBackup(config = {}) {
     ]);
 
     // Backup each component
-    const components = [
-      "schema_inventory",
-      "job_registry",
-      "retry_engine",
-      "outbox_processor"
-    ];
-
     let totalSize = 0;
     let totalRows = 0;
 
-    for (const component of components) {
+    for (const component of STAGE5_COMPONENTS) {
       const result = await backupComponent(client, snapshotId, component);
       totalSize += result.sizeBytes;
       totalRows += result.rowCount;
@@ -88,7 +92,7 @@ async function createFullBackup(config = {}) {
       "completed",
       new Date(),
       totalSize,
-      components.length,
+      STAGE5_COMPONENTS.length,
       totalRows
     ]);
 
@@ -104,7 +108,7 @@ async function createFullBackup(config = {}) {
     return {
       snapshot_id: snapshotId,
       backup_type: "full",
-      components_backed_up: components.length,
+      components_backed_up: STAGE5_COMPONENTS.length,
       total_size_bytes: totalSize,
       total_rows: totalRows,
       duration_ms: duration,
@@ -147,30 +151,31 @@ async function backupComponent(client, snapshotId, componentName) {
   // Define component backup logic
   const backupQueries = {
     schema_inventory: `
-      SELECT COUNT(*) as count, pg_total_relation_size('schema_inventory') as size
-      FROM schema_inventory
+      SELECT COUNT(*) as count, 0::BIGINT as size
+      FROM information_schema.tables
+      WHERE table_schema = current_schema()
     `,
     job_registry: `
       SELECT
         COUNT(DISTINCT job_name) as count,
-        pg_total_relation_size('job_registry') +
-        pg_total_relation_size('job_lock_tracking') +
-        pg_total_relation_size('job_sla_metrics') as size
+        COALESCE(pg_total_relation_size(to_regclass('job_registry')), 0) +
+        COALESCE(pg_total_relation_size(to_regclass('job_lock_tracking')), 0) +
+        COALESCE(pg_total_relation_size(to_regclass('job_sla_metrics')), 0) as size
       FROM job_registry
     `,
     retry_engine: `
       SELECT
         COUNT(*) as count,
-        pg_total_relation_size('retry_attempts') +
-        pg_total_relation_size('quarantine_queue') +
-        pg_total_relation_size('recovery_operations') as size
+        COALESCE(pg_total_relation_size(to_regclass('retry_attempts')), 0) +
+        COALESCE(pg_total_relation_size(to_regclass('quarantine_queue')), 0) +
+        COALESCE(pg_total_relation_size(to_regclass('recovery_operations')), 0) as size
       FROM retry_attempts
     `,
     outbox_processor: `
       SELECT
         COUNT(*) as count,
-        pg_total_relation_size('outbox_events') +
-        pg_total_relation_size('outbox_delivery_stats') as size
+        COALESCE(pg_total_relation_size(to_regclass('outbox_events')), 0) +
+        COALESCE(pg_total_relation_size(to_regclass('outbox_delivery_stats')), 0) as size
       FROM outbox_events
     `
   };
@@ -181,8 +186,8 @@ async function backupComponent(client, snapshotId, componentName) {
   }
 
   const result = await client.query(query);
-  const rowCount = result.rows[0]?.count || 0;
-  const sizeBytes = result.rows[0]?.size || 0;
+  const rowCount = toNumber(result.rows[0]?.count);
+  const sizeBytes = toNumber(result.rows[0]?.size);
 
   // Calculate checksum
   const checksum = crypto
@@ -268,7 +273,7 @@ async function createIncrementalBackup(config = {}) {
 
     const changesResult = await db.pool.query(changesQuery, [lastBackupTime]);
     const totalChanges = Object.values(changesResult.rows[0]).reduce(
-      (a, b) => a + (b || 0),
+      (a, b) => a + toNumber(b),
       0
     );
 

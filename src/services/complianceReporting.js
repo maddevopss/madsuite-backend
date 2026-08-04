@@ -336,7 +336,7 @@ async function exportForLitigation(startDate, endDate, affectedResources = {}) {
         ec.chain_valid,
         ec.chain_hash,
         es.verified as signature_verified,
-        ch.hold_id
+        ee.hold_id
       FROM evidence_entries ee
       LEFT JOIN evidence_chains ec ON ec.entry_id = ee.id
       LEFT JOIN evidence_signatures es ON es.entry_id = ee.id
@@ -440,18 +440,23 @@ async function verifyChainOfCustody(entryId) {
         ec.chain_valid,
         ec.chain_verified_at,
         es.verified as signature_verified,
-        es.signed_at,
+        es.signature_timestamp as signed_at,
         es.signer_id
       FROM evidence_entries ee
       LEFT JOIN evidence_chains ec ON ec.entry_id = ee.id
       LEFT JOIN evidence_signatures es ON es.entry_id = ee.id
-      WHERE ee.id = $1
+      WHERE ee.id::TEXT = $1
     `;
 
     const entryResult = await db.pool.query(entryQuery, [entryId]);
 
     if (entryResult.rows.length === 0) {
-      return { verified: false, reason: "entry_not_found" };
+      return {
+        entry_id: entryId,
+        verified: false,
+        chain_of_custody_valid: false,
+        reason: "entry_not_found"
+      };
     }
 
     const entry = entryResult.rows[0];
@@ -466,7 +471,7 @@ async function verifyChainOfCustody(entryId) {
         accessed_at,
         ip_address
       FROM evidence_access_log
-      WHERE accessed_entry_id = $1
+      WHERE accessed_entry_id::TEXT = $1
       ORDER BY accessed_at ASC
     `;
 
@@ -496,7 +501,12 @@ async function verifyChainOfCustody(entryId) {
     };
   } catch (error) {
     console.error("Error verifying chain of custody:", error);
-    return { verified: false, error: error.message };
+    return {
+      entry_id: entryId,
+      verified: false,
+      chain_of_custody_valid: false,
+      error: error.message
+    };
   }
 }
 

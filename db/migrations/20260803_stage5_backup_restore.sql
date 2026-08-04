@@ -101,7 +101,7 @@ CREATE INDEX IF NOT EXISTS idx_backup_verifications_status ON backup_verificatio
 -- Table for restore operations
 CREATE TABLE IF NOT EXISTS restore_operations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  source_snapshot_id UUID NOT NULL REFERENCES backup_snapshots(id),
+  source_snapshot_id UUID NOT NULL REFERENCES backup_snapshots(id) ON DELETE CASCADE,
   target_environment VARCHAR(50) NOT NULL,  -- 'staging', 'production', 'dev', 'recovery'
 
   -- Operation tracking

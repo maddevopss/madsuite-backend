@@ -277,11 +277,14 @@ SELECT
   SUM(CASE WHEN ee.archived = true THEN 1 ELSE 0 END) as archived_count,
   SUM(CASE WHEN ee.on_hold = true THEN 1 ELSE 0 END) as on_hold_count,
   MAX(ee.event_timestamp) as latest_entry,
-  CASE WHEN ea.expiry_date IS NOT NULL THEN ea.expiry_date ELSE 'indefinite' END as retention_until
+  COALESCE(ea.expiry_date::TEXT, 'indefinite') as retention_until
 FROM evidence_entries ee
 LEFT JOIN evidence_archival ea ON ea.id = (
   SELECT id FROM evidence_archival
-  WHERE ee.id = ANY(CAST(ea.entries_archived AS UUID[]))
+  WHERE ee.id IN (
+    SELECT value::UUID
+    FROM jsonb_array_elements_text(COALESCE(ea.entries_archived, '[]'::jsonb))
+  )
   ORDER BY archive_date DESC LIMIT 1
 )
 GROUP BY COALESCE(ea.retention_category, 'active'), ea.expiry_date;

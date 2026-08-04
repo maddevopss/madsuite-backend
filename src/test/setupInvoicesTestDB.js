@@ -9,6 +9,7 @@ require("dotenv").config({
 });
 
 const TEST_DB_NAME = process.env.TEST_DB_NAME || "madsuite_test";
+const DEFAULT_TEST_ORG_ID = Number(process.env.TEST_ORG_ID || 1);
 const DEBUG_SETUP = process.env.BACKEND_TEST_SETUP_DEBUG === "1";
 const DEBUG_LOG_FILE = path.join(require("os").tmpdir(), "madsuite-backend-test-setup.log");
 
@@ -173,8 +174,8 @@ async function applySchemaToTestDatabase() {
 
 async function ensureE2EOrganisation(client) {
   const result = await client.query(
-    `INSERT INTO organisations (id, nom) VALUES ($1, 'MADSuite Org') ON CONFLICT DO NOTHING`,
-    [process.env.TEST_ORG_ID],
+    `INSERT INTO organisations (id, nom) VALUES ($1, 'MADSuite Org') ON CONFLICT (id) DO NOTHING RETURNING id`,
+    [DEFAULT_TEST_ORG_ID],
   );
 
   // Activer tous les modules pour l'organisation de test
@@ -182,11 +183,9 @@ async function ensureE2EOrganisation(client) {
   for (const mod of modules) {
     await client.query(
       `INSERT INTO organisation_modules (organisation_id, module_key, is_active) VALUES ($1, $2, true) ON CONFLICT (organisation_id, module_key) DO UPDATE SET is_active = true`,
-      [process.env.TEST_ORG_ID, mod]
+      [DEFAULT_TEST_ORG_ID, mod]
     );
   }
-
-  const hash = await bcrypt.hash(process.env.TEST_USER_PASSWORD, 10);
 
   if (result.rows[0]?.id) {
     return result.rows[0].id;
@@ -200,7 +199,7 @@ async function ensureE2EOrganisation(client) {
     ORDER BY id
     LIMIT 1
     `,
-    ["MADSuite E2E"],
+    ["MADSuite Org"],
   );
 
   if (existing.rows[0]?.id) {
@@ -225,11 +224,8 @@ async function ensureE2EOrganisation(client) {
 
 async function seedE2EUsers(client) {
    const organisationId = await ensureE2EOrganisation(client);
-   const adminEmail = process.env.E2E_ADMIN_EMAIL || process.env.TEST_USER_EMAIL;
-   const password = process.env.E2E_PASSWORD || process.env.TEST_USER_PASSWORD;
-   if (!adminEmail || !password) {
-     throw new Error("TEST_USER_EMAIL et TEST_USER_PASSWORD sont requis pour initialiser les utilisateurs E2E.");
-   }
+   const adminEmail = process.env.E2E_ADMIN_EMAIL || process.env.TEST_USER_EMAIL || "admin@test.com";
+   const password = process.env.E2E_PASSWORD || process.env.TEST_USER_PASSWORD || "password123";
    
    debugLog(`seedE2EUsers: adminEmail=${adminEmail}, password=${password}`);
    
@@ -239,8 +235,8 @@ async function seedE2EUsers(client) {
    let revenueCoreOrgId = organisationId;
    if (adminEmail === "revenue-e2e@test.com") {
      const revenueCoreOrgResult = await client.query(
-       `INSERT INTO organisations (nom) VALUES ($1) ON CONFLICT DO NOTHING RETURNING id`,
-       ["Revenue Core E2E"]
+       `INSERT INTO organisations (id, nom) VALUES ($1, $2) ON CONFLICT (id) DO NOTHING RETURNING id`,
+       [DEFAULT_TEST_ORG_ID + 1, "Revenue Core E2E"]
      );
      if (revenueCoreOrgResult.rows[0]?.id) {
        revenueCoreOrgId = revenueCoreOrgResult.rows[0].id;

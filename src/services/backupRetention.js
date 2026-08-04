@@ -7,6 +7,10 @@
 
 const db = require("../../db");
 
+function toNumber(value) {
+  return Number(value || 0);
+}
+
 /**
  * Get retention policy for backup type
  */
@@ -190,7 +194,7 @@ async function applyPolicyForType(policy) {
       `;
 
       const sizeResult = await db.pool.query(sizeQuery, [backup_type]);
-      const totalSizeBytes = sizeResult.rows[0]?.total_size || 0;
+      const totalSizeBytes = toNumber(sizeResult.rows[0]?.total_size);
       const totalSizeGb = totalSizeBytes / (1024 * 1024 * 1024);
 
       if (totalSizeGb > size_quota_gb) {
@@ -229,7 +233,7 @@ async function applyPolicyForType(policy) {
             reason: "size_quota_exceeded"
           });
 
-          freedSize += backup.total_size_bytes || 0;
+          freedSize += toNumber(backup.total_size_bytes);
         }
       }
     }
@@ -270,13 +274,13 @@ async function getStorageUsage() {
 
     const usage = result.rows.map(row => ({
       backup_type: row.backup_type,
-      backup_count: row.backup_count,
-      total_size_bytes: row.total_size_bytes || 0,
-      total_size_gb: ((row.total_size_bytes || 0) / (1024 * 1024 * 1024)).toFixed(2),
-      total_rows: row.total_rows || 0
+      backup_count: toNumber(row.backup_count),
+      total_size_bytes: toNumber(row.total_size_bytes),
+      total_size_gb: (toNumber(row.total_size_bytes) / (1024 * 1024 * 1024)).toFixed(2),
+      total_rows: toNumber(row.total_rows)
     }));
 
-    const totalSize = usage.reduce((sum, u) => sum + (u.total_size_bytes || 0), 0);
+    const totalSize = usage.reduce((sum, u) => sum + toNumber(u.total_size_bytes), 0);
 
     return {
       by_type: usage,
@@ -347,7 +351,7 @@ async function deleteBackupsOlderThan(days) {
     const result = await db.pool.query(query);
 
     const freedSpace = result.rows.reduce(
-      (sum, row) => sum + (row.total_size_bytes || 0),
+      (sum, row) => sum + toNumber(row.total_size_bytes),
       0
     );
 

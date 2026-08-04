@@ -91,7 +91,7 @@ async function checkAccessPermission(userId, entryId, accessType = "view") {
       SELECT ee.id, ee.on_hold, ch.hold_type
       FROM evidence_entries ee
       LEFT JOIN compliance_holds ch ON ee.hold_id = ch.id
-      WHERE ee.id = $1
+      WHERE ee.id::TEXT = $1
     `;
 
     const entryResult = await db.pool.query(entryQuery, [entryId]);
@@ -179,7 +179,7 @@ async function getAccessLog(entryId) {
         user_agent,
         accessed_at
       FROM evidence_access_log
-      WHERE accessed_entry_id = $1
+      WHERE accessed_entry_id::TEXT = $1
       ORDER BY accessed_at DESC
     `;
 

@@ -10,6 +10,17 @@
 
 const db = require("../../db");
 
+const STAGE5_COMPONENTS = [
+  "schema_inventory",
+  "job_registry",
+  "retry_engine",
+  "outbox_processor"
+];
+
+function toNumber(value) {
+  return Number(value || 0);
+}
+
 /**
  * Perform full restore from snapshot to target environment
  */
@@ -89,17 +100,10 @@ async function performFullRestore(snapshotId, targetEnv, config = {}) {
     ]);
 
     // Restore in dependency order
-    const components = [
-      "schema_inventory",
-      "job_registry",
-      "retry_engine",
-      "outbox_processor"
-    ];
-
     let totalRowsRestored = 0;
     const errors = [];
 
-    for (const component of components) {
+    for (const component of STAGE5_COMPONENTS) {
       try {
         const result = await restoreComponent(client, snapshotId, component);
         totalRowsRestored += result.rowsRestored;
@@ -133,7 +137,7 @@ async function performFullRestore(snapshotId, targetEnv, config = {}) {
       errors.length === 0 ? "completed" : "partial",
       endTime,
       totalRowsRestored,
-      components.length,
+      STAGE5_COMPONENTS.length,
       errors.length,
       JSON.stringify(errors),
       verifyAfterRestore
@@ -149,7 +153,7 @@ async function performFullRestore(snapshotId, targetEnv, config = {}) {
       target_environment: targetEnv,
       status: errors.length === 0 ? "completed" : "partial",
       total_rows_restored: totalRowsRestored,
-      components_restored: components.length,
+      components_restored: STAGE5_COMPONENTS.length,
       errors,
       duration_ms: duration,
       safety_snapshot_id: safetySnapshotId,
@@ -194,7 +198,7 @@ async function restoreComponent(client, snapshotId, componentName) {
   `;
 
   const result = await client.query(query, [snapshotId, componentName]);
-  const rowsRestored = result.rows[0]?.row_count || 0;
+  const rowsRestored = toNumber(result.rows[0]?.row_count);
 
   return { rowsRestored, component: componentName };
 }
@@ -390,7 +394,7 @@ async function verifyRestoration(restoreId) {
     // Check row counts
     const rowCountQuery = `
       SELECT
-        (SELECT COUNT(*) FROM schema_inventory) as schema_inv_rows,
+        (SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = current_schema()) as schema_inv_rows,
         (SELECT COUNT(*) FROM job_registry) as job_registry_rows,
         (SELECT COUNT(*) FROM retry_attempts) as retry_rows,
         (SELECT COUNT(*) FROM quarantine_queue) as quarantine_rows
@@ -399,7 +403,7 @@ async function verifyRestoration(restoreId) {
     const rowCountResult = await db.pool.query(rowCountQuery);
     verifications.push({
       check: "row_count_verification",
-      passed: Object.values(rowCountResult.rows[0]).some(v => v > 0),
+      passed: Object.values(rowCountResult.rows[0]).some(v => toNumber(v) > 0),
       details: rowCountResult.rows[0]
     });
 
