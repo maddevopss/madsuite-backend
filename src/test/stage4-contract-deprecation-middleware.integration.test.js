@@ -107,6 +107,7 @@ describe('PR G: Contract Deprecation Middleware Integration', () => {
     });
 
     it('should call original json with response data', () => {
+      const originalJson = mockRes.json;
       const middleware = contractDeprecationMiddleware();
       middleware(mockReq, mockRes, mockNext);
 
@@ -115,10 +116,10 @@ describe('PR G: Contract Deprecation Middleware Integration', () => {
         meta: { contract: 'integration-list@1' },
       };
 
-      const returnValue = mockRes.json(response);
+      mockRes.json(response);
 
-      // Original json should be called
-      expect(mockRes.json.mock.results[0]).toBeDefined();
+      // The original json delegate must receive the response.
+      expect(originalJson).toHaveBeenCalledWith(response);
     });
   });
 
