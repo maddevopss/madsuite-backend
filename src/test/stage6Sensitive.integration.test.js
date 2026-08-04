@@ -27,10 +27,10 @@ describe("Stage 6: Sensitive Transition Security", () => {
     // Setup test organization and users
     try {
       await db.pool.query(
-        `INSERT INTO organizations (id, name, slug)
-         VALUES ($1, $2, $3)
+        `INSERT INTO organizations (id, name)
+         VALUES ($1, $2)
          ON CONFLICT (id) DO NOTHING`,
-        [testOrgId, "Test Org", "test-org"]
+        [testOrgId, "Test Org"]
       );
 
       // Setup role definitions
