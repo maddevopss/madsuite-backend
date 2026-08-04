@@ -521,3 +521,5 @@ COMMENT ON TABLE twofactor_configuration IS 'Configure 2FA methods per user (TOT
 COMMENT ON TABLE password_policies IS 'Define password requirements and expiry policies per organization';
 COMMENT ON TABLE password_history IS 'Track password changes and resets with history validation';
 COMMENT ON TABLE sso_configurations IS 'Configure single sign-on providers (SAML, OAuth, OIDC, LDAP) per organization';
+-- Keep the legacy British-spelling scope populated for pre-existing user_sessions schemas.
+ALTER TABLE user_sessions ADD COLUMN IF NOT EXISTS organisation_id VARCHAR(255);
