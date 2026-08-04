@@ -33,27 +33,41 @@ describe("Stage 6: Sensitive Transition Security", () => {
         [testOrgId, "Test Org"]
       );
 
+      // Remove stale assignments from previous runs so role resolution is deterministic.
+      await db.pool.query(
+        `DELETE FROM user_role_assignments
+         WHERE organization_id = $1
+           AND user_id IN ($2, $3, $4)`,
+        [testOrgId, testUserId, testUserIdAdmin, testUserIdRegular]
+      );
+
       // Setup role definitions
       const approverRole = await db.pool.query(
-        `INSERT INTO role_definitions (organization_id, role_name, role_type)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (role_name) DO UPDATE SET role_name = EXCLUDED.role_name
+        `INSERT INTO role_definitions (organization_id, role_name, display_name, role_type)
+         VALUES ($1, $2, $2, $3)
+         ON CONFLICT (role_name) DO UPDATE SET
+           display_name = EXCLUDED.display_name,
+           role_type = EXCLUDED.role_type
          RETURNING id`,
         [testOrgId, "approver", "organization"]
       );
 
       const adminRole = await db.pool.query(
-        `INSERT INTO role_definitions (organization_id, role_name, role_type)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (role_name) DO UPDATE SET role_name = EXCLUDED.role_name
+        `INSERT INTO role_definitions (organization_id, role_name, display_name, role_type)
+         VALUES ($1, $2, $2, $3)
+         ON CONFLICT (role_name) DO UPDATE SET
+           display_name = EXCLUDED.display_name,
+           role_type = EXCLUDED.role_type
          RETURNING id`,
         [testOrgId, "admin", "system"]
       );
 
       const editorRole = await db.pool.query(
-        `INSERT INTO role_definitions (organization_id, role_name, role_type)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (role_name) DO UPDATE SET role_name = EXCLUDED.role_name
+        `INSERT INTO role_definitions (organization_id, role_name, display_name, role_type)
+         VALUES ($1, $2, $2, $3)
+         ON CONFLICT (role_name) DO UPDATE SET
+           display_name = EXCLUDED.display_name,
+           role_type = EXCLUDED.role_type
          RETURNING id`,
         [testOrgId, "editor", "organization"]
       );
