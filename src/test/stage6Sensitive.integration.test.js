@@ -94,7 +94,7 @@ describe("Stage 6: Sensitive Transition Security", () => {
         [testUserIdRegular, editorRole.rows[0]?.id || "role-editor", testOrgId]
       );
     } catch (error) {
-      console.log("Setup warning:", error.message);
+      throw new Error(`Stage 6 fixture setup failed: ${error.message}`, { cause: error });
     }
   });
 
