@@ -40,8 +40,8 @@ async function collectRetryMetrics() {
       MIN(backoff_seconds) as min_backoff_seconds,
       MAX(backoff_seconds) as max_backoff_seconds,
       jsonb_object_agg(error_classification, error_count) FILTER (WHERE error_classification IS NOT NULL) as error_breakdown,
-      (array_agg(error_code ORDER BY error_code_count DESC))[1] as top_error,
-      (array_agg(error_code_count ORDER BY error_code_count DESC))[1] as top_error_count
+      (array_agg(error_code ORDER BY error_code_count DESC LIMIT 1))[1] as top_error,
+      (array_agg(error_code_count ORDER BY error_code_count DESC LIMIT 1))[1] as top_error_count
     FROM (
       SELECT
         attempt_at,
@@ -115,8 +115,8 @@ async function collectQuarantineMetrics() {
       COUNT(DISTINCT r.id) FILTER (WHERE r.status = 'failed') as recovery_failures,
       AVG(q.recovery_attempts) as avg_recovery_attempts,
       jsonb_object_agg(q.work_type, work_type_count) FILTER (WHERE q.work_type IS NOT NULL) as work_type_breakdown,
-      (array_agg(q.work_type ORDER BY work_type_count DESC))[1] as top_work_type,
-      (array_agg(work_type_count ORDER BY work_type_count DESC))[1] as top_work_type_count
+      (array_agg(q.work_type ORDER BY work_type_count DESC LIMIT 1))[1] as top_work_type,
+      (array_agg(work_type_count ORDER BY work_type_count DESC LIMIT 1))[1] as top_work_type_count
     FROM quarantine_queue q
     LEFT JOIN recovery_operations r ON r.quarantine_id = q.id
     LEFT JOIN LATERAL (
@@ -187,8 +187,8 @@ async function collectDeliveryMetrics() {
       ROUND(100.0 * COUNT(*) FILTER (WHERE o.status = 'completed') / NULLIF(COUNT(*), 0))::DECIMAL as success_rate_percent,
       ROUND(100.0 * COUNT(*) FILTER (WHERE o.delivery_attempts > 1) / NULLIF(COUNT(*), 0))::DECIMAL as retry_rate_percent,
       jsonb_object_agg(error_type, error_count) FILTER (WHERE error_type IS NOT NULL) as error_breakdown,
-      (array_agg(o.last_delivery_error ORDER BY error_occurrence DESC))[1] as top_error,
-      (array_agg(error_occurrence ORDER BY error_occurrence DESC))[1]::INT as top_error_count
+      (array_agg(o.last_delivery_error ORDER BY error_occurrence DESC LIMIT 1))[1] as top_error,
+      (array_agg(error_occurrence ORDER BY error_occurrence DESC LIMIT 1))[1]::INT as top_error_count
     FROM outbox_events o
     LEFT JOIN LATERAL (
       SELECT o.last_delivery_error as error_type, COUNT(*) as error_occurrence
@@ -249,21 +249,23 @@ async function collectJobMetrics() {
       EXTRACT(HOUR FROM CURRENT_TIMESTAMP)::INT as hour,
       j.job_name,
       j.total_executions,
-      j.successful_executions,
-      j.failed_executions,
-      j.timeout_executions,
+      j.successful,
+      j.failed,
+      j.timed_out,
       j.avg_duration_ms,
       j.min_duration_ms,
       j.max_duration_ms,
-      j.p95_duration_ms,
-      j.p99_duration_ms,
-      COALESCE(j.sla_met, j.total_executions > 0 AND (j.failed_executions + j.timeout_executions) = 0) as sla_met,
-      COALESCE(j.sla_breaches, j.failed_executions + j.timeout_executions, 0) as sla_breaches,
+      PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY j.avg_duration_ms)::INT as p95_duration_ms,
+      PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY j.avg_duration_ms)::INT as p99_duration_ms,
+      j.total_executions > 0 AND (j.failed + j.timed_out) = 0 as sla_met,
+      COALESCE(j.failed + j.timed_out, 0) as sla_breaches,
       0 as max_consecutive_failures,
       0 as consecutive_failures_at_end
     FROM job_sla_metrics j
     WHERE j.execution_date = CURRENT_DATE
       AND EXTRACT(HOUR FROM CURRENT_TIMESTAMP)::INT >= 0
+    GROUP BY j.job_name, j.total_executions, j.successful, j.failed, j.timed_out,
+             j.avg_duration_ms, j.min_duration_ms, j.max_duration_ms
     ON CONFLICT (date, hour, job_name) DO UPDATE SET
       total_executions = EXCLUDED.total_executions,
       successful = EXCLUDED.successful,
@@ -314,8 +316,8 @@ async function collectSchemaMetrics() {
       COUNT(*) FILTER (WHERE is_deprecated = true) as deprecations,
       COUNT(*) FILTER (WHERE change_type IN ('column_added', 'index_added', 'constraint_added')) as additions,
       AVG(execution_time_ms) as avg_migration_time_ms,
-      (array_agg(migration_name ORDER BY execution_time_ms DESC))[1] as slowest_migration_name,
-      (array_agg(execution_time_ms ORDER BY execution_time_ms DESC))[1]::INT as slowest_migration_time_ms,
+      (array_agg(migration_name ORDER BY execution_time_ms DESC LIMIT 1))[1] as slowest_migration_name,
+      (array_agg(execution_time_ms ORDER BY execution_time_ms DESC LIMIT 1))[1]::INT as slowest_migration_time_ms,
       0 as schema_validity_issues,
       0 as unindexed_foreign_keys
     FROM schema_change_log
@@ -361,7 +363,8 @@ async function runAllMetrics() {
     results.push(await collectDeliveryMetrics());
     results.push(await collectJobMetrics());
 
-    // Daily collection (runs every hour but only inserts/updates for today)
+    // Collect every component on every run so the aggregate is complete.
+    // The daily upsert remains idempotent for the current date.
     results.push(await collectSchemaMetrics());
 
     const duration = Date.now() - start;

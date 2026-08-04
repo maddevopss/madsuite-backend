@@ -11,15 +11,7 @@
  * - Triggers and their timing
  */
 
-async function getSchemaInventory(providedClient = null) {
-  let client = providedClient;
-  let shouldRelease = false;
-
-  if (!client) {
-    client = await require("../../db").pool.connect();
-    shouldRelease = true;
-  }
-
+async function getSchemaInventory(client) {
   const inventory = {
     timestamp: new Date().toISOString(),
     tables: {},
@@ -63,10 +55,6 @@ async function getSchemaInventory(providedClient = null) {
 
   } catch (err) {
     throw new Error(`Schema inventory error: ${err.message}`, { cause: err });
-  } finally {
-    if (shouldRelease) {
-      client.release();
-    }
   }
 
   return inventory;
@@ -243,14 +231,25 @@ async function getAllSequences(client) {
       s.maximum_value,
       s.increment,
       s.cycle_option,
-      tbl.relname as table_name,
-      col.attname as column_name
+      ns.nspname AS sequence_schema,
+      owner_table.relname AS table_name,
+      owner_column.attname AS column_name
     FROM information_schema.sequences s
-    LEFT JOIN pg_class seq ON seq.relname = s.sequence_name AND seq.relkind = 'S'
-    LEFT JOIN pg_namespace ns ON ns.oid = seq.relnamespace AND ns.nspname = s.sequence_schema
-    LEFT JOIN pg_depend dep ON dep.objid = seq.oid AND dep.deptype = 'a'
-    LEFT JOIN pg_class tbl ON tbl.oid = dep.refobjid
-    LEFT JOIN pg_attribute col ON col.attrelid = tbl.oid AND col.attnum = dep.refobjsubid
+    JOIN pg_namespace ns
+      ON ns.nspname = s.sequence_schema
+    JOIN pg_class seq
+      ON seq.relname = s.sequence_name
+      AND seq.relnamespace = ns.oid
+      AND seq.relkind = 'S'
+    LEFT JOIN pg_depend dep
+      ON dep.objid = seq.oid
+      AND dep.deptype IN ('a', 'i')
+    LEFT JOIN pg_class owner_table
+      ON owner_table.oid = dep.refobjid
+      AND owner_table.relkind IN ('r', 'p')
+    LEFT JOIN pg_attribute owner_column
+      ON owner_column.attrelid = owner_table.oid
+      AND owner_column.attnum = dep.refobjsubid
     WHERE s.sequence_schema = current_schema()
     ORDER BY s.sequence_name
   `);
@@ -261,9 +260,9 @@ async function getAllSequences(client) {
       sequences[row.sequence_name] = {
         name: row.sequence_name,
         type: row.data_type,
-        startValue: Number(row.start_value),
-        minValue: Number(row.minimum_value),
-        maxValue: Number(row.maximum_value),
+        startValue: row.start_value,
+        minValue: row.minimum_value,
+        maxValue: row.maximum_value,
         increment: Number(row.increment),
         cycle: row.cycle_option === 'YES',
         ownedBy: null
@@ -285,6 +284,7 @@ async function getAllRoles(client) {
       r.rolcanlogin,
       r.rolcreatedb,
       r.rolcreaterole,
+      r.rolcanlogin,
       r.rolsuper,
       array_agg(DISTINCT m.rolname) FILTER (WHERE m.rolname IS NOT NULL) as member_of
     FROM pg_roles r

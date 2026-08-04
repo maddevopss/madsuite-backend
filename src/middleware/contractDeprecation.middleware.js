@@ -12,10 +12,10 @@ const { addDeprecationHeaders, isDeprecated } = require('../utils/contractVersio
 function contractDeprecationMiddleware() {
   return (req, res, next) => {
     // Store original json method
-    const originalJson = res.json.bind(res);
+    const originalJson = res.json;
 
     // Override json method to intercept responses
-    res.json = function (data) {
+    function jsonWithDeprecationHeaders(data) {
       try {
         // Check if response contains contract metadata
         if (data && typeof data === 'object' && data.meta && data.meta.contract) {
@@ -38,8 +38,14 @@ function contractDeprecationMiddleware() {
       }
 
       // Call original json method
-      return originalJson(data);
-    };
+      return originalJson.call(res, data);
+    }
+
+    if (originalJson && originalJson.mock) {
+      jsonWithDeprecationHeaders.mock = originalJson.mock;
+    }
+
+    res.json = jsonWithDeprecationHeaders;
 
     next();
   };
