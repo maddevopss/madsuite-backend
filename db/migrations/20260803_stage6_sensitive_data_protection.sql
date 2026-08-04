@@ -97,6 +97,9 @@ CREATE TABLE IF NOT EXISTS encryption_keys (
   CONSTRAINT fk_key_org FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE
 );
 
+ALTER TABLE encryption_keys
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP;
+
 CREATE INDEX IF NOT EXISTS idx_encryption_keys_active ON encryption_keys(is_active);
 CREATE INDEX IF NOT EXISTS idx_encryption_keys_retired ON encryption_keys(is_retired);
 CREATE INDEX IF NOT EXISTS idx_encryption_keys_rotation ON encryption_keys(next_rotation_at);
@@ -137,6 +140,9 @@ CREATE TABLE IF NOT EXISTS data_retention_policies (
 
   CONSTRAINT fk_retention_policy_org FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_retention_policies_policy_name_unique
+  ON data_retention_policies(policy_name);
 
 CREATE INDEX IF NOT EXISTS idx_retention_policies_table ON data_retention_policies(table_name);
 CREATE INDEX IF NOT EXISTS idx_retention_policies_active ON data_retention_policies(is_active);
