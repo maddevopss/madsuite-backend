@@ -469,11 +469,10 @@ async function cleanupRetryAttempts(retentionDays = 30) {
     const result = await db.pool.query(`
       DELETE FROM retry_attempts
       WHERE created_at < CURRENT_TIMESTAMP - ($1 * INTERVAL '1 day')
-        AND status IN ('success', 'failed_permanent')
-      RETURNING COUNT(*) as deleted
+      RETURNING id
     `, [retentionDays]);
 
-    const deleted = result.rows[0]?.deleted || 0;
+    const deleted = result.rowCount || 0;
     logger.info(`Cleaned up ${deleted} old retry attempts`);
   } catch (error) {
     logger.error("Error cleaning up retry attempts:", error);
