@@ -403,3 +403,6 @@ COMMENT ON TABLE dependency_locks IS 'Manage dependency lock files to ensure rep
 COMMENT ON TABLE software_bill_of_materials IS 'Generate and track SBOM for supply chain security and license compliance';
 COMMENT ON TABLE build_policies IS 'Define build requirements and security policies per organization';
 COMMENT ON TABLE build_policy_violations IS 'Record and track policy violations with resolution tracking';
+-- Existing installations may have created this table before updated_at was introduced.
+ALTER TABLE dependency_vulnerabilities
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP;
