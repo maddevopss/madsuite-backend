@@ -86,10 +86,21 @@ describe("Journal d'audit de l'intelligence — traçabilité réelle (Étage 9 
   });
 
   test("génération réelle journalisée : champs minimisés (aucun texte métier), corrélation à l'incident", async () => {
+    // ai_use_cases est un catalogue PLATEFORME sans organisation_id — d'autres
+    // fichiers de cette suite (ai-context, ai-recommendations) seedent aussi
+    // (id,version)=('incident-known-error-suggestion','1.0'), avec
+    // risk_level='low'. En suite complète, l'ORDRE d'exécution des fichiers
+    // n'est pas garanti : un simple "DO NOTHING" laisserait potentiellement
+    // en place la ligne 'low' d'un autre fichier, rendant ce test
+    // (qui a besoin de risk_level='critical') dépendant de cet ordre. On
+    // force donc explicitement risk_level ici, juste avant de générer la
+    // recommandation dans ce même test — aucune écriture concurrente d'un
+    // autre fichier ne peut s'intercaler entre les deux (un seul fichier
+    // Jest à la fois par worker).
     await db.pool.query(
       `INSERT INTO ai_use_cases (id, version, owner, status, autonomy, risk_level, data_classes, description)
        VALUES ('incident-known-error-suggestion','1.0','operations-lead','approved','advisory','critical','["operational_incidents"]'::jsonb,'Test')
-       ON CONFLICT (id, version) DO NOTHING`,
+       ON CONFLICT (id, version) DO UPDATE SET risk_level=EXCLUDED.risk_level, status=EXCLUDED.status`,
     );
     await activateForOrg(app, orgId, userId, "incident-known-error-suggestion");
 
