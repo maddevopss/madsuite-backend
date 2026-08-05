@@ -3,6 +3,7 @@ const db = require('../../../db');
 const { requireOrganisation } = require('../../middleware/organization.middleware');
 const { organisationValue } = require('../../utils/organisationScope');
 const { executeTransaction, evaluatePolicy } = require('../../services/business/transaction-engine.service');
+const { checkBlockClosure } = require('../../utils/blockClosureValidation');
 require('../../services/business/advanced-financial-management-transaction.service');
 
 const router = express.Router();
@@ -39,8 +40,9 @@ router.post('/budgets', (req, res, next) => {
   }, 201);
 });
 router.post('/budgets/:id/approve', (req,res,next) => handle(res,next,() => transactionalWrite(req,'finance.budget.approve',null,{...req.body,budgetId:req.params.id},async ({ client, organisationId, idempotencyKey }) => {
-  const budget = (await client.query('SELECT id,owner_user_id,total_revenue,total_expense,allocations,assumptions FROM financial_budgets WHERE id=$1 AND organisation_id=$2 FOR UPDATE',[req.params.id,organisationId])).rows[0];
+  const budget = (await client.query('SELECT id,status,owner_user_id,total_revenue,total_expense,allocations,assumptions FROM financial_budgets WHERE id=$1 AND organisation_id=$2 FOR UPDATE',[req.params.id,organisationId])).rows[0];
   if (!budget) throw notFound('finance.budget_not_found');
+  checkBlockClosure(budget, { finalStates: ['approved'] });
   const input = { ...req.body, budgetId:req.params.id, ownerUserId:budget.owner_user_id, approvedByUserId:req.body.approvedByUserId||actor(req), totalRevenue:budget.total_revenue, totalExpense:budget.total_expense, allocations:budget.allocations, assumptions:budget.assumptions };
   const decision = await evaluatePolicy({ policy:'finance.budget.approve@1', input, idempotencyKey, organisationId, actorUserId:actor(req), client });
   if (!decision.allowed) deny(decision);
@@ -56,8 +58,9 @@ router.post('/forecasts', (req, res, next) => {
   }, 201);
 });
 router.post('/forecasts/:id/publish', (req,res,next) => handle(res,next,() => transactionalWrite(req,'finance.forecast.publish',null,{...req.body,forecastId:req.params.id},async ({ client, organisationId, idempotencyKey }) => {
-  const forecast = (await client.query('SELECT id,prepared_by_user_id,period_start,period_end,assumptions FROM financial_forecasts WHERE id=$1 AND organisation_id=$2 FOR UPDATE',[req.params.id,organisationId])).rows[0];
+  const forecast = (await client.query('SELECT id,status,prepared_by_user_id,period_start,period_end,assumptions FROM financial_forecasts WHERE id=$1 AND organisation_id=$2 FOR UPDATE',[req.params.id,organisationId])).rows[0];
   if (!forecast) throw notFound('finance.forecast_not_found');
+  checkBlockClosure(forecast, { finalStates: ['published'] });
   const input = { ...req.body, forecastId:req.params.id, preparedByUserId:forecast.prepared_by_user_id, approvedByUserId:req.body.approvedByUserId||actor(req), periodStart:forecast.period_start, periodEnd:forecast.period_end, assumptions:forecast.assumptions };
   const decision = await evaluatePolicy({ policy:'finance.forecast.publish@1', input, idempotencyKey, organisationId, actorUserId:actor(req), client });
   if (!decision.allowed) deny(decision);
@@ -85,8 +88,9 @@ router.post('/scenarios', (req, res, next) => {
   }, 201);
 });
 router.post('/scenarios/:id/approve', (req,res,next) => handle(res,next,() => transactionalWrite(req,'finance.scenario.approve',null,{...req.body,scenarioId:req.params.id},async ({ client, organisationId, idempotencyKey }) => {
-  const scenario = (await client.query('SELECT id,prepared_by_user_id,assumptions,recommendations FROM financial_scenarios WHERE id=$1 AND organisation_id=$2 FOR UPDATE',[req.params.id,organisationId])).rows[0];
+  const scenario = (await client.query('SELECT id,status,prepared_by_user_id,assumptions,recommendations FROM financial_scenarios WHERE id=$1 AND organisation_id=$2 FOR UPDATE',[req.params.id,organisationId])).rows[0];
   if (!scenario) throw notFound('finance.scenario_not_found');
+  checkBlockClosure(scenario, { finalStates: ['approved'] });
   const input = { ...req.body, scenarioId:req.params.id, preparedByUserId:scenario.prepared_by_user_id, approvedByUserId:req.body.approvedByUserId||actor(req), assumptions:scenario.assumptions, recommendations:scenario.recommendations };
   const decision = await evaluatePolicy({ policy:'finance.scenario.approve@1', input, idempotencyKey, organisationId, actorUserId:actor(req), client });
   if (!decision.allowed) deny(decision);

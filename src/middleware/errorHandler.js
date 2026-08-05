@@ -26,12 +26,33 @@ function formatBusinessError(err) {
   };
 }
 
+// Violation de contrainte UNIQUE Postgres (ex: rejeu d'une même Idempotency-Key
+// après une interruption réseau, ou double soumission concurrente) : le driver
+// pg expose err.code='23505' et err.constraint. Sans ce mapping, ces erreurs
+// remontaient telles quelles — 500 générique avec le texte brut Postgres
+// (nom de contrainte, structure de table) renvoyé au client. La ligne en
+// double n'est jamais créée (la contrainte l'empêche), mais le client ne peut
+// pas distinguer "conflit attendu, retente en toute sécurité" d'une vraie
+// panne serveur, et le nom interne de la contrainte ne devrait pas fuiter.
+function mapUniqueViolation(err) {
+  if (err?.code !== "23505") return null;
+  const isIdempotencyReplay = typeof err.constraint === "string" && err.constraint.includes("idempotency_key");
+  return {
+    statusCode: 409,
+    code: isIdempotencyReplay ? "IDEMPOTENCY_KEY_ALREADY_USED" : "UNIQUE_CONSTRAINT_VIOLATION",
+    message: isIdempotencyReplay
+      ? "Cette clé d'idempotence a déjà été utilisée pour une requête précédente."
+      : "Cette ressource existe déjà (contrainte d'unicité).",
+  };
+}
+
 // Gestionnaire d'erreurs global Express — à monter en dernier dans server.js
 module.exports = (err, req, res, next) => {
   const isDev = process.env.NODE_ENV !== "production";
-  const status = err.status || err.statusCode || 500;
-  const code = err.apiCode || err.code || (status >= 500 ? "INTERNAL_SERVER_ERROR" : "REQUEST_ERROR");
-  const message = isDev ? err.message || "Erreur serveur" : "Erreur serveur";
+  const uniqueViolation = mapUniqueViolation(err);
+  const status = uniqueViolation?.statusCode || err.status || err.statusCode || 500;
+  const code = uniqueViolation?.code || err.apiCode || err.code || (status >= 500 ? "INTERNAL_SERVER_ERROR" : "REQUEST_ERROR");
+  const message = uniqueViolation?.message || (isDev ? err.message || "Erreur serveur" : "Erreur serveur");
 
   // En production, ne jamais logger le body (potentiellement sensible).
   const logPayload = {

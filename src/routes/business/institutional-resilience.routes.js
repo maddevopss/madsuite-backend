@@ -3,6 +3,7 @@ const db = require('../../../db');
 const { requireOrganisation } = require('../../middleware/organization.middleware');
 const { organisationValue } = require('../../utils/organisationScope');
 const { executeTransaction } = require('../../services/business/transaction-engine.service');
+const { checkBlockClosure } = require('../../utils/blockClosureValidation');
 require('../../services/business/institutional-resilience-transaction.service');
 
 const router = express.Router();
@@ -77,7 +78,12 @@ router.post('/improvements', (req, res, next) => {
     return (await db.query(`INSERT INTO resilience_improvements (organisation_id,lesson_id,title,owner_user_id,due_at,status) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *`, [org(req), req.body.lessonId || null, req.body.title, req.body.ownerUserId, req.body.dueAt || null, req.body.status || 'open'])).rows[0];
   }, 201);
 });
-router.post('/improvements/:id/close', (req, res, next) => handle(res, next, () => transactionalWrite(req, 'resilience.improvement.close', 'resilience.improvement.close', { improvement: req.body }, async ({ client, organisationId }) => (await client.query(`UPDATE resilience_improvements SET status='closed',closure_proof_reference=$1,closed_at=NOW() WHERE id=$2 AND organisation_id=$3 RETURNING *`, [req.body.closureProofReference, req.params.id, organisationId])).rows[0])));
+router.post('/improvements/:id/close', (req, res, next) => handle(res, next, () => transactionalWrite(req, 'resilience.improvement.close', 'resilience.improvement.close', { improvement: req.body }, async ({ client, organisationId }) => {
+  const current = (await client.query('SELECT id,status FROM resilience_improvements WHERE id=$1 AND organisation_id=$2 FOR UPDATE', [req.params.id, organisationId])).rows[0];
+  if (!current) throw notFound('resilience.improvement_not_found');
+  checkBlockClosure(current, { finalStates: ['closed'] });
+  return (await client.query(`UPDATE resilience_improvements SET status='closed',closure_proof_reference=$1,closed_at=NOW() WHERE id=$2 AND organisation_id=$3 RETURNING *`, [req.body.closureProofReference, req.params.id, organisationId])).rows[0];
+})));
 
 router.get('/alerts', (req, res, next) => handle(res, next, async () => (await db.query(`SELECT 'open_major_event' AS alert_type,id,opened_at AS due_at FROM resilience_events WHERE organisation_id=$1 AND status='open' AND severity IN ('high','critical') UNION ALL SELECT 'overdue_improvement',id,due_at FROM resilience_improvements WHERE organisation_id=$1 AND status='open' AND due_at < NOW() ORDER BY due_at`, [org(req)])).rows));
 
