@@ -9,8 +9,21 @@ describe("Ledger append-only PostgreSQL P0", () => {
     const referenceId = `ledger_append_only_${Date.now()}_${Math.random()}`;
     let ledgerEntryId;
 
+    // ledger_entries et ledger_maintenance_audit sont sous FORCE ROW LEVEL
+    // SECURITY (organisation_id) depuis la migration
+    // 20260805_stage6_pr_b_organisation_isolation.sql: ce test réserve un
+    // client dédié et fixe app.current_organisation_id au niveau session
+    // (pas transaction) pour garder des requêtes indépendantes, comme avant
+    // l'ajout de RLS — chaque assertion .rejects doit rester isolée sans
+    // empoisonner les requêtes suivantes.
+    const client = await db.connect();
+
     try {
-      const inserted = await db.query(
+      await client.query("SELECT set_config('app.current_organisation_id', $1, false)", [
+        String(organisation.id),
+      ]);
+
+      const inserted = await client.query(
         `
         INSERT INTO ledger_entries
           (organisation_id, type, amount, currency, reference_type, reference_id)
@@ -22,14 +35,14 @@ describe("Ledger append-only PostgreSQL P0", () => {
       ledgerEntryId = inserted.rows[0].id;
 
       await expect(
-        db.query(`UPDATE ledger_entries SET amount = 999.00 WHERE id = $1`, [ledgerEntryId]),
+        client.query(`UPDATE ledger_entries SET amount = 999.00 WHERE id = $1`, [ledgerEntryId]),
       ).rejects.toMatchObject({ code: "P0001" });
 
       await expect(
-        db.query(`DELETE FROM ledger_entries WHERE id = $1`, [ledgerEntryId]),
+        client.query(`DELETE FROM ledger_entries WHERE id = $1`, [ledgerEntryId]),
       ).rejects.toMatchObject({ code: "P0001" });
 
-      const unchanged = await db.query(
+      const unchanged = await client.query(
         `SELECT amount, currency FROM ledger_entries WHERE id = $1`,
         [ledgerEntryId],
       );
@@ -37,27 +50,17 @@ describe("Ledger append-only PostgreSQL P0", () => {
       expect(Number(unchanged.rows[0].amount)).toBe(125);
       expect(unchanged.rows[0].currency).toBe("CAD");
 
-      const client = await db.connect();
-      try {
-        await client.query("BEGIN");
-        await client.query("SELECT set_config('app.ledger_maintenance_mode', 'on', true)");
-        await client.query("SELECT set_config('app.ledger_maintenance_actor', 'jest-p0', true)");
-        await client.query(
-          "SELECT set_config('app.ledger_maintenance_reason', 'nettoyage contrôlé de la preuve append-only', true)",
-        );
-        await client.query(`DELETE FROM ledger_entries WHERE id = $1`, [ledgerEntryId]);
-        await client.query("COMMIT");
-      } catch (error) {
-        await client.query("ROLLBACK");
-        throw error;
-      } finally {
-        client.release();
-      }
+      await client.query("SELECT set_config('app.ledger_maintenance_mode', 'on', false)");
+      await client.query("SELECT set_config('app.ledger_maintenance_actor', 'jest-p0', false)");
+      await client.query(
+        "SELECT set_config('app.ledger_maintenance_reason', 'nettoyage contrôlé de la preuve append-only', false)",
+      );
+      await client.query(`DELETE FROM ledger_entries WHERE id = $1`, [ledgerEntryId]);
 
-      const removed = await db.query(`SELECT id FROM ledger_entries WHERE id = $1`, [ledgerEntryId]);
+      const removed = await client.query(`SELECT id FROM ledger_entries WHERE id = $1`, [ledgerEntryId]);
       expect(removed.rows).toHaveLength(0);
 
-      const audit = await db.query(
+      const audit = await client.query(
         `
         SELECT operation, actor, reason, database_user, previous_row
         FROM ledger_maintenance_audit
@@ -77,25 +80,22 @@ describe("Ledger append-only PostgreSQL P0", () => {
       expect(String(audit.rows[0].previous_row.reference_id)).toBe(referenceId);
     } finally {
       if (ledgerEntryId) {
-        const cleanupClient = await db.connect();
-        try {
-          await cleanupClient.query("BEGIN");
-          await cleanupClient.query("SELECT set_config('app.ledger_maintenance_mode', 'on', true)");
-          await cleanupClient.query("SELECT set_config('app.ledger_maintenance_actor', 'jest-cleanup', true)");
-          await cleanupClient.query(
-            "SELECT set_config('app.ledger_maintenance_reason', 'nettoyage de secours du test', true)",
-          );
-          await cleanupClient.query(`DELETE FROM ledger_entries WHERE id = $1`, [ledgerEntryId]);
-          await cleanupClient.query("COMMIT");
-        } catch {
-          await cleanupClient.query("ROLLBACK");
-        } finally {
-          cleanupClient.release();
-        }
-
-        await db.query(`DELETE FROM ledger_maintenance_audit WHERE ledger_entry_id = $1`, [ledgerEntryId]);
+        await client
+          .query("SELECT set_config('app.ledger_maintenance_mode', 'on', false)")
+          .catch(() => {});
+        await client
+          .query("SELECT set_config('app.ledger_maintenance_actor', 'jest-cleanup', false)")
+          .catch(() => {});
+        await client
+          .query("SELECT set_config('app.ledger_maintenance_reason', 'nettoyage de secours du test', false)")
+          .catch(() => {});
+        await client.query(`DELETE FROM ledger_entries WHERE id = $1`, [ledgerEntryId]).catch(() => {});
+        await client
+          .query(`DELETE FROM ledger_maintenance_audit WHERE ledger_entry_id = $1`, [ledgerEntryId])
+          .catch(() => {});
       }
 
+      client.release();
       await db.query(`DELETE FROM organisations WHERE id = $1`, [organisation.id]);
     }
   });
