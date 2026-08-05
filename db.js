@@ -100,9 +100,17 @@ const poolConfig = connectionString
     };
 
 Object.assign(poolConfig, {
-  // Keep parallel Jest workers below PostgreSQL's connection limit.
+  // max:1 en test causait un deadlock déterministe : de nombreux fichiers font
+  // `client = await db.pool.connect()` (retient l'unique connexion) PUIS
+  // appellent un helper (ex. createTestOrganisation) qui utilise pool.query()
+  // sur ce même pool — avec max:1, ce pool.query() attend indéfiniment une
+  // connexion déjà retenue par `client`, jusqu'au timeout du hook (5000ms).
+  // Reproduit en isolation totale (un seul fichier, une seule requête) —
+  // ce n'est pas une question de charge cumulée. Une petite valeur >1 laisse
+  // de la place pour ce pattern courant (client explicite + quelques
+  // pool.query() concurrents) sans revenir à un pool par fichier trop gourmand.
   max: process.env.NODE_ENV === "test"
-    ? 1
+    ? Number(process.env.DB_POOL_MAX_TEST || 5)
     : Number(process.env.DB_POOL_MAX || 10),
   connectionTimeoutMillis: Number(process.env.DB_CONNECTION_TIMEOUT_MS || 5000),
   // En test, chaque fichier Jest recrée son propre pool (module rechargé à neuf
