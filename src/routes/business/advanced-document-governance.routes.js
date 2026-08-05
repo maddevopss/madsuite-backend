@@ -30,6 +30,13 @@ function deny(decision) {
   throw error;
 }
 
+// Un id valide pour une autre organisation ne doit pas pouvoir être référencé :
+// l'INSERT seul ne vérifie que l'existence de la ligne (FK), pas son organisation.
+async function assertInOrg(client, table, id, organisationId, code) {
+  const row = (await client.query(`SELECT id FROM ${table} WHERE id=$1 AND organisation_id=$2`, [id, organisationId])).rows[0];
+  if (!row) throw notFound(code);
+}
+
 router.get('/classifications', (req,res,next) => handle(res,next,async () => (await db.query('SELECT * FROM document_classifications WHERE organisation_id=$1 ORDER BY classification_code',[org(req)])).rows));
 router.post('/classifications', (req,res,next) => handle(res,next,() => {
   const input = { ...req.body, ownerUserId: req.body.ownerUserId || actor(req) };
@@ -39,7 +46,10 @@ router.post('/classifications', (req,res,next) => handle(res,next,() => {
 router.get('/documents', (req,res,next) => handle(res,next,async () => (await db.query('SELECT * FROM governed_documents WHERE organisation_id=$1 ORDER BY updated_at DESC',[org(req)])).rows));
 router.post('/documents', (req,res,next) => handle(res,next,() => {
   const input = { ...req.body, businessOwnerUserId: req.body.businessOwnerUserId || actor(req) };
-  return transactionalWrite(req, 'documents.document.create', null, input, async ({ client, organisationId }) => (await client.query(`INSERT INTO governed_documents (organisation_id,classification_id,document_code,title,business_owner_user_id,current_version,status,effective_at,legal_hold,evidence) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,[organisationId,input.classificationId,input.documentCode,input.title,input.businessOwnerUserId,input.currentVersion||1,input.status||'draft',input.effectiveAt||null,input.legalHold||false,JSON.stringify(input.evidence||[])])).rows[0]);
+  return transactionalWrite(req, 'documents.document.create', null, input, async ({ client, organisationId }) => {
+    await assertInOrg(client, 'document_classifications', input.classificationId, organisationId, 'documents.classification_not_found');
+    return (await client.query(`INSERT INTO governed_documents (organisation_id,classification_id,document_code,title,business_owner_user_id,current_version,status,effective_at,legal_hold,evidence) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,[organisationId,input.classificationId,input.documentCode,input.title,input.businessOwnerUserId,input.currentVersion||1,input.status||'draft',input.effectiveAt||null,input.legalHold||false,JSON.stringify(input.evidence||[])])).rows[0];
+  });
 },201));
 router.post('/documents/:id/publish', (req,res,next) => handle(res,next,() => transactionalWrite(req,'documents.document.publish',null,{...req.body,documentId:req.params.id},async ({ client, organisationId, idempotencyKey }) => {
   const document = (await client.query('SELECT id,status FROM governed_documents WHERE id=$1 AND organisation_id=$2 FOR UPDATE',[req.params.id,organisationId])).rows[0];
@@ -60,7 +70,10 @@ router.get('/documents/:id/versions', (req,res,next) => handle(res,next,async ()
 router.post('/documents/:id/versions', (req,res,next) => handle(res,next,() => {
   const input = { ...req.body, documentId: req.params.id, preparedByUserId: req.body.preparedByUserId || actor(req) };
   const policy = input.approvedByUserId ? 'documents.version.approve' : null;
-  return transactionalWrite(req, 'documents.version.create', policy, input, async ({ client, organisationId }) => (await client.query(`INSERT INTO governed_document_versions (organisation_id,document_id,version_number,change_summary,content_hash,storage_ref,prepared_by_user_id,approved_by_user_id,approved_at,evidence) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,[organisationId,req.params.id,input.versionNumber,input.changeSummary,input.contentHash,input.storageRef,input.preparedByUserId,input.approvedByUserId||null,input.approvedAt||null,JSON.stringify(input.evidence||[])])).rows[0]);
+  return transactionalWrite(req, 'documents.version.create', policy, input, async ({ client, organisationId }) => {
+    await assertInOrg(client, 'governed_documents', req.params.id, organisationId, 'documents.document_not_found');
+    return (await client.query(`INSERT INTO governed_document_versions (organisation_id,document_id,version_number,change_summary,content_hash,storage_ref,prepared_by_user_id,approved_by_user_id,approved_at,evidence) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,[organisationId,req.params.id,input.versionNumber,input.changeSummary,input.contentHash,input.storageRef,input.preparedByUserId,input.approvedByUserId||null,input.approvedAt||null,JSON.stringify(input.evidence||[])])).rows[0];
+  });
 },201));
 
 router.use('/evidence-references', documentEvidenceReferenceRoutes);
@@ -92,7 +105,10 @@ router.post('/retention-actions/:id/execute', (req,res,next) => handle(res,next,
 router.get('/access-reviews', (req,res,next) => handle(res,next,async () => (await db.query('SELECT * FROM document_access_reviews WHERE organisation_id=$1 ORDER BY reviewed_at DESC',[org(req)])).rows));
 router.post('/access-reviews', (req,res,next) => handle(res,next,() => {
   const input = { ...req.body, reviewedByUserId: req.body.reviewedByUserId || actor(req) };
-  return transactionalWrite(req, 'documents.access_review.complete', 'documents.access_review.complete', input, async ({ client, organisationId, idempotencyKey }) => (await client.query(`INSERT INTO document_access_reviews (organisation_id,document_id,reviewed_by_user_id,reviewed_at,authorized_roles,findings,evidence,idempotency_key) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,[organisationId,input.documentId,input.reviewedByUserId,input.reviewedAt,JSON.stringify(input.authorizedRoles||[]),JSON.stringify(input.findings||[]),JSON.stringify(input.evidence||[]),idempotencyKey])).rows[0]);
+  return transactionalWrite(req, 'documents.access_review.complete', 'documents.access_review.complete', input, async ({ client, organisationId, idempotencyKey }) => {
+    await assertInOrg(client, 'governed_documents', input.documentId, organisationId, 'documents.document_not_found');
+    return (await client.query(`INSERT INTO document_access_reviews (organisation_id,document_id,reviewed_by_user_id,reviewed_at,authorized_roles,findings,evidence,idempotency_key) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *`,[organisationId,input.documentId,input.reviewedByUserId,input.reviewedAt,JSON.stringify(input.authorizedRoles||[]),JSON.stringify(input.findings||[]),JSON.stringify(input.evidence||[]),idempotencyKey])).rows[0];
+  });
 },201));
 
 router.get('/alerts', (req,res,next) => handle(res,next,async () => (await db.query(`SELECT 'retention_due' AS alert_type,id,document_id,scheduled_at AS due_at FROM document_retention_actions WHERE organisation_id=$1 AND status='pending' AND scheduled_at<=NOW()+INTERVAL '60 days' UNION ALL SELECT 'legal_hold' AS alert_type,id,id AS document_id,updated_at AS due_at FROM governed_documents WHERE organisation_id=$1 AND legal_hold=TRUE ORDER BY due_at`,[org(req)])).rows));
