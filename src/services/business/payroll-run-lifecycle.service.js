@@ -34,6 +34,11 @@ function validateRulesetForActivation(ruleset) {
   if (!ruleset.checksum || ruleset.checksum !== expected) {
     throw badRequest("L’empreinte du jeu de règles est invalide.");
   }
+  // #363 : un jeu de règles ne peut gouverner un calcul de paie réel sans
+  // référence vérifiable au texte légal/fiscal dont il découle.
+  if (!ruleset.legal_source || !String(ruleset.legal_source).trim()) {
+    throw badRequest("La source légale/fiscale du jeu de règles est obligatoire avant activation.");
+  }
 }
 
 async function activateRuleset(db, organisationId, rulesetId, actorUserId) {

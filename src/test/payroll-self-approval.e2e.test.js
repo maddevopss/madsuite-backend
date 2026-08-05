@@ -59,8 +59,8 @@ const RULES = {
 async function seedReadyPeriod(organisationId, suffix) {
   const checksum = checksumRules(RULES);
   const ruleset = await db.pool.query(
-    `INSERT INTO payroll_rulesets (organisation_id, version, province, effective_from, rules, checksum, status)
-     VALUES ($1,$2,'QC','2026-01-01',$3,$4,'draft') RETURNING *`,
+    `INSERT INTO payroll_rulesets (organisation_id, version, province, effective_from, rules, checksum, status, legal_source)
+     VALUES ($1,$2,'QC','2026-01-01',$3,$4,'draft','Revenu Québec — fixture de test') RETURNING *`,
     [organisationId, `v-${suffix}`, JSON.stringify(RULES), checksum],
   );
   await activateRuleset(db.pool, organisationId, ruleset.rows[0].id, null);

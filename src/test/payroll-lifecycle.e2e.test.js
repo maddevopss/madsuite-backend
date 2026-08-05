@@ -71,8 +71,8 @@ async function seedAccountingChart(organisationId) {
 async function seedRuleset(organisationId, { version, effectiveFrom, effectiveTo, rules = RULES, userId }) {
   const checksum = checksumRules(rules);
   const { rows } = await db.pool.query(
-    `INSERT INTO payroll_rulesets (organisation_id, version, province, effective_from, effective_to, rules, checksum, status, created_by)
-     VALUES ($1,$2,'QC',$3,$4,$5,$6,'draft',$7) RETURNING *`,
+    `INSERT INTO payroll_rulesets (organisation_id, version, province, effective_from, effective_to, rules, checksum, status, legal_source, created_by)
+     VALUES ($1,$2,'QC',$3,$4,$5,$6,'draft','Revenu Québec — fixture de test',$7) RETURNING *`,
     [organisationId, version, effectiveFrom, effectiveTo || null, JSON.stringify(rules), checksum, userId || null],
   );
   return rows[0];
