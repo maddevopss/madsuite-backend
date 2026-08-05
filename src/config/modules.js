@@ -65,6 +65,7 @@ const MODULES = {
   operational_incidents: { label: "Incidents opérationnels", plan: "internal", price: 0, matrix_status: "foundation_alpha" },
   operational_problems: { label: "Problèmes et causes profondes", plan: "internal", price: 0, matrix_status: "foundation_alpha" },
   operational_changes: { label: "Changements et fenêtres d'entretien", plan: "internal", price: 0, matrix_status: "foundation_alpha" },
+  operational_service_levels: { label: "Niveaux de service et objectifs", plan: "internal", price: 0, matrix_status: "foundation_alpha" },
 };
 
 const INTERNAL_PLAN_TYPES = new Set(["admin", "internal", "master_admin", "platform_admin"]);
