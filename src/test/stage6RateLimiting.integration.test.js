@@ -1010,3 +1010,8 @@ describe("Stage 6 PR G - Rate Limiting & Abuse Prevention", () => {
       const result = await rateLimitingAbuseService.getAbuseDetectionSummary(organizationId);
 
       expect(result.summary).toBeDefined();
+      expect(Array.isArray(result.summary)).toBe(true);
+    });
+  });
+});
+
