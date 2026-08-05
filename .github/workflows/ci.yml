@@ -10,6 +10,32 @@ permissions:
   contents: read
 
 jobs:
+  repository-guards:
+    name: Repository and route guards
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Repository hygiene guard
+        run: npm run guard:hygiene
+
+      - name: Route security guard
+        run: npm run guard:routes
+
+      - name: Organisation route guard
+        run: npm run guard:organisation-routes
+
   validate:
     name: Guard, lint, syntax, tests and security checks
     runs-on: ubuntu-latest
@@ -63,10 +89,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
       - name: Setup Node.js
-        uses: actions/setup-node@v7
+        uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
@@ -97,7 +123,7 @@ jobs:
 
       - name: Upload backend test log
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@v4
         with:
           name: backend-pr-test-log
           path: artifacts/backend-test.log
@@ -106,3 +132,4 @@ jobs:
 
       - name: Run backend security tests
         run: npm run test:security -- --runInBand
+# Trigger CI synchronization for PR 738
