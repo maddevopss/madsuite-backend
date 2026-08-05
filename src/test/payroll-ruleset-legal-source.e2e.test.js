@@ -9,10 +9,10 @@
 const express = require("express");
 const request = require("supertest");
 const db = require("../../db");
-const { createTestOrganisation } = require("./helpers/testData");
+const { createTestOrganisation, createTestUser } = require("./helpers/testData");
 const { activateRuleset } = require("../services/business/payroll-run-lifecycle.service");
 
-const mockState = { organisationId: null };
+const mockState = { organisationId: null, userId: null };
 
 jest.mock("../middleware/organization.middleware", () => ({
   requireOrganisation: (req, _res, next) => {
@@ -24,7 +24,9 @@ jest.mock("../middleware/organization.middleware", () => ({
 
 function fakeAuth(req, _res, next) {
   const role = req.header("x-test-role");
-  if (role) req.user = { id: 1, role };
+  // payroll_rulesets.created_by référence utilisateurs(id) : un id factice
+  // fait échouer l'INSERT sur la contrainte FK, il faut un utilisateur réel.
+  if (role) req.user = { id: mockState.userId, role };
   next();
 }
 
@@ -49,10 +51,8 @@ describe("Paie — source légale/fiscale des jeux de règles (#363)", () => {
     const org = await createTestOrganisation();
     TEST_ORG_ID = org.id;
     mockState.organisationId = TEST_ORG_ID;
-  });
-
-  afterAll(async () => {
-    await db.pool.end().catch(() => null);
+    const user = await createTestUser({ organisation_id: org.id, role: "admin" });
+    mockState.userId = user.id;
   });
 
   test("POST /rulesets refuse la création sans source légale/fiscale", async () => {
