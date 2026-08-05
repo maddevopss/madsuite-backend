@@ -70,6 +70,7 @@ const MODULES = {
   operational_reviews: { label: "Revues d'exploitation", plan: "internal", price: 0, matrix_status: "foundation_alpha" },
   ai_use_cases: { label: "Cas d'usage assistés (IA)", plan: "internal", price: 0, matrix_status: "foundation_alpha" },
   ai_context: { label: "Contexte institutionnel assisté (IA)", plan: "internal", price: 0, matrix_status: "foundation_alpha" },
+  ai_recommendations: { label: "Recommandations assistées (IA)", plan: "internal", price: 0, matrix_status: "foundation_alpha" },
 };
 
 const INTERNAL_PLAN_TYPES = new Set(["admin", "internal", "master_admin", "platform_admin"]);
