@@ -6,6 +6,9 @@
 // connues) — ne conserve que des identifiants, compteurs et un résumé du
 // résultat. La conservation est dérivée du risk_level déclaré au
 // catalogue (PR A) pour la version du cas d'usage réellement utilisée.
+// Étage 9 PR G — enregistre aussi la latence réelle de génération
+// (duration_ms), mesurée par l'appelant, pour la surveillance des
+// dérives et coûts par cas d'usage.
 
 const RETENTION_DAYS_BY_RISK = { low: 90, medium: 180, high: 365, critical: 730 };
 
@@ -15,7 +18,7 @@ function retentionClassForRisk(riskLevel) {
   return 'short';
 }
 
-async function logAiInvocation(db, { organisationId, useCaseId, useCaseVersion, requestedBy, context, recommendation, reason }) {
+async function logAiInvocation(db, { organisationId, useCaseId, useCaseVersion, requestedBy, context, recommendation, reason, durationMs }) {
   const catalogEntry = (await db.query(
     'SELECT risk_level FROM ai_use_cases WHERE id=$1 AND version=$2',
     [useCaseId, useCaseVersion],
@@ -40,8 +43,8 @@ async function logAiInvocation(db, { organisationId, useCaseId, useCaseVersion, 
   const { rows } = await db.query(
     `INSERT INTO ai_audit_log (
        organisation_id, use_case_id, use_case_version, engine_contract, request_context,
-       authorized_context_summary, result_summary, correlation, retention_class, retention_until, requested_by
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+       authorized_context_summary, result_summary, correlation, retention_class, retention_until, requested_by, duration_ms
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
     [
       organisationId,
       useCaseId,
@@ -54,6 +57,7 @@ async function logAiInvocation(db, { organisationId, useCaseId, useCaseVersion, 
       retentionClass,
       retentionUntil.toISOString(),
       requestedBy || null,
+      Number.isFinite(durationMs) ? Math.round(durationMs) : null,
     ],
   );
   return rows[0];

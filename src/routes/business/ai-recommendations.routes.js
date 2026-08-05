@@ -7,6 +7,8 @@
 // n'a pas explicitement activé le cas d'usage.
 // Étage 9 PR E — chaque génération réelle (donc jamais un 403 d'activation,
 // où rien n'a été traité) est journalée (src/ai/logAiInvocation.js).
+// Étage 9 PR G — la latence réelle de génération est mesurée ici et
+// transmise au journal pour la surveillance des dérives et coûts.
 
 const router = require('express').Router();
 const { requireOrganisation } = require('../../middleware/organization.middleware');
@@ -34,6 +36,7 @@ async function requireActiveUseCase(req, useCaseId) {
 
 router.get('/incident-known-error-suggestion/:incidentId', async (req, res, next) => {
   try {
+    const startedAt = Date.now();
     const activation = await requireActiveUseCase(req, 'incident-known-error-suggestion');
     const context = await assembleIncidentKnownErrorContext(req.db, {
       organisationId: req.organisationId,
@@ -48,6 +51,7 @@ router.get('/incident-known-error-suggestion/:incidentId', async (req, res, next
       context,
       recommendation,
       reason,
+      durationMs: Date.now() - startedAt,
     });
     // Le contexte est toujours renvoyé, même sans recommandation : jamais
     // masquer les données qui ont mené (ou non) à la suggestion.

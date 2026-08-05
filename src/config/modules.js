@@ -73,6 +73,7 @@ const MODULES = {
   ai_recommendations: { label: "Recommandations assistées (IA)", plan: "internal", price: 0, matrix_status: "foundation_alpha" },
   ai_audit_log: { label: "Journal d'audit IA", plan: "internal", price: 0, matrix_status: "foundation_alpha" },
   ai_decisions: { label: "Confirmation humaine et exécution (IA)", plan: "internal", price: 0, matrix_status: "foundation_alpha" },
+  ai_monitoring: { label: "Surveillance des dérives IA", plan: "internal", price: 0, matrix_status: "foundation_alpha" },
 };
 
 const INTERNAL_PLAN_TYPES = new Set(["admin", "internal", "master_admin", "platform_admin"]);
