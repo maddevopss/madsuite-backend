@@ -62,6 +62,7 @@ const MODULES = {
   environmental_management: { label: "Gestion environnementale", plan: "internal", price: 0, matrix_status: "madproof_strict" },
   decision_dashboard:   { label: "Pilotage décisionnel", plan: "internal", price: 0, matrix_status: "foundation_alpha" },
   cognitive_continuity: { label: "Continuité cognitive", plan: "internal", price: 0, matrix_status: "madproof_strict" },
+  operational_incidents: { label: "Incidents opérationnels", plan: "internal", price: 0, matrix_status: "foundation_alpha" },
 };
 
 const INTERNAL_PLAN_TYPES = new Set(["admin", "internal", "master_admin", "platform_admin"]);
