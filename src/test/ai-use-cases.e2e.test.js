@@ -36,6 +36,17 @@ function buildApp() {
   return app;
 }
 
+// ai_use_cases est un catalogue PLATEFORME, sans organisation_id (voir
+// migration) — donc sans l'isolation automatique dont bénéficient les
+// tables par organisation entre fichiers de test. D'autres fichiers de
+// cette suite (ai-context, ai-recommendations, ...) seedent réellement
+// l'id de production 'incident-known-error-suggestion' au catalogue ;
+// ce fichier utilise donc ses propres id/version, uniques par exécution,
+// pour ne jamais dépendre de l'ordre d'exécution des fichiers Jest.
+const RUN_SUFFIX = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+const DEMO_USE_CASE_ID = `test-pr-a-demo-use-case-${RUN_SUFFIX}`;
+const EXPERIMENTAL_USE_CASE_ID = `test-pr-a-experimental-case-${RUN_SUFFIX}`;
+
 describe("Registre des cas d'usage assistés — catalogue et activation (Étage 9 PR A)", () => {
   let app;
   let orgId;
@@ -63,7 +74,7 @@ describe("Registre des cas d'usage assistés — catalogue et activation (Étage
   test("un admin d'organisation (non super-admin) ne peut pas déclarer de cas d'usage au catalogue", async () => {
     const res = await request(app).post("/api/ai/use-cases").set("x-test-role", "admin").set("x-test-user-id", String(orgAdminId))
       .send({
-        id: "incident-known-error-suggestion", version: "1.0", owner: "operations-lead", status: "approved",
+        id: DEMO_USE_CASE_ID, version: "1.0", owner: "operations-lead", status: "approved",
         autonomy: "advisory", riskLevel: "low", dataClasses: ["operational_incidents", "operational_problems"],
         description: "Suggestion de correctif basée sur les erreurs connues",
       });
@@ -92,7 +103,7 @@ describe("Registre des cas d'usage assistés — catalogue et activation (Étage
   test("déclaration réelle au catalogue par le super-admin, doublon (id, version) refusé", async () => {
     const created = await request(app).post("/api/ai/use-cases").set("x-test-role", "admin").set("x-test-user-id", String(superAdminId))
       .send({
-        id: "incident-known-error-suggestion", version: "1.0", owner: "operations-lead", status: "approved",
+        id: DEMO_USE_CASE_ID, version: "1.0", owner: "operations-lead", status: "approved",
         autonomy: "advisory", riskLevel: "low", dataClasses: ["operational_incidents", "operational_problems"],
         description: "Suggestion de correctif basée sur les erreurs connues du même service",
       });
@@ -101,7 +112,7 @@ describe("Registre des cas d'usage assistés — catalogue et activation (Étage
 
     const duplicate = await request(app).post("/api/ai/use-cases").set("x-test-role", "admin").set("x-test-user-id", String(superAdminId))
       .send({
-        id: "incident-known-error-suggestion", version: "1.0", owner: "operations-lead", status: "approved",
+        id: DEMO_USE_CASE_ID, version: "1.0", owner: "operations-lead", status: "approved",
         autonomy: "advisory", riskLevel: "low", dataClasses: ["operational_incidents"],
         description: "Retentative",
       });
@@ -111,33 +122,33 @@ describe("Registre des cas d'usage assistés — catalogue et activation (Étage
   test("un cas d'usage 'experimental' ne peut pas être activé — garde-fou contre l'activation implicite", async () => {
     await request(app).post("/api/ai/use-cases").set("x-test-role", "admin").set("x-test-user-id", String(superAdminId))
       .send({
-        id: "experimental-case", version: "1.0", owner: "x", status: "experimental",
+        id: EXPERIMENTAL_USE_CASE_ID, version: "1.0", owner: "x", status: "experimental",
         autonomy: "advisory", riskLevel: "medium", dataClasses: ["x"], description: "Test",
       });
 
-    const activate = await request(app).post("/api/ai/use-cases/experimental-case/activate").set("x-test-role", "admin").set("x-test-user-id", String(orgAdminId));
+    const activate = await request(app).post(`/api/ai/use-cases/${EXPERIMENTAL_USE_CASE_ID}/activate`).set("x-test-role", "admin").set("x-test-user-id", String(orgAdminId));
     expect(activate.status).toBe(409);
   });
 
   test("un manager ne peut pas activer de cas d'usage (réservé admin d'organisation)", async () => {
-    const managerAttempt = await request(app).post("/api/ai/use-cases/incident-known-error-suggestion/activate").set("x-test-role", "manager");
+    const managerAttempt = await request(app).post(`/api/ai/use-cases/${DEMO_USE_CASE_ID}/activate`).set("x-test-role", "manager");
     expect(managerAttempt.status).toBe(403);
   });
 
   test("activation réelle d'un cas 'approved' par l'admin d'organisation, puis désactivation", async () => {
-    const activated = await request(app).post("/api/ai/use-cases/incident-known-error-suggestion/activate").set("x-test-role", "admin").set("x-test-user-id", String(orgAdminId));
+    const activated = await request(app).post(`/api/ai/use-cases/${DEMO_USE_CASE_ID}/activate`).set("x-test-role", "admin").set("x-test-user-id", String(orgAdminId));
     expect(activated.status).toBe(201);
     expect(activated.body.activation.status).toBe("active");
     expect(activated.body.activation.use_case_version).toBe("1.0");
 
     const list = await request(app).get("/api/ai/use-cases/activations").set("x-test-role", "admin").set("x-test-user-id", String(orgAdminId));
-    expect(list.body.activations.some((a) => a.use_case_id === "incident-known-error-suggestion" && a.status === "active")).toBe(true);
+    expect(list.body.activations.some((a) => a.use_case_id === DEMO_USE_CASE_ID && a.status === "active")).toBe(true);
 
-    const deactivated = await request(app).post("/api/ai/use-cases/incident-known-error-suggestion/deactivate").set("x-test-role", "admin").set("x-test-user-id", String(orgAdminId));
+    const deactivated = await request(app).post(`/api/ai/use-cases/${DEMO_USE_CASE_ID}/deactivate`).set("x-test-role", "admin").set("x-test-user-id", String(orgAdminId));
     expect(deactivated.status).toBe(200);
     expect(deactivated.body.activation.status).toBe("disabled");
 
-    const deactivateAgain = await request(app).post("/api/ai/use-cases/incident-known-error-suggestion/deactivate").set("x-test-role", "admin").set("x-test-user-id", String(orgAdminId));
+    const deactivateAgain = await request(app).post(`/api/ai/use-cases/${DEMO_USE_CASE_ID}/deactivate`).set("x-test-role", "admin").set("x-test-user-id", String(orgAdminId));
     expect(deactivateAgain.status).toBe(200);
     expect(deactivateAgain.body.alreadyDisabled).toBe(true);
   });
@@ -146,7 +157,7 @@ describe("Registre des cas d'usage assistés — catalogue et activation (Étage
     const activateMissing = await request(app).post("/api/ai/use-cases/does-not-exist/activate").set("x-test-role", "admin").set("x-test-user-id", String(orgAdminId));
     expect(activateMissing.status).toBe(404);
 
-    const deactivateNeverActivated = await request(app).post("/api/ai/use-cases/experimental-case/deactivate").set("x-test-role", "admin").set("x-test-user-id", String(orgAdminId));
+    const deactivateNeverActivated = await request(app).post(`/api/ai/use-cases/${EXPERIMENTAL_USE_CASE_ID}/deactivate`).set("x-test-role", "admin").set("x-test-user-id", String(orgAdminId));
     expect(deactivateNeverActivated.status).toBe(404);
   });
 
