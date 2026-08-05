@@ -44,6 +44,7 @@ const quotesRoutes = require("./routes/quotes.routes");
 const organisationRoutes = require("./routes/organisation");
 const expensesRoutes = require("./routes/expenses.routes");
 const expenseReceiptsRoutes = require("./routes/expenseReceipts.routes");
+const rateLimitingAbuseRoutes = require("./routes/rateLimitingAbuse.routes");
 const stripeRoutes = require("./routes/stripe.routes");
 const portalRoutes = require("./routes/portal.routes");
 const punchRoutes = require("./routes/punch.routes");
@@ -139,6 +140,13 @@ const swaggerDocument = yaml.parse(fs.readFileSync(path.join(__dirname, "../swag
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
 app.use(express.json());
+
+// Stage 6 PR G - Rate Limiting & Abuse Prevention. Montees avant apiResponseMiddleware:
+// le contrat E2E attend les champs (created, policy_id, ...) a la racine du JSON, pas
+// enveloppes dans {success, code, data}. Tables dediees (organization_id VARCHAR, sans
+// RLS), non authentifiees comme les autres services de surveillance.
+app.use("/api", defaultLimiter, rateLimitingAbuseRoutes);
+
 app.use(apiResponseMiddleware);
 
 // Stage 4 Contract Versioning & Deprecation — adds headers for deprecated contracts
