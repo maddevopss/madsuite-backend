@@ -6,6 +6,7 @@ const db = require("../../db");
 const { runOrganisationScopePreflight } = require("./preflightOrganisationScope");
 const { diagnosticDatabaseConnection } = require("./diagnosticDb");
 const { detectDuplicateMigrations } = require("./detectDuplicateMigrations");
+const { getSchemaInventory, validateInventory } = require("./schemaInventory");
 
 function log(message, details) {
   // pas de secrets
@@ -146,10 +147,22 @@ async function applyMigration(client, { fullPath, file }) {
   } catch (e) {
     await client.query(`ROLLBACK`);
 
-    const duplicateMigrationObject =
-      e?.code === "42710" ||
-      e?.code === "42P07" ||
-      /already exists|existe|exists/i.test(String(e?.message || ""));
+    // Codes Postgres "duplicate_*" uniquement — pas de fallback texte, car des messages
+    // d'erreur légitimes (ex: colonne inexistante "n'existe pas") contiennent aussi "existe"
+    // et seraient faussement classés comme non-fatals (cf. incident 20260803_stage5_metrics).
+    const DUPLICATE_OBJECT_CODES = new Set([
+      "42710", // duplicate_object
+      "42P07", // duplicate_table
+      "42701", // duplicate_column
+      "42723", // duplicate_function
+      "42P06", // duplicate_schema
+      "42P04", // duplicate_database
+      "42P05", // duplicate_prepared_statement
+      "42712", // duplicate_alias
+      "42P03", // duplicate_cursor
+    ]);
+
+    const duplicateMigrationObject = DUPLICATE_OBJECT_CODES.has(e?.code);
 
     if (duplicateMigrationObject) {
       await client.query(`INSERT INTO schema_migrations (filename) VALUES ($1) ON CONFLICT DO NOTHING`, [file]);
@@ -201,6 +214,15 @@ async function assertRuntimeSchema(client) {
 
   const failures = [];
 
+  // Collect full inventory for validation
+  let inventory;
+  try {
+    inventory = await getSchemaInventory(client);
+  } catch (err) {
+    log(`Avertissement: impossible de collecter l'inventaire du schéma: ${err.message}`);
+    inventory = null;
+  }
+
   for (const req of required) {
     if (req.column) {
       // Check for specific column
@@ -245,6 +267,11 @@ async function assertRuntimeSchema(client) {
       "Schéma incomplet: le runtime schema ne correspond pas aux tables/colonnes clés.\n" +
         failures.map((f) => `- ${f}`).join("\n"),
     );
+  }
+
+  // If enabled, log schema inventory for debugging
+  if (process.env.LOG_SCHEMA_INVENTORY === "1" && inventory) {
+    log(`Inventaire du schéma collecté: ${inventory.stats.tableCount} tables, ${inventory.stats.constraintCount} contraintes, ${inventory.stats.indexCount} index`);
   }
 }
 
@@ -387,4 +414,4 @@ async function runMigrations({ backup = false } = {}) {
   }
 }
 
-module.exports = { runMigrations };
+module.exports = { runMigrations, applyMigration };
