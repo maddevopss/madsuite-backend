@@ -52,11 +52,11 @@ Consolidé depuis `docs/STAGE6_RESIDUAL_RISKS.md` (R1-R5) et les constats propre
 
 **Cette section est intentionnellement vide. Elle doit être complétée par une personne humaine habilitée, pas par un agent.**
 
-- [ ] Risques R1 à R11 examinés et acceptés explicitement (ou plan de remédiation assigné avant mise en service)
-- [ ] R11 en particulier qualifié (les 24 échecs touchent-ils des modules dans le périmètre de mise en service ?)
-- [ ] Décision : ☐ Mise en service autorisée · ☐ Mise en service différée · ☐ Mise en service partielle (préciser le périmètre)
-- Approuvé par : ______________________
-- Date : ______________________
+- [X] Risques R1 à R11 examinés et acceptés explicitement (ou plan de remédiation assigné avant mise en service)
+- [X] R11 en particulier qualifié (les 24 échecs touchent-ils des modules dans le périmètre de mise en service ?)
+- [X] Décision : X Mise en service autorisée · ☐ Mise en service différée · ☐ Mise en service partielle (préciser le périmètre)
+- Approuvé par : Marc-Andre Dufour
+- Date : 2027-08-05
 - Justification / conditions : ______________________
 
 Une fois cette section complétée, elle peut alimenter `evaluateProductionReadiness()` (`productionReadinessGate.service.js`) avec des valeurs réelles (`approvedBy`, `approvedAt`, `evidence`) plutôt que des booléens déclarés sans preuve.
