@@ -44,6 +44,13 @@ describe("Preuve PostgreSQL financière P0", () => {
 
     try {
       await client.query("BEGIN");
+      // ledger_entries est sous FORCE ROW LEVEL SECURITY (organisation_id)
+      // depuis la migration 20260805_stage6_pr_b_organisation_isolation.sql.
+      // Le rollback qui suit annule aussi ce set_config transaction-local,
+      // ce qui est correct: le test ne persiste jamais rien.
+      await client.query("SELECT set_config('app.current_organisation_id', $1, true)", [
+        String(organisation.id),
+      ]);
 
       await client.query(
         `
