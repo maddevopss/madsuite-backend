@@ -58,12 +58,21 @@ router.post('/', (req, res, next) => {
       )).rows[0];
       if (!target) throw notFound('integration.audit_target_not_found');
 
-      return (await client.query(
+      // #171 PR H : une relance avec la même clé d'idempotence ne doit
+      // jamais échouer sur la contrainte d'unicité métier — ON CONFLICT
+      // DO NOTHING + repli par (organisation_id, idempotency_key).
+      const inserted = (await client.query(
         `INSERT INTO audit_corrective_action_links
           (organisation_id,finding_id,target_type,target_id,verification_role,rationale,created_by,idempotency_key)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+         ON CONFLICT (organisation_id, idempotency_key) DO NOTHING
          RETURNING *`,
         [organisationId,input.findingId,input.targetType,input.targetId,input.verificationRole||'independent_review',input.rationale,actor(req),idempotencyKey],
+      )).rows[0];
+      if (inserted) return inserted;
+      return (await client.query(
+        'SELECT * FROM audit_corrective_action_links WHERE organisation_id=$1 AND idempotency_key=$2',
+        [organisationId, idempotencyKey],
       )).rows[0];
     },
   });

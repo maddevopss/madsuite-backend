@@ -104,12 +104,21 @@ router.post('/', (req, res, next) => {
           }
         }
 
-        return (await client.query(`
+        // #171 PR H : une relance avec la même clé d'idempotence ne doit
+        // jamais échouer sur la contrainte d'unicité métier — ON CONFLICT
+        // DO NOTHING + repli par (organisation_id, idempotency_key).
+        const inserted = (await client.query(`
           INSERT INTO enterprise_risk_continuity_links
             (organisation_id,risk_id,process_id,plan_id,relation_type,rationale,evidence,idempotency_key,created_by)
           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+          ON CONFLICT (organisation_id, idempotency_key) DO NOTHING
           RETURNING *
         `, [organisationId, req.body.riskId, req.body.processId || null, req.body.planId || null, req.body.relationType, req.body.rationale, JSON.stringify(req.body.evidence || []), idempotencyKey, actor(req)])).rows[0];
+        if (inserted) return inserted;
+        return (await client.query(
+          'SELECT * FROM enterprise_risk_continuity_links WHERE organisation_id=$1 AND idempotency_key=$2',
+          [organisationId, idempotencyKey],
+        )).rows[0];
       },
     });
     return resourceResponse(transaction.result, {
