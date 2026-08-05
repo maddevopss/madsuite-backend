@@ -3,6 +3,7 @@ const db = require('../../../db');
 const { requireOrganisation } = require('../../middleware/organization.middleware');
 const { organisationValue } = require('../../utils/organisationScope');
 const { executeTransaction, evaluatePolicy } = require('../../services/business/transaction-engine.service');
+const { checkBlockClosure } = require('../../utils/blockClosureValidation');
 const documentEvidenceReferenceRoutes = require('./document-evidence-references.routes');
 require('../../services/business/advanced-document-governance-transaction.service');
 
@@ -54,6 +55,7 @@ router.post('/documents', (req,res,next) => handle(res,next,() => {
 router.post('/documents/:id/publish', (req,res,next) => handle(res,next,() => transactionalWrite(req,'documents.document.publish',null,{...req.body,documentId:req.params.id},async ({ client, organisationId, idempotencyKey }) => {
   const document = (await client.query('SELECT id,status FROM governed_documents WHERE id=$1 AND organisation_id=$2 FOR UPDATE',[req.params.id,organisationId])).rows[0];
   if (!document) throw notFound('documents.document_not_found');
+  checkBlockClosure(document, { finalStates: ['published'] });
   const version = (await client.query('SELECT id,version_number,approved_by_user_id,approved_at FROM governed_document_versions WHERE id=$1 AND document_id=$2 AND organisation_id=$3 FOR UPDATE',[req.body.approvedVersionId,req.params.id,organisationId])).rows[0];
   if (!version || !version.approved_by_user_id || !version.approved_at) {
     const error = new Error('documents.approved_version_required');
@@ -94,6 +96,7 @@ router.post('/retention-actions', (req,res,next) => {
 router.post('/retention-actions/:id/execute', (req,res,next) => handle(res,next,() => transactionalWrite(req,'documents.retention.execute',null,{...req.body,retentionActionId:req.params.id},async ({ client, organisationId, idempotencyKey }) => {
   const action = (await client.query(`SELECT id,document_id,action_type,requested_by_user_id,reason,evidence,status FROM document_retention_actions WHERE id=$1 AND organisation_id=$2 FOR UPDATE`,[req.params.id,organisationId])).rows[0];
   if (!action) throw notFound('documents.retention_action_not_found');
+  checkBlockClosure(action, { finalStates: ['executed'] });
   const document = (await client.query('SELECT legal_hold FROM governed_documents WHERE id=$1 AND organisation_id=$2 FOR UPDATE',[action.document_id,organisationId])).rows[0];
   if (!document) throw notFound('documents.document_not_found');
   const input = { ...req.body, documentId:action.document_id, actionType:action.action_type, reason:action.reason, requestedByUserId:action.requested_by_user_id, approvedByUserId:req.body.approvedByUserId, executedByUserId:req.body.executedByUserId||actor(req), evidence:req.body.evidence||action.evidence||[], legalHold:document.legal_hold };

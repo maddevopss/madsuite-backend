@@ -3,6 +3,7 @@ const db = require('../../../db');
 const { requireOrganisation } = require('../../middleware/organization.middleware');
 const { organisationValue } = require('../../utils/organisationScope');
 const { executeTransaction } = require('../../services/business/transaction-engine.service');
+const { checkBlockClosure } = require('../../utils/blockClosureValidation');
 const riskContinuityLinksRoutes = require('./risk-continuity-links.routes');
 const institutionalRiskLinksRoutes = require('./institutional-risk-links.routes');
 require('../../services/business/enterprise-risk-transaction.service');
@@ -81,6 +82,7 @@ router.post('/controls/:id/transition', (req, res, next) => handle(res, next, ()
   return transactionalWrite(req, 'risk.control.transition', 'risk.control.transition', input, async ({ client, organisationId }) => {
     const current = (await client.query('SELECT id,status FROM enterprise_risk_controls WHERE id=$1 AND organisation_id=$2 FOR UPDATE', [req.params.id,organisationId])).rows[0];
     if (!current) throw notFound('risk.control_not_found');
+    checkBlockClosure(current, { finalStates: ['retired'] });
     return (await client.query(`UPDATE enterprise_risk_controls SET status=$1,effectiveness=COALESCE($2,effectiveness),verification_evidence=CASE WHEN $3::jsonb='[]'::jsonb THEN verification_evidence ELSE $3::jsonb END,last_verified_at=CASE WHEN $1='active' THEN NOW() ELSE last_verified_at END,reason=COALESCE($4,reason),updated_at=NOW() WHERE id=$5 AND organisation_id=$6 RETURNING *`, [input.action,input.effectiveness??null,JSON.stringify(input.verificationEvidence||[]),input.reason||null,req.params.id,organisationId])).rows[0];
   });
 }));
@@ -102,6 +104,7 @@ router.post('/treatments/:id/transition', (req, res, next) => handle(res, next, 
   return transactionalWrite(req, 'risk.treatment.transition', 'risk.treatment.transition', input, async ({ client, organisationId }) => {
     const current = (await client.query('SELECT id,status FROM enterprise_risk_treatments WHERE id=$1 AND organisation_id=$2 FOR UPDATE', [req.params.id,organisationId])).rows[0];
     if (!current) throw notFound('risk.treatment_not_found');
+    checkBlockClosure(current, { finalStates: ['closed', 'cancelled'] });
     return (await client.query(`UPDATE enterprise_risk_treatments SET status=$1,result=COALESCE($2,result),evidence=CASE WHEN $3::jsonb='[]'::jsonb THEN evidence ELSE evidence || $3::jsonb END,reason=COALESCE($4,reason),updated_at=NOW() WHERE id=$5 AND organisation_id=$6 RETURNING *`, [input.action,input.result||null,JSON.stringify(input.evidence||[]),input.reason||null,req.params.id,organisationId])).rows[0];
   });
 }));
@@ -123,6 +126,7 @@ router.post('/reviews/:id/transition', (req, res, next) => handle(res, next, () 
   return transactionalWrite(req, 'risk.review.transition', 'risk.review.transition', input, async ({ client, organisationId }) => {
     const current = (await client.query('SELECT id,status FROM enterprise_risk_reviews WHERE id=$1 AND organisation_id=$2 FOR UPDATE', [req.params.id,organisationId])).rows[0];
     if (!current) throw notFound('risk.review_not_found');
+    checkBlockClosure(current, { finalStates: ['closed'] });
     return (await client.query(`UPDATE enterprise_risk_reviews SET status=$1,conclusion=COALESCE($2,conclusion),evidence=CASE WHEN $3::jsonb='[]'::jsonb THEN evidence ELSE evidence || $3::jsonb END,next_review_at=COALESCE($4,next_review_at) WHERE id=$5 AND organisation_id=$6 RETURNING *`, [input.action,input.conclusion||null,JSON.stringify(input.evidence||[]),input.nextReviewAt||null,req.params.id,organisationId])).rows[0];
   });
 }));
