@@ -103,14 +103,14 @@ async function createSession(userId, organizationId, sessionConfig = {}) {
     expiresAt.setMinutes(expiresAt.getMinutes() + 30);
 
     const query = `
-      INSERT INTO user_sessions (
-        user_id, organization_id, organisation_id, session_token,
+      INSERT INTO auth_sessions (
+        user_id, organization_id, session_token,
         session_type, session_name,
         device_id, device_fingerprint, device_name, device_type,
         device_os, device_browser, ip_address, user_agent,
         geolocation, authentication_method, expires_at,
         session_metadata, authenticated_at
-      ) VALUES ($1, $2, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, CURRENT_TIMESTAMP)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, CURRENT_TIMESTAMP)
       RETURNING id;
     `;
 
@@ -131,8 +131,7 @@ async function createSession(userId, organizationId, sessionConfig = {}) {
       JSON.stringify(geolocation),
       authenticationMethod,
       expiresAt,
-      JSON.stringify(sessionMetadata),
-      organizationId
+      JSON.stringify(sessionMetadata)
     ]);
 
     return {
@@ -154,7 +153,7 @@ async function validateSession(sessionTokenHash, userId, organizationId) {
   try {
     const query = `
       SELECT id, user_id, organization_id, is_active, is_expired, is_revoked, expires_at
-      FROM user_sessions
+      FROM auth_sessions
       WHERE session_token = $1 AND user_id = $2 AND organization_id = $3
     `;
 
@@ -180,7 +179,7 @@ async function validateSession(sessionTokenHash, userId, organizationId) {
 
     // Update last activity
     await db.pool.query(
-      `UPDATE user_sessions SET last_activity_at = CURRENT_TIMESTAMP WHERE id = $1`,
+      `UPDATE auth_sessions SET last_activity_at = CURRENT_TIMESTAMP WHERE id = $1`,
       [session.id]
     );
 
@@ -202,7 +201,7 @@ async function validateSession(sessionTokenHash, userId, organizationId) {
 async function revokeSession(sessionId, reason = "") {
   try {
     const query = `
-      UPDATE user_sessions
+      UPDATE auth_sessions
       SET is_revoked = true, revoke_reason = $2, revoked_at = CURRENT_TIMESTAMP
       WHERE id = $1
       RETURNING id;
@@ -652,7 +651,7 @@ async function getActiveUserSessions(userId, organizationId) {
   try {
     const query = `
       SELECT id, session_type, device_name, ip_address, created_at, last_activity_at, expires_at
-      FROM user_sessions
+      FROM auth_sessions
       WHERE user_id = $1 AND organization_id = $2
       AND is_active = true AND is_expired = false AND is_revoked = false
       ORDER BY last_activity_at DESC
@@ -715,9 +714,17 @@ async function getApiKeyStatus(userId) {
       return { found: false };
     }
 
+    const row = result.rows[0];
+
     return {
       found: true,
-      status: result.rows[0]
+      status: {
+        ...row,
+        total_keys: Number(row.total_keys),
+        active_keys: Number(row.active_keys),
+        expired_keys: Number(row.expired_keys),
+        keys_needing_rotation: Number(row.keys_needing_rotation)
+      }
     };
   } catch (error) {
     console.error("Error getting API key status:", error);

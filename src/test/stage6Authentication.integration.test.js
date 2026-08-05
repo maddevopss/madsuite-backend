@@ -37,7 +37,7 @@ describe("Stage 6: Authentication & Sessions", () => {
 
   afterAll(async () => {
     try {
-      await db.pool.query(`DELETE FROM user_sessions WHERE organization_id = $1`, [testOrgId]);
+      await db.pool.query(`DELETE FROM auth_sessions WHERE organization_id = $1`, [testOrgId]);
       await db.pool.query(`DELETE FROM authentication_events WHERE organization_id = $1`, [testOrgId]);
       await db.pool.query(`DELETE FROM authentication_methods WHERE organization_id = $1`, [testOrgId]);
       await db.pool.query(`DELETE FROM api_keys WHERE organization_id = $1`, [testOrgId]);
@@ -276,7 +276,7 @@ describe("Stage 6: Authentication & Sessions", () => {
 
       // Get session ID from database
       const sessionId = session.session_id || (await db.pool.query(
-        `SELECT id FROM user_sessions WHERE user_id = $1 AND organization_id = $2 LIMIT 1`,
+        `SELECT id FROM auth_sessions WHERE user_id = $1 AND organization_id = $2 LIMIT 1`,
         [testUserId, testOrgId]
       )).rows[0]?.id;
 
