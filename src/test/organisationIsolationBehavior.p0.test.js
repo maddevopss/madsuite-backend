@@ -6,15 +6,66 @@
  * niveau des données, sur un échantillon représentatif de noyaux
  * institutionnels ajoutés hors du périmètre Stage 6 initial: comptabilité,
  * RH, SST, achats.
+ *
+ * Important: la connexion de test (locale ou CI) tourne généralement en tant
+ * que superuser Postgres, qui contourne TOUJOURS RLS quelle que soit la
+ * policy — un comportement Postgres standard, indépendant de FORCE ROW LEVEL
+ * SECURITY (qui ne s'applique qu'au propriétaire de la table, jamais à un
+ * superuser). Pour que ce test prouve réellement quelque chose dans N'IMPORTE
+ * quel environnement, il crée son propre rôle restreint (NOSUPERUSER,
+ * NOBYPASSRLS) et l'utilise pour toutes ses requêtes, plutôt que de dépendre
+ * du rôle ambiant de la connexion CI/locale.
  */
 
+const { Pool } = require("pg");
 const db = require("../../db");
 const { createTestOrganisation } = require("./helpers/testData");
+
+const PROBE_ROLE = "p0_isolation_probe";
+const PROBE_PASSWORD = "p0_isolation_probe_pw";
+const PROBE_TABLES = ["hr_departments", "sst_incidents", "procurement_purchase_orders"];
+
+let probePool;
+
+function buildProbeConnectionString() {
+  const base = db.pool.options.connectionString;
+  const url = new URL(base);
+  url.username = PROBE_ROLE;
+  url.password = PROBE_PASSWORD;
+  return url.toString();
+}
+
+async function dropProbeRole(client) {
+  // DROP ROLE échoue si le rôle a encore des privilèges accordés (GRANT SELECT
+  // etc.) — DROP OWNED BY les révoque avant la suppression du rôle lui-même.
+  await client.query(`DROP OWNED BY ${PROBE_ROLE}`).catch(() => {});
+  await client.query(`DROP ROLE IF EXISTS ${PROBE_ROLE}`);
+}
+
+async function ensureProbeRole() {
+  const setup = await db.pool.connect();
+  try {
+    await dropProbeRole(setup);
+    await setup.query(
+      `CREATE ROLE ${PROBE_ROLE} LOGIN PASSWORD '${PROBE_PASSWORD}' NOSUPERUSER NOBYPASSRLS NOCREATEDB NOCREATEROLE`,
+    );
+    await setup.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON ${PROBE_TABLES.join(", ")} TO ${PROBE_ROLE}`);
+    for (const table of PROBE_TABLES) {
+      await setup.query(
+        `GRANT USAGE, SELECT ON SEQUENCE ${table}_id_seq TO ${PROBE_ROLE}`,
+      ).catch(() => {
+        // Certaines tables peuvent utiliser un type d'id différent (uuid) sans séquence dédiée.
+      });
+    }
+  } finally {
+    setup.release();
+  }
+}
 
 // Pour les probes (lecture/écriture censées être bloquées par RLS): on annule
 // toujours la transaction, la policy doit de toute façon empêcher tout effet.
 async function withOrgContext(organisationId, fn) {
-  const client = await db.pool.connect();
+  const client = await probePool.connect();
   try {
     await client.query("BEGIN");
     await client.query("SELECT set_config('app.current_organisation_id', $1, true)", [
@@ -30,7 +81,7 @@ async function withOrgContext(organisationId, fn) {
 // Pour la création des fixtures: la ligne doit persister au-delà de la
 // connexion pour être lue/attaquée par des probes ultérieurs.
 async function withOrgContextCommitted(organisationId, fn) {
-  const client = await db.pool.connect();
+  const client = await probePool.connect();
   try {
     await client.query("BEGIN");
     await client.query("SELECT set_config('app.current_organisation_id', $1, true)", [
@@ -52,6 +103,9 @@ describe("P0: isolation par organisation — preuve comportementale sur données
   let orgB;
 
   beforeAll(async () => {
+    await ensureProbeRole();
+    probePool = new Pool({ connectionString: buildProbeConnectionString(), max: 3 });
+
     const suffix = `${Date.now()}-${Math.random()}`;
     orgA = await createTestOrganisation({ nom: `P0 Isolation A ${suffix}` });
     orgB = await createTestOrganisation({ nom: `P0 Isolation B ${suffix}` });
@@ -61,6 +115,15 @@ describe("P0: isolation par organisation — preuve comportementale sur données
     await db.query("DELETE FROM organisations WHERE id = ANY($1)", [
       [orgA?.id, orgB?.id].filter(Boolean),
     ]);
+    if (probePool) {
+      await probePool.end();
+    }
+    const cleanup = await db.pool.connect();
+    try {
+      await dropProbeRole(cleanup);
+    } finally {
+      cleanup.release();
+    }
   });
 
   test("hr_departments: org B ne voit ni ne modifie un département créé par org A", async () => {
@@ -153,7 +216,7 @@ describe("P0: isolation par organisation — preuve comportementale sur données
     );
     const deptId = inserted.rows[0].id;
 
-    const client = await db.pool.connect();
+    const client = await probePool.connect();
     try {
       await client.query("BEGIN");
       // Aucun set_config: app.current_organisation_id reste vide/non défini.
