@@ -82,6 +82,7 @@ const decisionRoutes = require("./routes/business/decision.routes");
 const continuityRoutes = require("./routes/business/continuity.routes");
 const operationalIncidentsRoutes = require("./routes/business/operational-incidents.routes");
 const operationalProblemsRoutes = require("./routes/business/operational-problems.routes");
+const operationalChangesRoutes = require("./routes/business/operational-changes.routes");
 const notificationsRoutes = require("./routes/notifications.routes");
 const analyticsRoutes = require("./routes/analytics.routes");
 const exportRoutes = require("./integrations/export/export.routes");
@@ -276,6 +277,7 @@ app.use("/api/decision", auth, requireModule("decision_dashboard"), decisionRout
 app.use("/api/continuity", auth, requireModule("cognitive_continuity"), continuityRoutes);
 app.use("/api/operations/incidents", auth, requireModule("operational_incidents"), operationalIncidentsRoutes);
 app.use("/api/operations/problems", auth, requireModule("operational_problems"), operationalProblemsRoutes);
+app.use("/api/operations/changes", auth, requireModule("operational_changes"), operationalChangesRoutes);
 
 // Sensitive organisation/platform surfaces keep their internal guards too.
 // Auth is repeated here intentionally so the route mount itself is never ambiguous in audits.
