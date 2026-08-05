@@ -5,10 +5,10 @@
 const express = require("express");
 const request = require("supertest");
 const db = require("../../db");
-const { createTestOrganisation } = require("./helpers/testData");
+const { createTestOrganisation, createTestUser } = require("./helpers/testData");
 const { seedDefaultChart } = require("../services/business/accounting.service");
 
-const mockState = { organisationId: null };
+const mockState = { organisationId: null, userId: null };
 
 jest.mock("../middleware/organization.middleware", () => ({
   requireOrganisation: (req, _res, next) => {
@@ -20,7 +20,7 @@ jest.mock("../middleware/organization.middleware", () => ({
 
 function fakeAuth(req, _res, next) {
   const role = req.header("x-test-role");
-  if (role) req.user = { id: 1, role };
+  if (role) req.user = { id: mockState.userId, role };
   next();
 }
 
@@ -41,6 +41,8 @@ describe("Permissions HTTP — rapprochement bancaire (domaine 1.G)", () => {
   beforeAll(async () => {
     const org = await createTestOrganisation({ nom: "Rapprochement Permissions E2E Org" });
     mockState.organisationId = org.id;
+    const user = await createTestUser({ organisation_id: org.id, role: "admin" });
+    mockState.userId = user.id;
     await seedDefaultChart(db.pool, org.id);
     const account = await db.pool.query(`SELECT id FROM accounting_accounts WHERE organisation_id=$1 AND code='1010'`, [org.id]);
     bankAccountId = account.rows[0].id;

@@ -12,7 +12,7 @@
 const express = require("express");
 const request = require("supertest");
 const db = require("../../db");
-const { createTestOrganisation } = require("./helpers/testData");
+const { createTestOrganisation, createTestUser } = require("./helpers/testData");
 
 const mockState = { organisationId: null };
 
@@ -59,12 +59,13 @@ describe("Évaluations de performance RH (suite #698)", () => {
   test("cycle de vie complet : brouillon -> saisie employé -> révision -> accusé -> fermeture", async () => {
     const org = await createTestOrganisation({ nom: "HR Performance Review E2E Lifecycle" });
     mockState.organisationId = org.id;
+    const user = await createTestUser({ organisation_id: org.id, role: "admin" });
     const employee = await seedEmployee(org.id, "lifecycle");
 
     const created = await request(app)
       .post("/api/hr/performance-reviews")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ employeeId: employee.id, periodStart: "2026-01-01", periodEnd: "2026-06-30", idempotencyKey: "review-create-0001" });
     expect(created.status).toBe(201);
     expect(created.body.review.status).toBe("draft");
@@ -73,7 +74,7 @@ describe("Évaluations de performance RH (suite #698)", () => {
     const listed = await request(app)
       .get(`/api/hr/performance-reviews?employeeId=${employee.id}`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1");
+      .set("x-test-user-id", String(user.id));
     expect(listed.status).toBe(200);
     expect(listed.body.reviews).toHaveLength(1);
 
@@ -81,14 +82,14 @@ describe("Évaluations de performance RH (suite #698)", () => {
     const invalidJump = await request(app)
       .post(`/api/hr/performance-reviews/${reviewId}/transitions/closed`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ idempotencyKey: "review-invalid-jump-0001" });
     expect(invalidJump.status).toBe(409);
 
     const toEmployeeInput = await request(app)
       .post(`/api/hr/performance-reviews/${reviewId}/transitions/employee_input`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ employeeComments: "Mes réalisations du semestre.", idempotencyKey: "review-transition-0001" });
     expect(toEmployeeInput.status).toBe(201);
     expect(toEmployeeInput.body.review.status).toBe("employee_input");
@@ -97,7 +98,7 @@ describe("Évaluations de performance RH (suite #698)", () => {
     const toManagerReview = await request(app)
       .post(`/api/hr/performance-reviews/${reviewId}/transitions/manager_review`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ managerComments: "Bon semestre.", idempotencyKey: "review-transition-0002" });
     expect(toManagerReview.status).toBe(201);
     expect(toManagerReview.body.review.status).toBe("manager_review");
@@ -106,7 +107,7 @@ describe("Évaluations de performance RH (suite #698)", () => {
     const acknowledged = await request(app)
       .post(`/api/hr/performance-reviews/${reviewId}/transitions/acknowledged`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ idempotencyKey: "review-transition-0003" });
     expect(acknowledged.status).toBe(201); // acknowledged n'exige pas la fermeture complète
     expect(acknowledged.body.review.acknowledged_at).toBeTruthy();
@@ -114,14 +115,14 @@ describe("Évaluations de performance RH (suite #698)", () => {
     const closeIncomplete = await request(app)
       .post(`/api/hr/performance-reviews/${reviewId}/transitions/closed`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ idempotencyKey: "review-transition-0004" });
     expect(closeIncomplete.status).toBe(409);
 
     const closed = await request(app)
       .post(`/api/hr/performance-reviews/${reviewId}/transitions/closed`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({
         overallRating: 4.5,
         objectives: [{ title: "Livrer le projet X", achieved: true }],
@@ -137,14 +138,14 @@ describe("Évaluations de performance RH (suite #698)", () => {
     const fetched = await request(app)
       .get(`/api/hr/performance-reviews/${reviewId}`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1");
+      .set("x-test-user-id", String(user.id));
     expect(fetched.body.transitions.length).toBeGreaterThanOrEqual(4);
 
     // Une évaluation fermée n'accepte plus aucune transition.
     const afterClosed = await request(app)
       .post(`/api/hr/performance-reviews/${reviewId}/transitions/cancelled`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ idempotencyKey: "review-transition-0006" });
     expect(afterClosed.status).toBe(409);
   });
@@ -152,26 +153,27 @@ describe("Évaluations de performance RH (suite #698)", () => {
   test("idempotence : rejouer la même clé de transition ne modifie rien de plus", async () => {
     const org = await createTestOrganisation({ nom: "HR Performance Review E2E Idempotency" });
     mockState.organisationId = org.id;
+    const user = await createTestUser({ organisation_id: org.id, role: "admin" });
     const employee = await seedEmployee(org.id, "idempotency");
 
     const created = await request(app)
       .post("/api/hr/performance-reviews")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ employeeId: employee.id, periodStart: "2026-01-01", periodEnd: "2026-06-30", idempotencyKey: "review-idem-create-0001" });
     const reviewId = created.body.review.id;
 
     const first = await request(app)
       .post(`/api/hr/performance-reviews/${reviewId}/transitions/employee_input`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ idempotencyKey: "review-idem-transition-0001" });
     expect(first.status).toBe(201);
 
     const replay = await request(app)
       .post(`/api/hr/performance-reviews/${reviewId}/transitions/employee_input`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ idempotencyKey: "review-idem-transition-0001" });
     expect(replay.status).toBe(200);
     expect(replay.body.duplicate).toBe(true);
@@ -183,11 +185,12 @@ describe("Évaluations de performance RH (suite #698)", () => {
   test("création refusée pour un employé introuvable", async () => {
     const org = await createTestOrganisation({ nom: "HR Performance Review E2E Missing Employee" });
     mockState.organisationId = org.id;
+    const user = await createTestUser({ organisation_id: org.id, role: "admin" });
 
     const attempt = await request(app)
       .post("/api/hr/performance-reviews")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ employeeId: 999999999, periodStart: "2026-01-01", periodEnd: "2026-06-30", idempotencyKey: "review-missing-employee-0001" });
     expect(attempt.status).toBe(404);
   });
@@ -197,25 +200,27 @@ describe("Évaluations de performance RH (suite #698)", () => {
     const orgB = await createTestOrganisation({ nom: "HR Performance Review E2E Org B" });
 
     mockState.organisationId = orgA.id;
+    const userA = await createTestUser({ organisation_id: orgA.id, role: "admin" });
     const employeeA = await seedEmployee(orgA.id, "iso-a");
     const created = await request(app)
       .post("/api/hr/performance-reviews")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(userA.id))
       .send({ employeeId: employeeA.id, periodStart: "2026-01-01", periodEnd: "2026-06-30", idempotencyKey: "review-iso-create-0001" });
     const reviewId = created.body.review.id;
 
     mockState.organisationId = orgB.id;
+    const userB = await createTestUser({ organisation_id: orgB.id, role: "admin" });
     const crossOrgGet = await request(app)
       .get(`/api/hr/performance-reviews/${reviewId}`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1");
+      .set("x-test-user-id", String(userB.id));
     expect(crossOrgGet.status).toBe(404);
 
     const crossOrgTransition = await request(app)
       .post(`/api/hr/performance-reviews/${reviewId}/transitions/employee_input`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(userB.id))
       .send({ idempotencyKey: "review-iso-transition-0001" });
     expect(crossOrgTransition.status).toBe(404);
   });

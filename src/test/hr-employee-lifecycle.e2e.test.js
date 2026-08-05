@@ -11,7 +11,7 @@
 const express = require("express");
 const request = require("supertest");
 const db = require("../../db");
-const { createTestOrganisation } = require("./helpers/testData");
+const { createTestOrganisation, createTestUser } = require("./helpers/testData");
 
 const mockState = { organisationId: null };
 
@@ -50,11 +50,12 @@ describe("Cycle de vie employé RH — correction du type ct_mad_transaction_id"
   test("createEmployee : écriture réelle réussie, ct_mad_transaction_id au format CTM-<année>-<uuid>", async () => {
     const org = await createTestOrganisation({ nom: "HR Employee Lifecycle E2E Create" });
     mockState.organisationId = org.id;
+    const user = await createTestUser({ organisation_id: org.id, role: "admin" });
 
     const created = await request(app)
       .post("/api/hr/employees")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ employeeNumber: `E-${Date.now()}`, legalName: "Test Employé", hireDate: "2026-01-01", idempotencyKey: "emp-create-0001" });
     expect(created.status).toBe(201);
     expect(created.body.employee.employment_status).toBe("draft");
@@ -66,7 +67,7 @@ describe("Cycle de vie employé RH — correction du type ct_mad_transaction_id"
     const replay = await request(app)
       .post("/api/hr/employees")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ employeeNumber: `E-REPLAY-${Date.now()}`, legalName: "Autre Nom", hireDate: "2026-01-01", idempotencyKey: "emp-create-0001" });
     expect(replay.status).toBe(200);
     expect(replay.body.duplicate).toBe(true);
@@ -75,18 +76,19 @@ describe("Cycle de vie employé RH — correction du type ct_mad_transaction_id"
   test("transitionEmployment : activation réelle réussie", async () => {
     const org = await createTestOrganisation({ nom: "HR Employee Lifecycle E2E Transition" });
     mockState.organisationId = org.id;
+    const user = await createTestUser({ organisation_id: org.id, role: "admin" });
 
     const created = await request(app)
       .post("/api/hr/employees")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ employeeNumber: `E-${Date.now()}`, legalName: "Test Transition", hireDate: "2026-01-01", idempotencyKey: "emp-transition-create-0001" });
     const employeeId = created.body.employee.id;
 
     const activated = await request(app)
       .post(`/api/hr/employees/${employeeId}/transitions/activate`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ idempotencyKey: "emp-transition-0001" });
     expect(activated.status).toBe(200);
     expect(activated.body.employee.employment_status).toBe("active");
@@ -95,25 +97,26 @@ describe("Cycle de vie employé RH — correction du type ct_mad_transaction_id"
   test("decideLeave : demande de congé créée et approuvée réellement", async () => {
     const org = await createTestOrganisation({ nom: "HR Employee Lifecycle E2E Leave" });
     mockState.organisationId = org.id;
+    const user = await createTestUser({ organisation_id: org.id, role: "admin" });
 
     const created = await request(app)
       .post("/api/hr/employees")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ employeeNumber: `E-${Date.now()}`, legalName: "Test Congé", hireDate: "2026-01-01", idempotencyKey: "emp-leave-create-0001" });
     const employeeId = created.body.employee.id;
 
     const leave = await request(app)
       .post("/api/hr/leave-requests")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ employeeId, leaveType: "vacation", startDate: "2026-08-10", endDate: "2026-08-14", requestedUnits: 5, idempotencyKey: "leave-create-0001" });
     expect(leave.status).toBe(201);
 
     const approved = await request(app)
       .post(`/api/hr/leave-requests/${leave.body.leaveRequest.id}/approve`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ idempotencyKey: "leave-decide-0001" });
     expect(approved.status).toBe(200);
     expect(approved.body.request.status).toBe("approved");
@@ -122,24 +125,25 @@ describe("Cycle de vie employé RH — correction du type ct_mad_transaction_id"
   test("verifyCompetency : compétence d'employé enregistrée réellement", async () => {
     const org = await createTestOrganisation({ nom: "HR Employee Lifecycle E2E Competency" });
     mockState.organisationId = org.id;
+    const user = await createTestUser({ organisation_id: org.id, role: "admin" });
 
     const created = await request(app)
       .post("/api/hr/employees")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ employeeNumber: `E-${Date.now()}`, legalName: "Test Compétence", hireDate: "2026-01-01", idempotencyKey: "emp-comp-create-0001" });
     const employeeId = created.body.employee.id;
 
     const competency = await request(app)
       .post("/api/hr/competencies")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ code: "TEST-COMP", name: "Compétence de test" });
 
     const verified = await request(app)
       .post("/api/hr/employee-competencies")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ employeeId, competencyId: competency.body.competency.id, issuedAt: "2026-01-01", idempotencyKey: "comp-verify-0001" });
     expect(verified.status).toBe(201);
     expect(verified.body.employeeCompetency.status).toBe("valid");

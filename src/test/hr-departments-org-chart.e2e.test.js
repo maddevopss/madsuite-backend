@@ -9,7 +9,7 @@
 const express = require("express");
 const request = require("supertest");
 const db = require("../../db");
-const { createTestOrganisation } = require("./helpers/testData");
+const { createTestOrganisation, createTestUser } = require("./helpers/testData");
 
 const mockState = { organisationId: null };
 
@@ -56,12 +56,13 @@ describe("Départements et organigramme RH (nouvelle conception)", () => {
   test("créer un département, un sous-département, rattacher un employé, consulter l'organigramme", async () => {
     const org = await createTestOrganisation({ nom: "HR Departments E2E Lifecycle" });
     mockState.organisationId = org.id;
+    const user = await createTestUser({ organisation_id: org.id, role: "admin" });
     const employee = await seedEmployee(org.id, "lifecycle");
 
     const parent = await request(app)
       .post("/api/hr/departments")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ code: "OPS", name: "Opérations", idempotencyKey: "dept-parent-0001" });
     expect(parent.status).toBe(201);
     const parentId = parent.body.department.id;
@@ -69,7 +70,7 @@ describe("Départements et organigramme RH (nouvelle conception)", () => {
     const child = await request(app)
       .post("/api/hr/departments")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ code: "OPS-QC", name: "Opérations — Québec", parentDepartmentId: parentId, managerEmployeeId: employee.id, idempotencyKey: "dept-child-0001" });
     expect(child.status).toBe(201);
     expect(child.body.department.parent_department_id).toBe(parentId);
@@ -78,7 +79,7 @@ describe("Départements et organigramme RH (nouvelle conception)", () => {
     const assigned = await request(app)
       .patch(`/api/hr/employees/${employee.id}/department`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ departmentId: child.body.department.id });
     expect(assigned.status).toBe(200);
     expect(assigned.body.employee.department_id).toBe(child.body.department.id);
@@ -86,7 +87,7 @@ describe("Départements et organigramme RH (nouvelle conception)", () => {
     const chart = await request(app)
       .get("/api/hr/organisation-chart")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1");
+      .set("x-test-user-id", String(user.id));
     expect(chart.status).toBe(200);
     expect(chart.body.departments.length).toBeGreaterThanOrEqual(2);
     const employeeInChart = chart.body.employees.find((e) => e.id === employee.id);
@@ -96,23 +97,24 @@ describe("Départements et organigramme RH (nouvelle conception)", () => {
   test("un cycle dans la hiérarchie des départements est refusé", async () => {
     const org = await createTestOrganisation({ nom: "HR Departments E2E Cycle" });
     mockState.organisationId = org.id;
+    const user = await createTestUser({ organisation_id: org.id, role: "admin" });
 
     const a = await request(app)
       .post("/api/hr/departments")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ code: "A", name: "Département A", idempotencyKey: "dept-cycle-a-0001" });
     const b = await request(app)
       .post("/api/hr/departments")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ code: "B", name: "Département B", parentDepartmentId: a.body.department.id, idempotencyKey: "dept-cycle-b-0001" });
 
     // A ne peut pas devenir enfant de B, qui est déjà son propre enfant.
     const cycle = await request(app)
       .patch(`/api/hr/departments/${a.body.department.id}`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ parentDepartmentId: b.body.department.id });
     expect(cycle.status).toBe(409);
 
@@ -120,7 +122,7 @@ describe("Départements et organigramme RH (nouvelle conception)", () => {
     const selfParent = await request(app)
       .patch(`/api/hr/departments/${a.body.department.id}`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ parentDepartmentId: a.body.department.id });
     expect(selfParent.status).toBe(400);
   });
@@ -128,25 +130,26 @@ describe("Départements et organigramme RH (nouvelle conception)", () => {
   test("un code de département dupliqué est refusé, idempotence sur la création", async () => {
     const org = await createTestOrganisation({ nom: "HR Departments E2E Duplicate" });
     mockState.organisationId = org.id;
+    const user = await createTestUser({ organisation_id: org.id, role: "admin" });
 
     const first = await request(app)
       .post("/api/hr/departments")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ code: "FIN", name: "Finance", idempotencyKey: "dept-dup-0001" });
     expect(first.status).toBe(201);
 
     const duplicateCode = await request(app)
       .post("/api/hr/departments")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ code: "FIN", name: "Finance (bis)", idempotencyKey: "dept-dup-0002" });
     expect(duplicateCode.status).toBe(409);
 
     const replay = await request(app)
       .post("/api/hr/departments")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ code: "FIN", name: "Finance", idempotencyKey: "dept-dup-0001" });
     expect(replay.status).toBe(200);
     expect(replay.body.duplicate).toBe(true);
@@ -155,12 +158,13 @@ describe("Départements et organigramme RH (nouvelle conception)", () => {
   test("rattachement refusé pour un département introuvable, RBAC hérité du routeur RH", async () => {
     const org = await createTestOrganisation({ nom: "HR Departments E2E Missing/RBAC" });
     mockState.organisationId = org.id;
+    const user = await createTestUser({ organisation_id: org.id, role: "admin" });
     const employee = await seedEmployee(org.id, "rbac");
 
     const missingDept = await request(app)
       .patch(`/api/hr/employees/${employee.id}/department`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ departmentId: 999999999 });
     expect(missingDept.status).toBe(404);
 
@@ -177,24 +181,26 @@ describe("Départements et organigramme RH (nouvelle conception)", () => {
     const orgB = await createTestOrganisation({ nom: "HR Departments E2E Org B" });
 
     mockState.organisationId = orgA.id;
+    const userA = await createTestUser({ organisation_id: orgA.id, role: "admin" });
     const dept = await request(app)
       .post("/api/hr/departments")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(userA.id))
       .send({ code: "ISO", name: "Isolation", idempotencyKey: "dept-iso-0001" });
 
     mockState.organisationId = orgB.id;
+    const userB = await createTestUser({ organisation_id: orgB.id, role: "admin" });
     const crossOrgUpdate = await request(app)
       .patch(`/api/hr/departments/${dept.body.department.id}`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(userB.id))
       .send({ name: "Renommé" });
     expect(crossOrgUpdate.status).toBe(404);
 
     const chart = await request(app)
       .get("/api/hr/organisation-chart")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1");
+      .set("x-test-user-id", String(userB.id));
     expect(chart.body.departments.find((d) => d.code === "ISO")).toBeUndefined();
   });
 });

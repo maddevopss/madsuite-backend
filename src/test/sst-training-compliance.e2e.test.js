@@ -11,7 +11,7 @@
 const express = require("express");
 const request = require("supertest");
 const db = require("../../db");
-const { createTestOrganisation } = require("./helpers/testData");
+const { createTestOrganisation, createTestUser } = require("./helpers/testData");
 
 const mockState = { organisationId: null };
 
@@ -59,12 +59,13 @@ describe("Conformité de formation SST (suite du 2026-08-02)", () => {
   test("cycle de vie complet : assigned -> in_progress -> completed, transitions invalides refusées", async () => {
     const org = await createTestOrganisation({ nom: "SST Training E2E Lifecycle" });
     mockState.organisationId = org.id;
+    const user = await createTestUser({ organisation_id: org.id, role: "admin" });
     const employee = await seedEmployee(org.id, "lifecycle");
 
     const assigned = await request(app)
       .post("/api/sst/training-assignments")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ employeeId: employee.id, trainingCode: "SIMDUT", title: "SIMDUT 2015", dueAt: "2026-12-31", idempotencyKey: "assign-lifecycle-0001" });
     expect(assigned.status).toBe(201);
     expect(assigned.body.assignment.status).toBe("assigned");
@@ -74,14 +75,14 @@ describe("Conformité de formation SST (suite du 2026-08-02)", () => {
     const invalidComplete = await request(app)
       .post(`/api/sst/training-assignments/${assignmentId}/transitions/complete`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ idempotencyKey: "transition-lifecycle-0001" });
     expect(invalidComplete.status).toBe(409);
 
     const started = await request(app)
       .post(`/api/sst/training-assignments/${assignmentId}/transitions/start`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ idempotencyKey: "transition-lifecycle-0002" });
     expect(started.status).toBe(201);
     expect(started.body.assignment.status).toBe("in_progress");
@@ -89,14 +90,14 @@ describe("Conformité de formation SST (suite du 2026-08-02)", () => {
     const badScore = await request(app)
       .post(`/api/sst/training-assignments/${assignmentId}/transitions/complete`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ score: 150, idempotencyKey: "transition-lifecycle-0003" });
     expect(badScore.status).toBe(400);
 
     const completed = await request(app)
       .post(`/api/sst/training-assignments/${assignmentId}/transitions/complete`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ score: 92, idempotencyKey: "transition-lifecycle-0004" });
     expect(completed.status).toBe(201);
     expect(completed.body.assignment.status).toBe("completed");
@@ -107,7 +108,7 @@ describe("Conformité de formation SST (suite du 2026-08-02)", () => {
     const afterCompleted = await request(app)
       .post(`/api/sst/training-assignments/${assignmentId}/transitions/cancel`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ reason: "Test", idempotencyKey: "transition-lifecycle-0005" });
     expect(afterCompleted.status).toBe(409);
   });
@@ -115,26 +116,27 @@ describe("Conformité de formation SST (suite du 2026-08-02)", () => {
   test("waive/cancel exigent une raison, idempotence sur les transitions", async () => {
     const org = await createTestOrganisation({ nom: "SST Training E2E Waive" });
     mockState.organisationId = org.id;
+    const user = await createTestUser({ organisation_id: org.id, role: "admin" });
     const employee = await seedEmployee(org.id, "waive");
 
     const assigned = await request(app)
       .post("/api/sst/training-assignments")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ employeeId: employee.id, trainingCode: "ESPACE-CLOS", title: "Espace clos", idempotencyKey: "assign-waive-0001" });
     const assignmentId = assigned.body.assignment.id;
 
     const missingReason = await request(app)
       .post(`/api/sst/training-assignments/${assignmentId}/transitions/waive`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ idempotencyKey: "transition-waive-0001" });
     expect(missingReason.status).toBe(400);
 
     const waived = await request(app)
       .post(`/api/sst/training-assignments/${assignmentId}/transitions/waive`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ reason: "Non applicable à ce poste", idempotencyKey: "transition-waive-0002" });
     expect(waived.status).toBe(201);
     expect(waived.body.assignment.status).toBe("waived");
@@ -142,7 +144,7 @@ describe("Conformité de formation SST (suite du 2026-08-02)", () => {
     const replay = await request(app)
       .post(`/api/sst/training-assignments/${assignmentId}/transitions/waive`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ reason: "Non applicable à ce poste", idempotencyKey: "transition-waive-0002" });
     expect(replay.status).toBe(200);
     expect(replay.body.duplicate).toBe(true);
@@ -154,23 +156,24 @@ describe("Conformité de formation SST (suite du 2026-08-02)", () => {
   test("conformité par employé : une formation en retard (assigned, échéance passée) réduit la conformité", async () => {
     const org = await createTestOrganisation({ nom: "SST Training E2E Compliance" });
     mockState.organisationId = org.id;
+    const user = await createTestUser({ organisation_id: org.id, role: "admin" });
     const employee = await seedEmployee(org.id, "compliance");
 
     await request(app)
       .post("/api/sst/training-assignments")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ employeeId: employee.id, trainingCode: "HAUTEUR", title: "Travail en hauteur", dueAt: "2020-01-01", idempotencyKey: "assign-compliance-0001" });
     await request(app)
       .post("/api/sst/training-assignments")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ employeeId: employee.id, trainingCode: "CHARIOT", title: "Chariot élévateur", dueAt: "2027-01-01", idempotencyKey: "assign-compliance-0002" });
 
     const compliance = await request(app)
       .get(`/api/sst/employees/${employee.id}/training-compliance`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1");
+      .set("x-test-user-id", String(user.id));
     expect(compliance.status).toBe(200);
     expect(compliance.body.compliance.total).toBe(2);
     expect(compliance.body.compliance.overdue).toBe(1);
@@ -180,19 +183,20 @@ describe("Conformité de formation SST (suite du 2026-08-02)", () => {
   test("alertes 90/60/30 jours : une formation due dans 20 jours apparaît dans les trois fenêtres, pas dans 'overdue'", async () => {
     const org = await createTestOrganisation({ nom: "SST Training E2E Alerts" });
     mockState.organisationId = org.id;
+    const user = await createTestUser({ organisation_id: org.id, role: "admin" });
     const employee = await seedEmployee(org.id, "alerts");
     const dueInTwentyDays = new Date(Date.now() + 20 * 86400000).toISOString();
 
     await request(app)
       .post("/api/sst/training-assignments")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ employeeId: employee.id, trainingCode: "SIMDUT", title: "SIMDUT", dueAt: dueInTwentyDays, idempotencyKey: "assign-alerts-0001" });
 
     const alerts = await request(app)
       .get("/api/sst/training-compliance/alerts")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1");
+      .set("x-test-user-id", String(user.id));
     expect(alerts.status).toBe(200);
     expect(alerts.body.due30.some((a) => a.training_code === "SIMDUT")).toBe(true);
     expect(alerts.body.due60.some((a) => a.training_code === "SIMDUT")).toBe(true);
@@ -203,6 +207,7 @@ describe("Conformité de formation SST (suite du 2026-08-02)", () => {
   test("un employe ne peut pas assigner ou transitionner une formation, mais peut lire", async () => {
     const org = await createTestOrganisation({ nom: "SST Training E2E RBAC" });
     mockState.organisationId = org.id;
+    const user = await createTestUser({ organisation_id: org.id, role: "admin" });
     const employee = await seedEmployee(org.id, "rbac");
 
     const attempt = await request(app)
@@ -221,19 +226,21 @@ describe("Conformité de formation SST (suite du 2026-08-02)", () => {
     const orgB = await createTestOrganisation({ nom: "SST Training E2E Org B" });
 
     mockState.organisationId = orgA.id;
+    const userA = await createTestUser({ organisation_id: orgA.id, role: "admin" });
     const employeeA = await seedEmployee(orgA.id, "iso-a");
     const assigned = await request(app)
       .post("/api/sst/training-assignments")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(userA.id))
       .send({ employeeId: employeeA.id, trainingCode: "SIMDUT", title: "SIMDUT", idempotencyKey: "assign-iso-0001" });
     const assignmentId = assigned.body.assignment.id;
 
     mockState.organisationId = orgB.id;
+    const userB = await createTestUser({ organisation_id: orgB.id, role: "admin" });
     const crossOrgTransition = await request(app)
       .post(`/api/sst/training-assignments/${assignmentId}/transitions/start`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(userB.id))
       .send({ idempotencyKey: "transition-iso-0001" });
     expect(crossOrgTransition.status).toBe(404);
   });

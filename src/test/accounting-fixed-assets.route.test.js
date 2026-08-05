@@ -6,9 +6,9 @@
 const express = require("express");
 const request = require("supertest");
 const db = require("../../db");
-const { createTestOrganisation } = require("./helpers/testData");
+const { createTestOrganisation, createTestUser } = require("./helpers/testData");
 
-const mockState = { organisationId: null };
+const mockState = { organisationId: null, userId: null };
 
 jest.mock("../middleware/organization.middleware", () => ({
   requireOrganisation: (req, _res, next) => {
@@ -20,7 +20,7 @@ jest.mock("../middleware/organization.middleware", () => ({
 
 function fakeAuth(req, _res, next) {
   const role = req.header("x-test-role");
-  if (role) req.user = { id: 1, role };
+  if (role) req.user = { id: mockState.userId, role };
   next();
 }
 
@@ -40,6 +40,8 @@ describe("Permissions HTTP — immobilisations (domaine 1.H)", () => {
   beforeAll(async () => {
     const org = await createTestOrganisation({ nom: "Immobilisations Permissions E2E Org" });
     mockState.organisationId = org.id;
+    const user = await createTestUser({ organisation_id: org.id, role: "admin" });
+    mockState.userId = user.id;
     app = buildApp();
   });
 

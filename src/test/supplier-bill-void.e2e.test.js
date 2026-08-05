@@ -12,10 +12,10 @@
 const express = require("express");
 const request = require("supertest");
 const db = require("../../db");
-const { createTestOrganisation } = require("./helpers/testData");
+const { createTestOrganisation, createTestUser } = require("./helpers/testData");
 const { seedDefaultChart } = require("../services/business/accounting.service");
 
-const mockState = { organisationId: null };
+const mockState = { organisationId: null, userId: null };
 
 jest.mock("../middleware/organization.middleware", () => ({
   requireOrganisation: (req, _res, next) => {
@@ -27,7 +27,7 @@ jest.mock("../middleware/organization.middleware", () => ({
 
 function fakeAuth(req, _res, next) {
   const role = req.header("x-test-role");
-  if (role) req.user = { id: 1, role };
+  if (role) req.user = { id: mockState.userId, role };
   next();
 }
 
@@ -69,6 +69,8 @@ describe("Annulation de facture fournisseur — voidSupplierBill (suite #687)", 
     const org = await createTestOrganisation({ nom: "Fournisseurs Void E2E Org" });
     orgId = org.id;
     mockState.organisationId = orgId;
+    const user = await createTestUser({ organisation_id: orgId, role: "admin" });
+    mockState.userId = user.id;
     await seedDefaultChart(db.pool, orgId);
     app = buildApp();
   });
