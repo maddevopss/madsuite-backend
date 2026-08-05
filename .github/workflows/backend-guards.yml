@@ -89,3 +89,6 @@ jobs:
 
       - name: Reports contract guard
         run: npm run guard:reports-contract
+
+      - name: Migration reversibility guard
+        run: npm run guard:migration-reversibility
