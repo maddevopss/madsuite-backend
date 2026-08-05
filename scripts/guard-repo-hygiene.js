@@ -24,8 +24,17 @@ const inspectedExtensions = new Set([
   ".js", ".jsx", ".ts", ".tsx", ".json", ".yml", ".yaml", ".md", ".env", ".example", ".txt",
 ]);
 
+// .gitignore porte une exception explicite pour ces deux fichiers
+// (`!.env.example`, `!.env.test.example`) : ce sont des exemples documentaires
+// sans secret réel, censés être commités. Le garde-fou doit refléter la même
+// liste, sinon toute PR qui ajoute .env.test.example échoue sur ce guard
+// alors que .gitignore l'autorise explicitement (constat Étage 7 PR F, #175).
+const ALLOWED_ENV_EXAMPLE_NAMES = [".env.example", ".env.test.example"];
+
 function isAllowedEnvExample(relative) {
-  return relative === ".env.example" || relative.endsWith(`${path.sep}.env.example`) || relative.endsWith("/.env.example");
+  return ALLOWED_ENV_EXAMPLE_NAMES.some(
+    (name) => relative === name || relative.endsWith(`${path.sep}${name}`) || relative.endsWith(`/${name}`),
+  );
 }
 
 function walk(dir, files = []) {
