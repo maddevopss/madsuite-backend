@@ -4,6 +4,7 @@ const { requireOrganisation } = require('../../middleware/organization.middlewar
 const { organisationValue } = require('../../utils/organisationScope');
 const { executeTransaction, evaluatePolicy } = require('../../services/business/transaction-engine.service');
 const { resolveAuthority } = require('../../services/business/governance-authority.service');
+const { checkBlockClosure } = require('../../utils/blockClosureValidation');
 require('../../services/business/organizational-governance-transaction.service');
 
 const router = express.Router();
@@ -66,8 +67,9 @@ router.post('/decisions', (req,res,next) => handle(res,next,() => {
   return transactionalWrite(req, 'governance.decision.create', 'governance.decision.create', input, async ({ client, organisationId, idempotencyKey }) => (await client.query(`INSERT INTO governance_decisions (organisation_id,meeting_id,decision_number,category,title,context,analysis,decision_text,justification,impacts,risks,evidence,author_user_id,status,idempotency_key) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) RETURNING *`,[organisationId,input.meetingId||null,input.decisionNumber,input.category,input.title,input.context,input.analysis,input.decisionText,input.justification,JSON.stringify(input.impacts||[]),JSON.stringify(input.risks||[]),JSON.stringify(input.evidence||[]),input.authorUserId,input.status||'draft',idempotencyKey])).rows[0]);
 },201));
 router.post('/decisions/:id/approve', (req,res,next) => handle(res,next,() => transactionalWrite(req, 'governance.decision.approve', null, { ...req.body, decisionId: req.params.id }, async ({ client, organisationId, idempotencyKey }) => {
-  const decision = (await client.query('SELECT id,author_user_id,category FROM governance_decisions WHERE id=$1 AND organisation_id=$2 FOR UPDATE',[req.params.id,organisationId])).rows[0];
+  const decision = (await client.query('SELECT id,author_user_id,category,status FROM governance_decisions WHERE id=$1 AND organisation_id=$2 FOR UPDATE',[req.params.id,organisationId])).rows[0];
   if (!decision) throw notFound('governance.decision_not_found');
+  checkBlockClosure(decision, { finalStates: ['approved', 'rejected', 'archived', 'cancelled'] });
   const approverUserId = req.body.approverUserId || actor(req);
   const authority = await resolveAuthority(client,{ organisationId, actorUserId: approverUserId, authorityType: req.body.authorityType || 'decision.approve', requestedScope: req.body.requestedScope || decision.category, requestedAmount: req.body.requestedAmount ?? null, subjectType: 'decision', subjectId: req.params.id });
   const input = { ...req.body, decisionId: req.params.id, authorUserId: decision.author_user_id, approverUserId, authorityValid: authority.withinScope && authority.withinPeriod && !authority.activeConflict && (authority.requestedAmount == null || authority.financialLimit == null || Number(authority.requestedAmount) <= Number(authority.financialLimit)), activeConflict: authority.activeConflict };
@@ -85,8 +87,9 @@ router.post('/policies', (req,res,next) => {
   },201);
 });
 router.post('/policies/:id/publish', (req,res,next) => handle(res,next,() => transactionalWrite(req, 'governance.policy.publish', null, { ...req.body, policyId: req.params.id }, async ({ client, organisationId, idempotencyKey }) => {
-  const current = (await client.query('SELECT id,owner_user_id FROM governance_policies WHERE id=$1 AND organisation_id=$2 FOR UPDATE',[req.params.id,organisationId])).rows[0];
+  const current = (await client.query('SELECT id,owner_user_id,status FROM governance_policies WHERE id=$1 AND organisation_id=$2 FOR UPDATE',[req.params.id,organisationId])).rows[0];
   if (!current) throw notFound('governance.policy_not_found');
+  checkBlockClosure(current, { finalStates: ['published', 'archived', 'cancelled'] });
   const input = { ...req.body, policyId: req.params.id, ownerUserId: current.owner_user_id, approvedByUserId: req.body.approvedByUserId || actor(req) };
   const policy = await evaluatePolicy({ policy: 'governance.policy.publish@1', input, idempotencyKey, organisationId, actorUserId: actor(req), client });
   if (!policy.allowed) deny(policy);

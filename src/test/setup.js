@@ -66,6 +66,13 @@ afterAll(async () => {
   } catch (err) {
     console.error("Erreur lors du nettoyage de la DB de test:", err);
   } finally {
-    await db.end().catch(() => null);
+    // NE PAS appeler db.end() ici : certains modules (health probes stage5,
+    // retry engine, outbox processor...) font des requêtes DB asynchrones
+    // "fire and forget" qui peuvent encore être en vol après ce hook, même
+    // dans un fichier de test qui a fini ses assertions. Fermer le pool ici
+    // casse ces requêtes ("Cannot use a pool after calling end").
+    // La fuite de connexions par fichier (chaque fichier recharge db.js à
+    // neuf, cf. commentaire historique plus haut) est traitée en amont via
+    // DB_IDLE_TIMEOUT_MS (voir db.js) plutôt qu'en forçant la fermeture ici.
   }
 });
