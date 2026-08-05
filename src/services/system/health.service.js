@@ -218,3 +218,87 @@ class HealthService {
     }
 
     // Determine overall status
+    const overallStatus = this.computeOverallStatus(results);
+
+    return {
+      status: overallStatus,
+      timestamp: new Date().toISOString(),
+      uptime_seconds: Math.floor(process.uptime()),
+      probes: results,
+      checked_at: new Date(),
+    };
+  }
+
+  computeOverallStatus(probeResults) {
+    const statuses = Object.values(probeResults).map((r) => r.status);
+
+    if (statuses.some((s) => s === 'unhealthy')) {
+      return 'unhealthy';
+    }
+    if (statuses.some((s) => s === 'degraded')) {
+      return 'degraded';
+    }
+    return 'healthy';
+  }
+
+  async getLatestHealthStatus(serviceName) {
+    try {
+      const result = await prisma.query(
+        `
+        SELECT service_name, overall_status, latest_latency_ms,
+               last_checked_at, healthy_probes, degraded_probes, unhealthy_probes
+        FROM observability.health_summary
+        WHERE service_name = $1
+        `,
+        [serviceName],
+      );
+
+      return result.rows[0] || null;
+    } catch (error) {
+      console.error('Failed to fetch health status:', error.message);
+      return null;
+    }
+  }
+
+  async getHealthHistory(serviceName, probeName, limit = 100) {
+    try {
+      const result = await prisma.query(
+        `
+        SELECT service_name, probe_name, status, latency_ms, error_message, checked_at
+        FROM observability.health_check_results
+        WHERE service_name = $1 AND probe_name = $2
+        ORDER BY checked_at DESC
+        LIMIT $3
+        `,
+        [serviceName, probeName, limit],
+      );
+
+      return result.rows;
+    } catch (error) {
+      console.error('Failed to fetch health history:', error.message);
+      return [];
+    }
+  }
+
+  async cleanup(retentionDays = 7) {
+    // Delete old health check records
+    const cutoffDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000);
+
+    try {
+      const result = await prisma.query(
+        `
+        DELETE FROM observability.health_check_results
+        WHERE created_at < $1
+        `,
+        [cutoffDate],
+      );
+
+      return result.rowCount || 0;
+    } catch (error) {
+      console.error('Failed to cleanup health checks:', error.message);
+      return 0;
+    }
+  }
+}
+
+module.exports = new HealthService();
