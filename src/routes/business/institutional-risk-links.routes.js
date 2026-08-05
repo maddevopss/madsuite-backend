@@ -106,12 +106,23 @@ router.post('/', (req, res, next) => {
         )).rows[0];
         if (!target) throw notFound('integration.target_not_found');
 
-        return (await client.query(
+        // #171 PR H : preuve e2e réelle (pas seulement contractuelle) qu'une
+        // relance avec la même clé d'idempotence ne doit jamais échouer sur
+        // la contrainte d'unicité métier — ON CONFLICT DO NOTHING + repli
+        // par (organisation_id, idempotency_key), motif déjà utilisé ailleurs
+        // (ex. document-proof.routes.js /records/:id/links).
+        const inserted = (await client.query(
           `INSERT INTO institutional_risk_links
             (organisation_id,risk_id,target_type,target_id,relationship_type,rationale,evidence,created_by,idempotency_key)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+           ON CONFLICT (organisation_id, idempotency_key) DO NOTHING
            RETURNING *`,
           [organisationId,input.riskId,input.targetType,input.targetId,input.relationshipType,input.rationale,JSON.stringify(input.evidence||[]),actor(req),idempotencyKey],
+        )).rows[0];
+        if (inserted) return inserted;
+        return (await client.query(
+          'SELECT * FROM institutional_risk_links WHERE organisation_id=$1 AND idempotency_key=$2',
+          [organisationId, idempotencyKey],
         )).rows[0];
       },
     });
