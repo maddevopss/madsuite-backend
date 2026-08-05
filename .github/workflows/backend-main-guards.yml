@@ -92,3 +92,5 @@ jobs:
 
       - name: Migration reversibility guard
         run: npm run guard:migration-reversibility
+      - name: AI recommendation engine evaluation guard
+        run: npm run guard:ai-recommendation-eval
