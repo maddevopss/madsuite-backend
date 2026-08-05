@@ -22,6 +22,26 @@ function notFound(message) {
   return Object.assign(new Error(message), { statusCode: 404 });
 }
 
+// Extrait pour être réutilisé tel quel par l'arrêt contrôlé de la PR G
+// (Étage 9, ai-monitoring.routes.js) — un arrêt déclenché par une dérive
+// détectée doit appliquer exactement la même politique de désactivation
+// qu'un arrêt manuel, pas une variante distincte.
+async function deactivateUseCase(db, { organisationId, useCaseId, deactivatedBy, reason }) {
+  const current = (await db.query(
+    'SELECT * FROM ai_use_case_activations WHERE organisation_id=$1 AND use_case_id=$2',
+    [organisationId, useCaseId],
+  )).rows[0];
+  if (!current) throw notFound('Ce cas d\'usage n\'a jamais été activé pour cette organisation.');
+  if (current.status === 'disabled') return { activation: current, alreadyDisabled: true };
+
+  const { rows } = await db.query(
+    `UPDATE ai_use_case_activations SET status='disabled', disabled_by=$3, disabled_at=NOW(), disabled_reason=$4
+      WHERE organisation_id=$1 AND use_case_id=$2 RETURNING *`,
+    [organisationId, useCaseId, deactivatedBy || null, reason || null],
+  );
+  return { activation: rows[0], alreadyDisabled: false };
+}
+
 router.get('/', requireRole('admin', 'manager'), async (req, res, next) => {
   try {
     const { status } = req.query;
@@ -122,22 +142,20 @@ router.post('/:id/activate', requireRole('admin'), async (req, res, next) => {
 
 router.post('/:id/deactivate', requireRole('admin'), async (req, res, next) => {
   try {
-    const current = (await req.db.query(
-      'SELECT * FROM ai_use_case_activations WHERE organisation_id=$1 AND use_case_id=$2',
-      [req.organisationId, req.params.id],
-    )).rows[0];
-    if (!current) throw notFound('Ce cas d\'usage n\'a jamais été activé pour cette organisation.');
-    if (current.status === 'disabled') return res.json({ activation: current, alreadyDisabled: true });
-
-    const { rows } = await req.db.query(
-      `UPDATE ai_use_case_activations SET status='disabled', disabled_by=$3, disabled_at=NOW()
-        WHERE organisation_id=$1 AND use_case_id=$2 RETURNING *`,
-      [req.organisationId, req.params.id, req.user?.id || null],
-    );
-    return res.json({ activation: rows[0] });
+    const { activation, alreadyDisabled } = await deactivateUseCase(req.db, {
+      organisationId: req.organisationId,
+      useCaseId: req.params.id,
+      deactivatedBy: req.user?.id,
+      reason: req.body?.reason,
+    });
+    return res.json({ activation, alreadyDisabled });
   } catch (error) {
     return next(error);
   }
 });
 
 module.exports = router;
+// Exporté nommément pour réutilisation par ai-monitoring.routes.js
+// (Étage 9 PR G) — la politique de désactivation ne doit exister qu'à
+// un seul endroit.
+module.exports.deactivateUseCase = deactivateUseCase;

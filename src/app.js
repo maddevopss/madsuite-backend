@@ -91,6 +91,7 @@ const aiContextRoutes = require("./routes/business/ai-context.routes");
 const aiRecommendationsRoutes = require("./routes/business/ai-recommendations.routes");
 const aiAuditLogRoutes = require("./routes/business/ai-audit-log.routes");
 const aiDecisionsRoutes = require("./routes/business/ai-decisions.routes");
+const aiMonitoringRoutes = require("./routes/business/ai-monitoring.routes");
 const notificationsRoutes = require("./routes/notifications.routes");
 const analyticsRoutes = require("./routes/analytics.routes");
 const exportRoutes = require("./integrations/export/export.routes");
@@ -294,6 +295,7 @@ app.use("/api/ai/context", auth, requireModule("ai_context"), aiContextRoutes);
 app.use("/api/ai/recommendations", auth, requireModule("ai_recommendations"), aiRecommendationsRoutes);
 app.use("/api/ai/audit-log", auth, requireModule("ai_audit_log"), aiAuditLogRoutes);
 app.use("/api/ai/decisions", auth, requireModule("ai_decisions"), aiDecisionsRoutes);
+app.use("/api/ai/monitoring", auth, requireModule("ai_monitoring"), aiMonitoringRoutes);
 
 // Sensitive organisation/platform surfaces keep their internal guards too.
 // Auth is repeated here intentionally so the route mount itself is never ambiguous in audits.
