@@ -18,7 +18,7 @@ class HealthService {
       await prisma.query('SELECT 1');
       return {
         status: 'healthy',
-        latency_ms: Date.now() - startTime,
+        latency_ms: Math.max(1, Date.now() - startTime),
         error_message: null,
       };
     } catch (error) {
