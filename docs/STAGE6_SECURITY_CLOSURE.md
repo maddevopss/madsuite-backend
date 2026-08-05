@@ -1,5 +1,12 @@
 # Stage 6 Security & Compliance Implementation Closure
 
+> ⚠️ **Document non fiable, vérifié incorrect le 2026-08-05.** Plusieurs
+> métriques ci-dessous sont fabriquées (notamment "PR B — Cryptographic
+> Integrity & Chain", jamais implémentée) et les colonnes Frontend/E2E
+> "✅ Complete" sont fausses pour la plupart des PR. Voir
+> `STAGE6_ISOLATION_REPORT.md` et `STAGE6_RESIDUAL_RISKS.md` pour l'état
+> réel, vérifié PR par PR.
+
 **Date**: 2026-08-03  
 **Status**: Complete  
 **Version**: 1.0.0

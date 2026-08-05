@@ -1,5 +1,9 @@
 # Stage 6 Implementation Metrics & Statistics
 
+> ⚠️ **Document non fiable, vérifié incorrect le 2026-08-05.** Voir
+> `STAGE6_ISOLATION_REPORT.md` et `STAGE6_RESIDUAL_RISKS.md` pour l'état
+> réel, vérifié PR par PR.
+
 **Generated**: 2026-08-03  
 **Total Lines of Code**: 50,000+  
 **Implementation Time**: 4 weeks  
