@@ -12,6 +12,39 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const isUuid = value => UUID_PATTERN.test(String(value || ""));
 
+const ROLE_ALIASES = Object.freeze({
+  administrator: "admin",
+  organization_admin: "admin",
+  organisation_admin: "admin",
+  org_admin: "admin",
+  superadmin: "super_admin",
+  superadministrator: "super_admin",
+  organization_super_admin: "super_admin",
+  organisation_super_admin: "super_admin",
+});
+
+function normalizeRoleName(value) {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+
+  return ROLE_ALIASES[normalized] || normalized;
+}
+
+const ROLE_HIERARCHY = Object.freeze({
+  viewer: 1,
+  editor: 2,
+  manager: 3,
+  approver: 4,
+  admin: 5,
+  super_admin: 6,
+});
+
+function getRoleLevel(value) {
+  return ROLE_HIERARCHY[normalizeRoleName(value)] || 0;
+}
+
 /**
  * Register a sensitive operation
  */
@@ -182,16 +215,29 @@ async function requestApproval(operationId, operationType, requesterUserId, orga
 async function detectSelfApprovalRisk(userId, organizationId, operationType) {
   try {
     const query = `
-      SELECT role_name FROM user_role_assignments ura
+      SELECT rd.role_name, rd.role_type
+      FROM user_role_assignments ura
       JOIN role_definitions rd ON rd.id = ura.role_id
-      WHERE ura.user_id = $1 AND ura.organization_id = $2 AND ura.is_active = true
+      WHERE ura.user_id = $1
+        AND ura.organization_id = $2
+        AND ura.is_active = true
+        AND rd.is_active = true
     `;
 
     const result = await db.pool.query(query, [userId, organizationId]);
 
     // Check if user has approval authority for this operation type
-    const roles = result.rows.map(r => String(r.role_name || "").toLowerCase());
-    const hasApprovalAuthority = roles.some(r => r === "admin" || r === "super_admin" || r.includes("approver") || r.includes("admin"));
+    const hasApprovalAuthority = result.rows.some(({ role_name, role_type }) => {
+      const role = normalizeRoleName(role_name);
+      const type = normalizeRoleName(role_type);
+
+      return (
+        getRoleLevel(role) >= ROLE_HIERARCHY.approver ||
+        role.includes("approver") ||
+        type === "admin" ||
+        type === "system"
+      );
+    });
 
     return hasApprovalAuthority;
   } catch (error) {
@@ -207,27 +253,26 @@ async function detectElevationAttempt(userId, organizationId, targetRole, operat
   try {
     // Get current role
     const currentQuery = `
-      SELECT rd.role_name FROM user_role_assignments ura
+      SELECT rd.role_name
+      FROM user_role_assignments ura
       JOIN role_definitions rd ON rd.id = ura.role_id
-      WHERE ura.user_id = $1 AND ura.organization_id = $2 AND ura.is_active = true
-      LIMIT 1
+      WHERE ura.user_id = $1
+        AND ura.organization_id = $2
+        AND ura.is_active = true
+        AND rd.is_active = true
     `;
 
     const currentResult = await db.pool.query(currentQuery, [userId, organizationId]);
-    const currentRole = currentResult.rows[0]?.role_name || "viewer";
+    const requestedCurrentRole = operationDetails && operationDetails.currentRole;
+    const currentRole = requestedCurrentRole
+      ? normalizeRoleName(requestedCurrentRole)
+      : currentResult.rows
+        .map(row => normalizeRoleName(row.role_name))
+        .sort((left, right) => getRoleLevel(right) - getRoleLevel(left))[0] || "viewer";
+    const normalizedTargetRole = normalizeRoleName(targetRole);
 
-    // Define role hierarchy (higher = more privileged)
-    const roleHierarchy = {
-      "viewer": 1,
-      "editor": 2,
-      "manager": 3,
-      "approver": 4,
-      "admin": 5,
-      "super_admin": 6
-    };
-
-    const currentLevel = roleHierarchy[currentRole] || 1;
-    const targetLevel = roleHierarchy[targetRole] || 1;
+    const currentLevel = getRoleLevel(currentRole) || ROLE_HIERARCHY.viewer;
+    const targetLevel = getRoleLevel(normalizedTargetRole) || ROLE_HIERARCHY.viewer;
 
     const isElevation = targetLevel > currentLevel;
 
@@ -368,7 +413,7 @@ async function approveOperation(approvalId, approverId, organizationId, approval
     };
   } catch (error) {
     console.error("Error approving operation:", error);
-    return { approved: false, reason: "approval_not_found" };
+    return { approved: false, reason: "approval_not_found", error: error.message };
   }
 }
 
@@ -406,7 +451,7 @@ async function rejectOperation(approvalId, organizationId, rejectionReason = "")
     };
   } catch (error) {
     console.error("Error rejecting operation:", error);
-    return { rejected: false, reason: "approval_not_found" };
+    return { rejected: false, reason: "approval_not_found", error: error.message };
   }
 }
 

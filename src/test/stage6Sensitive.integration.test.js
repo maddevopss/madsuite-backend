@@ -27,60 +27,77 @@ describe("Stage 6: Sensitive Transition Security", () => {
     // Setup test organization and users
     try {
       await db.pool.query(
-        `INSERT INTO organizations (id, name, slug)
-         VALUES ($1, $2, $3)
+        `INSERT INTO organizations (id, name)
+         VALUES ($1, $2)
          ON CONFLICT (id) DO NOTHING`,
-        [testOrgId, "Test Org", "test-org"]
+        [testOrgId, "Test Org"]
+      );
+
+      // Remove stale assignments from previous runs so role resolution is deterministic.
+      await db.pool.query(
+        `DELETE FROM user_role_assignments
+         WHERE organization_id = $1
+           AND user_id IN ($2, $3, $4)`,
+        [testOrgId, testUserId, testUserIdAdmin, testUserIdRegular]
       );
 
       // Setup role definitions
       const approverRole = await db.pool.query(
-        `INSERT INTO role_definitions (organization_id, role_name, role_type)
-         VALUES ($1, $2, $3)
-         ON CONFLICT DO NOTHING
+        `INSERT INTO role_definitions (organization_id, role_name, display_name, role_type)
+         VALUES ($1, $2, $2, $3)
+         ON CONFLICT (role_name) DO UPDATE SET
+           display_name = EXCLUDED.display_name,
+           role_type = EXCLUDED.role_type,
+           is_active = true
          RETURNING id`,
         [testOrgId, "approver", "organization"]
       );
 
       const adminRole = await db.pool.query(
-        `INSERT INTO role_definitions (organization_id, role_name, role_type)
-         VALUES ($1, $2, $3)
-         ON CONFLICT DO NOTHING
+        `INSERT INTO role_definitions (organization_id, role_name, display_name, role_type)
+         VALUES ($1, $2, $2, $3)
+         ON CONFLICT (role_name) DO UPDATE SET
+           display_name = EXCLUDED.display_name,
+           role_type = EXCLUDED.role_type,
+           is_active = true
          RETURNING id`,
         [testOrgId, "admin", "system"]
       );
 
       const editorRole = await db.pool.query(
-        `INSERT INTO role_definitions (organization_id, role_name, role_type)
-         VALUES ($1, $2, $3)
-         ON CONFLICT DO NOTHING
+        `INSERT INTO role_definitions (organization_id, role_name, display_name, role_type)
+         VALUES ($1, $2, $2, $3)
+         ON CONFLICT (role_name) DO UPDATE SET
+           display_name = EXCLUDED.display_name,
+           role_type = EXCLUDED.role_type,
+           is_active = true
          RETURNING id`,
         [testOrgId, "editor", "organization"]
       );
 
       // Assign roles to users
       await db.pool.query(
-        `INSERT INTO user_role_assignments (user_id, role_id, organization_id, is_active)
-         VALUES ($1, $2, $3, true)
+        `INSERT INTO user_role_assignments (user_id, role_id, organization_id, is_active, assigned_by)
+         VALUES ($1, $2, $3, true, $4)
          ON CONFLICT DO NOTHING`,
-        [testUserId, approverRole.rows[0]?.id || "role-approver", testOrgId]
+        [testUserId, approverRole.rows[0]?.id || "role-approver", testOrgId, testUserIdAdmin]
       );
 
       await db.pool.query(
-        `INSERT INTO user_role_assignments (user_id, role_id, organization_id, is_active)
-         VALUES ($1, $2, $3, true)
+        `INSERT INTO user_role_assignments (user_id, role_id, organization_id, is_active, assigned_by)
+         VALUES ($1, $2, $3, true, $4)
          ON CONFLICT DO NOTHING`,
-        [testUserIdAdmin, adminRole.rows[0]?.id || "role-admin", testOrgId]
+        [testUserIdAdmin, adminRole.rows[0]?.id || "role-admin", testOrgId, testUserIdAdmin]
       );
 
       await db.pool.query(
-        `INSERT INTO user_role_assignments (user_id, role_id, organization_id, is_active)
-         VALUES ($1, $2, $3, true)
+        `INSERT INTO user_role_assignments (user_id, role_id, organization_id, is_active, assigned_by)
+         VALUES ($1, $2, $3, true, $4)
          ON CONFLICT DO NOTHING`,
-        [testUserIdRegular, editorRole.rows[0]?.id || "role-editor", testOrgId]
+        [testUserIdRegular, editorRole.rows[0]?.id || "role-editor", testOrgId, testUserIdAdmin]
       );
     } catch (error) {
-      console.log("Setup warning:", error.message);
+      throw new Error(`Stage 6 fixture setup failed: ${error.message}`, { cause: error });
     }
   });
 

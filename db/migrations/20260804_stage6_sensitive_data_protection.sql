@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS data_field_classifications (
   -- Field identification
   table_name VARCHAR(100) NOT NULL,
   column_name VARCHAR(100) NOT NULL,
-  organization_id VARCHAR(255),                          -- NULL = global classification
+  organization_id VARCHAR(255),                  -- NULL = global classification
 
   -- Classification
   data_classification_id UUID NOT NULL REFERENCES data_classifications(id),
@@ -92,9 +92,7 @@ CREATE TABLE IF NOT EXISTS encryption_keys (
   uses_external_kms BOOLEAN DEFAULT true,        -- Uses AWS KMS, Azure Key Vault, etc
 
   -- Metadata
-  organization_id VARCHAR(255) REFERENCES organizations(id) ON DELETE CASCADE,
-
-  CONSTRAINT fk_key_org FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE
+  organization_id VARCHAR(255) REFERENCES organizations(id) ON DELETE CASCADE
 );
 
 ALTER TABLE encryption_keys

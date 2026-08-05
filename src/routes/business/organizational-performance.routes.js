@@ -3,6 +3,7 @@ const db = require('../../../db');
 const { requireOrganisation } = require('../../middleware/organization.middleware');
 const { organisationValue } = require('../../utils/organisationScope');
 const { executeTransaction, evaluatePolicy } = require('../../services/business/transaction-engine.service');
+const { checkBlockClosure } = require('../../utils/blockClosureValidation');
 require('../../services/business/organizational-performance-transaction.service');
 
 const router = express.Router();
@@ -31,12 +32,13 @@ router.post('/objectives', (req,res,next) => handle(res,next,() => {
   return transactionalWrite(req, 'performance.objective.create', 'performance.objective.create', input, async ({ client, organisationId }) => (await client.query(`INSERT INTO performance_objectives (organisation_id,objective_number,title,description,owner_user_id,parent_objective_id,perspective,status,priority,period_start,period_end,baseline,target,unit) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14) RETURNING *`,[organisationId,input.objectiveNumber,input.title,input.description,input.ownerUserId,input.parentObjectiveId||null,input.perspective,input.status||'draft',input.priority||'medium',input.periodStart,input.periodEnd,input.baseline??null,input.target??null,input.unit||null])).rows[0]);
 },201));
 router.post('/objectives/:id/approve', (req,res,next) => handle(res,next,() => transactionalWrite(req, 'performance.objective.approve', null, { ...req.body, objectiveId: req.params.id }, async ({ client, organisationId, idempotencyKey }) => {
-  const objective = (await client.query('SELECT owner_user_id FROM performance_objectives WHERE id=$1 AND organisation_id=$2 FOR UPDATE',[req.params.id,organisationId])).rows[0];
+  const objective = (await client.query('SELECT owner_user_id,status FROM performance_objectives WHERE id=$1 AND organisation_id=$2 FOR UPDATE',[req.params.id,organisationId])).rows[0];
   if (!objective) {
     const error = new Error('performance.objective_not_found');
     error.statusCode = 404;
     throw error;
   }
+  checkBlockClosure(objective, { finalStates: ['active', 'archived', 'cancelled'] });
   const input = { ...req.body, objectiveId:req.params.id, ownerUserId:objective.owner_user_id, approvedByUserId:req.body.approvedByUserId||actor(req) };
   const decision = await evaluatePolicy({ policy:'performance.objective.approve@1', input, idempotencyKey, organisationId, actorUserId:actor(req), client });
   if (!decision.allowed) {
@@ -72,7 +74,12 @@ router.post('/improvement-plans', (req,res,next) => handle(res,next,() => {
 },201));
 router.post('/improvement-plans/:id/transition', (req,res,next) => handle(res,next,() => {
   const input = { ...req.body, planId: req.params.id };
-  return transactionalWrite(req, 'performance.improvement.transition', 'performance.improvement.transition', input, async ({ client, organisationId }) => (await client.query(`UPDATE performance_improvement_plans SET status=$1,implementation_result=$2,implementation_evidence=$3,effectiveness_result=$4,verification_evidence=$5,verified_by_user_id=$6,verified_at=CASE WHEN $1 IN ('verified','closed') THEN NOW() ELSE verified_at END,closed_at=CASE WHEN $1='closed' THEN NOW() ELSE closed_at END,updated_at=NOW() WHERE id=$7 AND organisation_id=$8 RETURNING *`,[input.action,input.implementationResult||null,JSON.stringify(input.implementationEvidence||[]),input.effectivenessResult||null,JSON.stringify(input.verificationEvidence||[]),input.verifiedByUserId||null,req.params.id,organisationId])).rows[0]);
+  return transactionalWrite(req, 'performance.improvement.transition', 'performance.improvement.transition', input, async ({ client, organisationId }) => {
+    const plan = (await client.query('SELECT id,status FROM performance_improvement_plans WHERE id=$1 AND organisation_id=$2 FOR UPDATE',[req.params.id,organisationId])).rows[0];
+    if (!plan) throw new Error('performance.improvement_plan_not_found');
+    checkBlockClosure(plan, { finalStates: ['verified', 'closed', 'cancelled'] });
+    return (await client.query(`UPDATE performance_improvement_plans SET status=$1,implementation_result=$2,implementation_evidence=$3,effectiveness_result=$4,verification_evidence=$5,verified_by_user_id=$6,verified_at=CASE WHEN $1 IN ('verified','closed') THEN NOW() ELSE verified_at END,closed_at=CASE WHEN $1='closed' THEN NOW() ELSE closed_at END,updated_at=NOW() WHERE id=$7 AND organisation_id=$8 RETURNING *`,[input.action,input.implementationResult||null,JSON.stringify(input.implementationEvidence||[]),input.effectivenessResult||null,JSON.stringify(input.verificationEvidence||[]),input.verifiedByUserId||null,req.params.id,organisationId])).rows[0];
+  });
 }));
 
 router.get('/alerts', (req,res,next) => handle(res,next,async () => (await db.query(`SELECT 'objective_at_risk' AS alert_type,id,objective_number AS reference,period_end AS due_at FROM performance_objectives WHERE organisation_id=$1 AND status='at_risk' UNION ALL SELECT 'improvement_overdue',id,plan_number,due_at FROM performance_improvement_plans WHERE organisation_id=$1 AND due_at<CURRENT_DATE AND status NOT IN ('verified','closed','cancelled') ORDER BY due_at`,[org(req)])).rows));
