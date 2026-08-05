@@ -81,6 +81,7 @@ const environmentalManagementRoutes = require("./routes/business/environmental-m
 const decisionRoutes = require("./routes/business/decision.routes");
 const continuityRoutes = require("./routes/business/continuity.routes");
 const operationalIncidentsRoutes = require("./routes/business/operational-incidents.routes");
+const operationalProblemsRoutes = require("./routes/business/operational-problems.routes");
 const notificationsRoutes = require("./routes/notifications.routes");
 const analyticsRoutes = require("./routes/analytics.routes");
 const exportRoutes = require("./integrations/export/export.routes");
@@ -274,6 +275,7 @@ app.use("/api/environment", auth, requireModule("environmental_management"), env
 app.use("/api/decision", auth, requireModule("decision_dashboard"), decisionRoutes);
 app.use("/api/continuity", auth, requireModule("cognitive_continuity"), continuityRoutes);
 app.use("/api/operations/incidents", auth, requireModule("operational_incidents"), operationalIncidentsRoutes);
+app.use("/api/operations/problems", auth, requireModule("operational_problems"), operationalProblemsRoutes);
 
 // Sensitive organisation/platform surfaces keep their internal guards too.
 // Auth is repeated here intentionally so the route mount itself is never ambiguous in audits.
