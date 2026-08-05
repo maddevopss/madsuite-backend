@@ -73,8 +73,8 @@ const RULES = {
 async function seedRuleset(organisationId) {
   const checksum = checksumRules(RULES);
   const { rows } = await db.pool.query(
-    `INSERT INTO payroll_rulesets (organisation_id, version, province, effective_from, rules, checksum, status)
-     VALUES ($1,'v1','QC','2026-01-01',$2,$3,'draft') RETURNING *`,
+    `INSERT INTO payroll_rulesets (organisation_id, version, province, effective_from, rules, checksum, status, legal_source)
+     VALUES ($1,'v1','QC','2026-01-01',$2,$3,'draft','Revenu Québec — fixture de test') RETURNING *`,
     [organisationId, JSON.stringify(RULES), checksum],
   );
   return rows[0];

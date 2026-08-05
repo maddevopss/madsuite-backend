@@ -19,7 +19,32 @@ test("accepte un jeu de règles complet et intact", () => {
     effective_from: "2026-01-01",
     rules,
     checksum: crypto.createHash("sha256").update(JSON.stringify(rules)).digest("hex"),
+    legal_source: "Revenu Québec — Guide TP-1015.G",
   })).not.toThrow();
+});
+
+// #363 : un jeu de règles ne peut être activé sans référence au texte
+// légal/fiscal dont il découle, sans quoi aucune prétention de conformité
+// n'est vérifiable.
+test("refuse un jeu de règles actif sans source légale/fiscale", () => {
+  const rules = { employeeDeductions: [], employerContributions: [] };
+  const checksum = crypto.createHash("sha256").update(JSON.stringify(rules)).digest("hex");
+  expect(() => validateRulesetForActivation({
+    version: "2026.1",
+    province: "QC",
+    effective_from: "2026-01-01",
+    rules,
+    checksum,
+    legal_source: null,
+  })).toThrow("source légale");
+  expect(() => validateRulesetForActivation({
+    version: "2026.1",
+    province: "QC",
+    effective_from: "2026-01-01",
+    rules,
+    checksum,
+    legal_source: "   ",
+  })).toThrow("source légale");
 });
 
 test("retourne le cycle existant pour la même clé d’idempotence", async () => {
