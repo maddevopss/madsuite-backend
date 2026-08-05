@@ -39,6 +39,42 @@ async function assertIncidentInOrg(db, incidentId, organisationId) {
   if (!incident) throw notFound('Incident introuvable.');
 }
 
+// Extrait pour être réutilisé tel quel par l'exécution de la PR D
+// (Étage 9, #195, ai-decisions.routes.js) — "appliquer les politiques
+// métier existantes lors de l'exécution" signifie appeler ce même code,
+// pas le réimplémenter.
+async function linkIncidentToProblem(db, { organisationId, problemId, incidentId }) {
+  await assertIncidentInOrg(db, incidentId, organisationId);
+
+  const current = (await db.query(
+    'SELECT * FROM operational_problems WHERE id=$1 AND organisation_id=$2 FOR UPDATE',
+    [problemId, organisationId],
+  )).rows[0];
+  if (!current) throw notFound('Problème introuvable.');
+
+  const alreadyLinked = (current.linked_incident_ids || []).map(Number).includes(incidentId);
+  if (alreadyLinked) return { problem: current, duplicate: true, reopened: false };
+
+  const wasClosedAsResolved = current.status === 'closed' && current.closure_type === 'resolved';
+  const nextStatus = wasClosedAsResolved ? 'open' : current.status;
+  const nextLinked = [...(current.linked_incident_ids || []), incidentId];
+
+  const { rows } = await db.query(
+    `UPDATE operational_problems
+        SET linked_incident_ids=$3::jsonb,
+            recurrence_count=recurrence_count+1,
+            last_recurrence_at=NOW(),
+            status=$4,
+            closed_at=CASE WHEN $4='open' THEN NULL ELSE closed_at END,
+            closure_type=CASE WHEN $4='open' THEN NULL ELSE closure_type END,
+            updated_at=NOW()
+      WHERE organisation_id=$1 AND id=$2
+      RETURNING *`,
+    [organisationId, problemId, JSON.stringify(nextLinked), nextStatus],
+  );
+  return { problem: rows[0], duplicate: false, reopened: wasClosedAsResolved };
+}
+
 router.get('/', async (req, res, next) => {
   try {
     const { status, closureType } = req.query;
@@ -132,37 +168,12 @@ router.post('/:id/link-incident', async (req, res, next) => {
   try {
     const id = positiveId(req.params.id, 'Problème');
     const incidentId = positiveId(req.body?.incidentId, 'Incident');
-    await assertIncidentInOrg(req.db, incidentId, req.organisationId);
-
-    const current = (await req.db.query(
-      'SELECT * FROM operational_problems WHERE id=$1 AND organisation_id=$2 FOR UPDATE',
-      [id, req.organisationId],
-    )).rows[0];
-    if (!current) throw notFound('Problème introuvable.');
-
-    const alreadyLinked = (current.linked_incident_ids || []).map(Number).includes(incidentId);
-    if (alreadyLinked) {
-      return res.status(200).json({ problem: current, duplicate: true });
-    }
-
-    const wasClosedAsResolved = current.status === 'closed' && current.closure_type === 'resolved';
-    const nextStatus = wasClosedAsResolved ? 'open' : current.status;
-    const nextLinked = [...(current.linked_incident_ids || []), incidentId];
-
-    const { rows } = await req.db.query(
-      `UPDATE operational_problems
-          SET linked_incident_ids=$3::jsonb,
-              recurrence_count=recurrence_count+1,
-              last_recurrence_at=NOW(),
-              status=$4,
-              closed_at=CASE WHEN $4='open' THEN NULL ELSE closed_at END,
-              closure_type=CASE WHEN $4='open' THEN NULL ELSE closure_type END,
-              updated_at=NOW()
-        WHERE organisation_id=$1 AND id=$2
-        RETURNING *`,
-      [req.organisationId, id, JSON.stringify(nextLinked), nextStatus],
-    );
-    return res.json({ problem: rows[0], reopened: wasClosedAsResolved });
+    const { problem, duplicate, reopened } = await linkIncidentToProblem(req.db, {
+      organisationId: req.organisationId,
+      problemId: id,
+      incidentId,
+    });
+    return res.json({ problem, duplicate, reopened });
   } catch (error) {
     return next(error);
   }
@@ -259,3 +270,7 @@ router.post('/:id/:action', async (req, res, next) => {
 });
 
 module.exports = router;
+// Exporté nommément pour réutilisation par ai-decisions.routes.js
+// (Étage 9 PR D) — la politique métier de liaison incident/problème ne
+// doit exister qu'à un seul endroit.
+module.exports.linkIncidentToProblem = linkIncidentToProblem;
