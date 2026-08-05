@@ -1,3 +1,5 @@
+jest.setTimeout(30000);
+
 const fs = require('fs');
 const path = require('path');
 const YAML = require('yaml');

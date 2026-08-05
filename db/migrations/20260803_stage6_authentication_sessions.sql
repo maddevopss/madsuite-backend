@@ -48,7 +48,11 @@ CREATE INDEX IF NOT EXISTS idx_session_config_active ON session_configurations(i
 CREATE INDEX IF NOT EXISTS idx_session_config_org ON session_configurations(organization_id);
 
 -- Table for active user sessions
-CREATE TABLE IF NOT EXISTS user_sessions (
+-- NOTE: named auth_sessions (not user_sessions) on purpose — a legacy `user_sessions`
+-- table already exists (INTEGER `organisation_id`, RLS-enforced multi-tenant scope) and
+-- is unrelated/incompatible with this VARCHAR-keyed organization_id schema. Reusing that
+-- name previously caused a silent no-op CREATE TABLE + type conflicts (see PR #732 fix).
+CREATE TABLE IF NOT EXISTS auth_sessions (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
   -- Session identification
@@ -102,43 +106,11 @@ CREATE TABLE IF NOT EXISTS user_sessions (
   CONSTRAINT fk_session_org FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE
 );
 
-ALTER TABLE user_sessions
-  ADD COLUMN IF NOT EXISTS user_id VARCHAR(255),
-  ADD COLUMN IF NOT EXISTS organization_id VARCHAR(255),
-  ADD COLUMN IF NOT EXISTS session_token VARCHAR(255),
-  ADD COLUMN IF NOT EXISTS session_type VARCHAR(100),
-  ADD COLUMN IF NOT EXISTS session_name VARCHAR(255),
-  ADD COLUMN IF NOT EXISTS last_activity_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-  ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP WITH TIME ZONE,
-  ADD COLUMN IF NOT EXISTS renewed_at TIMESTAMP WITH TIME ZONE,
-  ADD COLUMN IF NOT EXISTS device_id VARCHAR(255),
-  ADD COLUMN IF NOT EXISTS device_fingerprint VARCHAR(255),
-  ADD COLUMN IF NOT EXISTS device_name VARCHAR(255),
-  ADD COLUMN IF NOT EXISTS device_type VARCHAR(50),
-  ADD COLUMN IF NOT EXISTS device_os VARCHAR(100),
-  ADD COLUMN IF NOT EXISTS device_browser VARCHAR(100),
-  ADD COLUMN IF NOT EXISTS is_device_trusted BOOLEAN DEFAULT false,
-  ADD COLUMN IF NOT EXISTS device_approved_at TIMESTAMP WITH TIME ZONE,
-  ADD COLUMN IF NOT EXISTS device_approval_required BOOLEAN DEFAULT false,
-  ADD COLUMN IF NOT EXISTS geolocation JSONB,
-  ADD COLUMN IF NOT EXISTS user_agent TEXT,
-  ADD COLUMN IF NOT EXISTS authentication_method VARCHAR(50),
-  ADD COLUMN IF NOT EXISTS authenticated_at TIMESTAMP WITH TIME ZONE,
-  ADD COLUMN IF NOT EXISTS twofa_verified BOOLEAN DEFAULT false,
-  ADD COLUMN IF NOT EXISTS twofa_verified_at TIMESTAMP WITH TIME ZONE,
-  ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT true,
-  ADD COLUMN IF NOT EXISTS is_expired BOOLEAN DEFAULT false,
-  ADD COLUMN IF NOT EXISTS is_revoked BOOLEAN DEFAULT false,
-  ADD COLUMN IF NOT EXISTS revoke_reason TEXT,
-  ADD COLUMN IF NOT EXISTS revoked_at TIMESTAMP WITH TIME ZONE,
-  ADD COLUMN IF NOT EXISTS session_metadata JSONB,
-  ADD COLUMN IF NOT EXISTS last_ip_change TIMESTAMP WITH TIME ZONE;
-
-CREATE INDEX IF NOT EXISTS idx_sessions_user ON user_sessions(user_id, is_active);
-CREATE INDEX IF NOT EXISTS idx_sessions_org ON user_sessions(organization_id, is_active);
-CREATE INDEX IF NOT EXISTS idx_sessions_token ON user_sessions(session_token);
-CREATE INDEX IF NOT EXISTS idx_sessions_expired ON user_sessions(expires_at, is_active);
-CREATE INDEX IF NOT EXISTS idx_sessions_device ON user_sessions(device_id, is_device_trusted);
+CREATE INDEX IF NOT EXISTS idx_sessions_user ON auth_sessions(user_id, is_active);
+CREATE INDEX IF NOT EXISTS idx_sessions_org ON auth_sessions(organization_id, is_active);
+CREATE INDEX IF NOT EXISTS idx_sessions_token ON auth_sessions(session_token);
+CREATE INDEX IF NOT EXISTS idx_sessions_expired ON auth_sessions(expires_at, is_active);
+CREATE INDEX IF NOT EXISTS idx_sessions_device ON auth_sessions(device_id, is_device_trusted);
 
 -- Table for authentication methods per user/org
 CREATE TABLE IF NOT EXISTS authentication_methods (
@@ -289,7 +261,7 @@ CREATE TABLE IF NOT EXISTS authentication_events (
   security_alert_sent BOOLEAN DEFAULT false,
 
   -- Context
-  session_id INTEGER REFERENCES user_sessions(id),
+  session_id UUID REFERENCES auth_sessions(id),
   metadata JSONB,
 
   CONSTRAINT fk_auth_event_org FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE
@@ -341,6 +313,7 @@ CREATE TABLE IF NOT EXISTS twofactor_configuration (
   last_used_at TIMESTAMP WITH TIME ZONE,
   disabled_at TIMESTAMP WITH TIME ZONE,
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
   UNIQUE(user_id, twofa_method),
   CONSTRAINT fk_twofa_org FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE
@@ -468,7 +441,7 @@ SELECT
   COUNT(CASE WHEN is_active = true AND is_expired = false AND is_revoked = false THEN 1 END) as valid_sessions,
   COUNT(CASE WHEN device_approved_at IS NOT NULL THEN 1 END) as approved_devices,
   COUNT(DISTINCT device_type) as device_types
-FROM user_sessions
+FROM auth_sessions
 WHERE is_active = true AND is_expired = false
 GROUP BY organization_id;
 
@@ -512,7 +485,7 @@ FOR EACH ROW EXECUTE FUNCTION update_session_config_timestamp();
 
 -- Comments
 COMMENT ON TABLE session_configurations IS 'Define session policies per organization and session type (web/mobile/api/admin)';
-COMMENT ON TABLE user_sessions IS 'Track active user sessions with device, location, and security information';
+COMMENT ON TABLE auth_sessions IS 'Track active user sessions with device, location, and security information';
 COMMENT ON TABLE authentication_methods IS 'Track available authentication methods for each user (password, 2FA, SSO, API key)';
 COMMENT ON TABLE api_keys IS 'Manage API keys with rotation schedules and usage tracking';
 COMMENT ON TABLE trusted_devices IS 'Track and trust user devices for reduced friction authentication';
@@ -521,5 +494,3 @@ COMMENT ON TABLE twofactor_configuration IS 'Configure 2FA methods per user (TOT
 COMMENT ON TABLE password_policies IS 'Define password requirements and expiry policies per organization';
 COMMENT ON TABLE password_history IS 'Track password changes and resets with history validation';
 COMMENT ON TABLE sso_configurations IS 'Configure single sign-on providers (SAML, OAuth, OIDC, LDAP) per organization';
--- Keep the legacy British-spelling scope populated for pre-existing user_sessions schemas.
-ALTER TABLE user_sessions ADD COLUMN IF NOT EXISTS organisation_id VARCHAR(255);
