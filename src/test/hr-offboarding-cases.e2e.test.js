@@ -11,7 +11,7 @@
 const express = require("express");
 const request = require("supertest");
 const db = require("../../db");
-const { createTestOrganisation } = require("./helpers/testData");
+const { createTestOrganisation, createTestUser } = require("./helpers/testData");
 
 const mockState = { organisationId: null };
 
@@ -58,12 +58,13 @@ describe("Dossiers de départ RH (suite du 2026-08-02)", () => {
   test("cycle de vie complet : ouverture -> progression -> fermeture gardée -> immutabilité", async () => {
     const org = await createTestOrganisation({ nom: "HR Offboarding E2E Lifecycle" });
     mockState.organisationId = org.id;
+    const user = await createTestUser({ organisation_id: org.id, role: "admin" });
     const employee = await seedEmployee(org.id, "lifecycle");
 
     const opened = await request(app)
       .post("/api/hr/offboarding-cases")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ employeeId: employee.id, effectiveDate: "2026-09-01", reasonCode: "resignation", idempotencyKey: "offboard-open-0001" });
     expect(opened.status).toBe(201);
     expect(opened.body.offboardingCase.status).toBe("open");
@@ -73,14 +74,14 @@ describe("Dossiers de départ RH (suite du 2026-08-02)", () => {
     const closeTooEarly = await request(app)
       .post(`/api/hr/offboarding-cases/${caseId}/close`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ idempotencyKey: "offboard-close-0001" });
     expect(closeTooEarly.status).toBe(409);
 
     const partialUpdate = await request(app)
       .patch(`/api/hr/offboarding-cases/${caseId}`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ payrollConfirmed: true, accessRevoked: true });
     expect(partialUpdate.status).toBe(200);
     expect(partialUpdate.body.offboardingCase.status).toBe("in_progress");
@@ -90,20 +91,20 @@ describe("Dossiers de départ RH (suite du 2026-08-02)", () => {
     const stillBlocked = await request(app)
       .post(`/api/hr/offboarding-cases/${caseId}/close`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ idempotencyKey: "offboard-close-0002" });
     expect(stillBlocked.status).toBe(409);
 
     await request(app)
       .patch(`/api/hr/offboarding-cases/${caseId}`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ propertyReturned: true, documentsCompleted: true });
 
     const closed = await request(app)
       .post(`/api/hr/offboarding-cases/${caseId}/close`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ idempotencyKey: "offboard-close-0003" });
     expect(closed.status).toBe(200);
     expect(closed.body.offboardingCase.status).toBe("completed");
@@ -113,7 +114,7 @@ describe("Dossiers de départ RH (suite du 2026-08-02)", () => {
     const patchAfterClose = await request(app)
       .patch(`/api/hr/offboarding-cases/${caseId}`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ payrollConfirmed: false });
     expect(patchAfterClose.status).toBe(409);
   });
@@ -121,19 +122,20 @@ describe("Dossiers de départ RH (suite du 2026-08-02)", () => {
   test("un dossier dupliqué (même employé, même date d’effet) est refusé", async () => {
     const org = await createTestOrganisation({ nom: "HR Offboarding E2E Duplicate" });
     mockState.organisationId = org.id;
+    const user = await createTestUser({ organisation_id: org.id, role: "admin" });
     const employee = await seedEmployee(org.id, "duplicate");
 
     const first = await request(app)
       .post("/api/hr/offboarding-cases")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ employeeId: employee.id, effectiveDate: "2026-10-01", reasonCode: "layoff", idempotencyKey: "offboard-dup-0001" });
     expect(first.status).toBe(201);
 
     const duplicate = await request(app)
       .post("/api/hr/offboarding-cases")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ employeeId: employee.id, effectiveDate: "2026-10-01", reasonCode: "layoff", idempotencyKey: "offboard-dup-0002" });
     expect(duplicate.status).toBe(409);
 
@@ -141,7 +143,7 @@ describe("Dossiers de départ RH (suite du 2026-08-02)", () => {
     const replay = await request(app)
       .post("/api/hr/offboarding-cases")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ employeeId: employee.id, effectiveDate: "2026-10-01", reasonCode: "layoff", idempotencyKey: "offboard-dup-0001" });
     expect(replay.status).toBe(200);
     expect(replay.body.duplicate).toBe(true);
@@ -150,26 +152,27 @@ describe("Dossiers de départ RH (suite du 2026-08-02)", () => {
   test("annulation : raison obligatoire, refusée sur un dossier déjà fermé", async () => {
     const org = await createTestOrganisation({ nom: "HR Offboarding E2E Cancel" });
     mockState.organisationId = org.id;
+    const user = await createTestUser({ organisation_id: org.id, role: "admin" });
     const employee = await seedEmployee(org.id, "cancel");
 
     const opened = await request(app)
       .post("/api/hr/offboarding-cases")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ employeeId: employee.id, effectiveDate: "2026-11-01", reasonCode: "resignation", idempotencyKey: "offboard-cancel-0001" });
     const caseId = opened.body.offboardingCase.id;
 
     const missingReason = await request(app)
       .post(`/api/hr/offboarding-cases/${caseId}/cancel`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ idempotencyKey: "offboard-cancel-0002" });
     expect(missingReason.status).toBe(400);
 
     const cancelled = await request(app)
       .post(`/api/hr/offboarding-cases/${caseId}/cancel`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ reason: "L’employé a retiré sa démission", idempotencyKey: "offboard-cancel-0003" });
     expect(cancelled.status).toBe(200);
     expect(cancelled.body.offboardingCase.status).toBe("cancelled");
@@ -177,7 +180,7 @@ describe("Dossiers de départ RH (suite du 2026-08-02)", () => {
     const cancelAgain = await request(app)
       .post(`/api/hr/offboarding-cases/${caseId}/cancel`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ reason: "Test", idempotencyKey: "offboard-cancel-0004" });
     expect(cancelAgain.status).toBe(409);
   });
@@ -185,11 +188,12 @@ describe("Dossiers de départ RH (suite du 2026-08-02)", () => {
   test("ouverture refusée pour un employé introuvable, RBAC hérité du routeur RH", async () => {
     const org = await createTestOrganisation({ nom: "HR Offboarding E2E Missing/RBAC" });
     mockState.organisationId = org.id;
+    const user = await createTestUser({ organisation_id: org.id, role: "admin" });
 
     const missingEmployee = await request(app)
       .post("/api/hr/offboarding-cases")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ employeeId: 999999999, effectiveDate: "2026-09-01", reasonCode: "resignation", idempotencyKey: "offboard-missing-0001" });
     expect(missingEmployee.status).toBe(404);
 
@@ -207,24 +211,26 @@ describe("Dossiers de départ RH (suite du 2026-08-02)", () => {
     const orgB = await createTestOrganisation({ nom: "HR Offboarding E2E Org B" });
 
     mockState.organisationId = orgA.id;
+    const userA = await createTestUser({ organisation_id: orgA.id, role: "admin" });
     const employeeA = await seedEmployee(orgA.id, "iso-a");
     const opened = await request(app)
       .post("/api/hr/offboarding-cases")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(userA.id))
       .send({ employeeId: employeeA.id, effectiveDate: "2026-09-01", reasonCode: "resignation", idempotencyKey: "offboard-iso-0001" });
 
     mockState.organisationId = orgB.id;
+    const userB = await createTestUser({ organisation_id: orgB.id, role: "admin" });
     const crossOrgGet = await request(app)
       .get(`/api/hr/offboarding-cases/${opened.body.offboardingCase.id}`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1");
+      .set("x-test-user-id", String(userB.id));
     expect(crossOrgGet.status).toBe(404);
 
     const crossOrgClose = await request(app)
       .post(`/api/hr/offboarding-cases/${opened.body.offboardingCase.id}/close`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(userB.id))
       .send({ idempotencyKey: "offboard-iso-0002" });
     expect(crossOrgClose.status).toBe(404);
   });

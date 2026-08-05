@@ -10,7 +10,7 @@
 const express = require("express");
 const request = require("supertest");
 const db = require("../../db");
-const { createTestOrganisation } = require("./helpers/testData");
+const { createTestOrganisation, createTestUser } = require("./helpers/testData");
 
 const mockState = { organisationId: null };
 
@@ -59,12 +59,13 @@ describe("Fermeture d'inspection SST (suite du 2026-08-02)", () => {
   test("fermeture sans constat : résultat 'pass', inspection marquée fermée", async () => {
     const org = await createTestOrganisation({ nom: "SST Inspection Closure E2E Pass" });
     mockState.organisationId = org.id;
+    const user = await createTestUser({ organisation_id: org.id, role: "admin" });
     const inspection = await seedInspection(org.id, "pass");
 
     const closed = await request(app)
       .post(`/api/sst/inspections/${inspection.id}/close`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ completedChecklist: [{ item: "Sorties de secours dégagées", checked: true }], findings: [], idempotencyKey: "close-pass-0001" });
     expect(closed.status).toBe(201);
     expect(closed.body.closure.result).toBe("pass");
@@ -72,7 +73,7 @@ describe("Fermeture d'inspection SST (suite du 2026-08-02)", () => {
     const fetched = await request(app)
       .get(`/api/sst/inspections/${inspection.id}`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1");
+      .set("x-test-user-id", String(user.id));
     expect(fetched.body.inspection.status).toBe("completed");
     expect(fetched.body.inspection.result).toBe("pass");
     expect(fetched.body.closure.result).toBe("pass");
@@ -81,7 +82,7 @@ describe("Fermeture d'inspection SST (suite du 2026-08-02)", () => {
     const reclosed = await request(app)
       .post(`/api/sst/inspections/${inspection.id}/close`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ completedChecklist: [{ item: "x", checked: true }], idempotencyKey: "close-pass-0002" });
     expect(reclosed.status).toBe(409);
 
@@ -89,7 +90,7 @@ describe("Fermeture d'inspection SST (suite du 2026-08-02)", () => {
     const replay = await request(app)
       .post(`/api/sst/inspections/${inspection.id}/close`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ completedChecklist: [{ item: "Sorties de secours dégagées", checked: true }], findings: [], idempotencyKey: "close-pass-0001" });
     expect(replay.status).toBe(200);
     expect(replay.body.duplicate).toBe(true);
@@ -98,19 +99,20 @@ describe("Fermeture d'inspection SST (suite du 2026-08-02)", () => {
   test("un constat critique sans action corrective valide bloque la fermeture, même avec un identifiant fourni mais inexistant", async () => {
     const org = await createTestOrganisation({ nom: "SST Inspection Closure E2E Critical" });
     mockState.organisationId = org.id;
+    const user = await createTestUser({ organisation_id: org.id, role: "admin" });
     const inspection = await seedInspection(org.id, "critical");
 
     const blockedNoAction = await request(app)
       .post(`/api/sst/inspections/${inspection.id}/close`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ completedChecklist: [{ item: "x", checked: true }], findings: [{ severity: "critical", description: "Extincteur périmé" }], idempotencyKey: "close-critical-0001" });
     expect(blockedNoAction.status).toBe(409);
 
     const blockedFakeAction = await request(app)
       .post(`/api/sst/inspections/${inspection.id}/close`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ completedChecklist: [{ item: "x", checked: true }], findings: [{ severity: "critical", description: "Extincteur périmé", correctiveActionId: 999999999 }], idempotencyKey: "close-critical-0002" });
     expect(blockedFakeAction.status).toBe(409);
 
@@ -118,14 +120,14 @@ describe("Fermeture d'inspection SST (suite du 2026-08-02)", () => {
     const action = await request(app)
       .post("/api/sst/corrective-actions")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ sourceType: "inspection", sourceId: inspection.id, title: "Remplacer l’extincteur", description: "Extincteur périmé à remplacer", priority: "critical", dueAt: "2026-12-31" });
     expect(action.status).toBe(201);
 
     const closedWithRealAction = await request(app)
       .post(`/api/sst/inspections/${inspection.id}/close`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({
         completedChecklist: [{ item: "x", checked: true }],
         findings: [{ severity: "critical", description: "Extincteur périmé", correctiveActionId: action.body.id }],
@@ -138,40 +140,43 @@ describe("Fermeture d'inspection SST (suite du 2026-08-02)", () => {
   test("la contresignature est un geste distinct, refusé aux non-admins, refusé deux fois", async () => {
     const org = await createTestOrganisation({ nom: "SST Inspection Closure E2E Sign-off" });
     mockState.organisationId = org.id;
+    const managerUser = await createTestUser({ organisation_id: org.id, role: "manager" });
+    const employeUser = await createTestUser({ organisation_id: org.id, role: "employe" });
+    const adminUser = await createTestUser({ organisation_id: org.id, role: "admin" });
     const inspection = await seedInspection(org.id, "signoff");
 
     await request(app)
       .post(`/api/sst/inspections/${inspection.id}/close`)
       .set("x-test-role", "manager")
-      .set("x-test-user-id", "2")
+      .set("x-test-user-id", String(managerUser.id))
       .send({ completedChecklist: [{ item: "x", checked: true }], findings: [], idempotencyKey: "close-signoff-0001" });
 
     const approveByEmploye = await request(app)
       .post(`/api/sst/inspections/${inspection.id}/approve-closure`)
       .set("x-test-role", "employe")
-      .set("x-test-user-id", "3")
+      .set("x-test-user-id", String(employeUser.id))
       .send({ idempotencyKey: "approve-signoff-0001" });
     expect(approveByEmploye.status).toBe(403);
 
     const approveByManager = await request(app)
       .post(`/api/sst/inspections/${inspection.id}/approve-closure`)
       .set("x-test-role", "manager")
-      .set("x-test-user-id", "2")
+      .set("x-test-user-id", String(managerUser.id))
       .send({ idempotencyKey: "approve-signoff-0002" });
     expect(approveByManager.status).toBe(403);
 
     const approveByAdmin = await request(app)
       .post(`/api/sst/inspections/${inspection.id}/approve-closure`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(adminUser.id))
       .send({ idempotencyKey: "approve-signoff-0003" });
     expect(approveByAdmin.status).toBe(200);
-    expect(Number(approveByAdmin.body.closure.approved_by)).toBe(1);
+    expect(Number(approveByAdmin.body.closure.approved_by)).toBe(Number(adminUser.id));
 
     const approveAgain = await request(app)
       .post(`/api/sst/inspections/${inspection.id}/approve-closure`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(adminUser.id))
       .send({ idempotencyKey: "approve-signoff-0004" });
     expect(approveAgain.status).toBe(409);
   });
@@ -179,6 +184,7 @@ describe("Fermeture d'inspection SST (suite du 2026-08-02)", () => {
   test("un employe ne peut pas fermer d'inspection", async () => {
     const org = await createTestOrganisation({ nom: "SST Inspection Closure E2E RBAC" });
     mockState.organisationId = org.id;
+    const user = await createTestUser({ organisation_id: org.id, role: "admin" });
     const inspection = await seedInspection(org.id, "rbac");
 
     const attempt = await request(app)

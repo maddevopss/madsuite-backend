@@ -12,7 +12,7 @@
 const express = require("express");
 const request = require("supertest");
 const db = require("../../db");
-const { createTestOrganisation } = require("./helpers/testData");
+const { createTestOrganisation, createTestUser } = require("./helpers/testData");
 
 const mockState = { organisationId: null };
 
@@ -59,12 +59,13 @@ describe("Accusés de réception de politiques RH (suite du 2026-08-02)", () => 
   test("assignation, acquittement avec traçabilité serveur, refus d'une seconde décision", async () => {
     const org = await createTestOrganisation({ nom: "HR Policy Ack E2E Lifecycle" });
     mockState.organisationId = org.id;
+    const user = await createTestUser({ organisation_id: org.id, role: "admin" });
     const employee = await seedEmployee(org.id, "lifecycle");
 
     const assigned = await request(app)
       .post("/api/hr/policy-acknowledgements")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ employeeId: employee.id, policyCode: "CODE-CONDUITE", policyVersion: "1.0", idempotencyKey: "policy-assign-0001" });
     expect(assigned.status).toBe(201);
     expect(assigned.body.acknowledgement.status).toBe("pending");
@@ -73,7 +74,7 @@ describe("Accusés de réception de politiques RH (suite du 2026-08-02)", () => 
     const acknowledged = await request(app)
       .post(`/api/hr/policy-acknowledgements/${ackId}/acknowledge`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ evidence: { checkbox: true }, idempotencyKey: "policy-decide-0001" });
     expect(acknowledged.status).toBe(200);
     expect(acknowledged.body.acknowledgement.status).toBe("acknowledged");
@@ -87,7 +88,7 @@ describe("Accusés de réception de politiques RH (suite du 2026-08-02)", () => 
     const again = await request(app)
       .post(`/api/hr/policy-acknowledgements/${ackId}/decline`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ reason: "Test", idempotencyKey: "policy-decide-0002" });
     expect(again.status).toBe(409);
   });
@@ -95,19 +96,20 @@ describe("Accusés de réception de politiques RH (suite du 2026-08-02)", () => 
   test("assigner une nouvelle version invalide automatiquement l'ancienne demande en attente", async () => {
     const org = await createTestOrganisation({ nom: "HR Policy Ack E2E Versioning" });
     mockState.organisationId = org.id;
+    const user = await createTestUser({ organisation_id: org.id, role: "admin" });
     const employee = await seedEmployee(org.id, "versioning");
 
     const v1 = await request(app)
       .post("/api/hr/policy-acknowledgements")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ employeeId: employee.id, policyCode: "SST-GENERALE", policyVersion: "1.0", idempotencyKey: "policy-version-0001" });
     expect(v1.status).toBe(201);
 
     const v2 = await request(app)
       .post("/api/hr/policy-acknowledgements")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ employeeId: employee.id, policyCode: "SST-GENERALE", policyVersion: "2.0", idempotencyKey: "policy-version-0002" });
     expect(v2.status).toBe(201);
     expect(v2.body.invalidatedCount).toBe(1);
@@ -115,7 +117,7 @@ describe("Accusés de réception de politiques RH (suite du 2026-08-02)", () => 
     const list = await request(app)
       .get(`/api/hr/policy-acknowledgements?employeeId=${employee.id}`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1");
+      .set("x-test-user-id", String(user.id));
     const v1Row = list.body.acknowledgements.find((row) => row.policy_version === "1.0");
     const v2Row = list.body.acknowledgements.find((row) => row.policy_version === "2.0");
     expect(v1Row.status).toBe("expired");
@@ -125,7 +127,7 @@ describe("Accusés de réception de politiques RH (suite du 2026-08-02)", () => 
     const decideExpired = await request(app)
       .post(`/api/hr/policy-acknowledgements/${v1Row.id}/acknowledge`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ idempotencyKey: "policy-version-0003" });
     expect(decideExpired.status).toBe(409);
   });
@@ -133,25 +135,26 @@ describe("Accusés de réception de politiques RH (suite du 2026-08-02)", () => 
   test("refuser exige une raison", async () => {
     const org = await createTestOrganisation({ nom: "HR Policy Ack E2E Decline" });
     mockState.organisationId = org.id;
+    const user = await createTestUser({ organisation_id: org.id, role: "admin" });
     const employee = await seedEmployee(org.id, "decline");
 
     const assigned = await request(app)
       .post("/api/hr/policy-acknowledgements")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ employeeId: employee.id, policyCode: "TELETRAVAIL", policyVersion: "1.0", idempotencyKey: "policy-decline-0001" });
 
     const missingReason = await request(app)
       .post(`/api/hr/policy-acknowledgements/${assigned.body.acknowledgement.id}/decline`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ idempotencyKey: "policy-decline-0002" });
     expect(missingReason.status).toBe(400);
 
     const declined = await request(app)
       .post(`/api/hr/policy-acknowledgements/${assigned.body.acknowledgement.id}/decline`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ reason: "Désaccord avec la politique", idempotencyKey: "policy-decline-0003" });
     expect(declined.status).toBe(200);
     expect(declined.body.acknowledgement.status).toBe("declined");
@@ -160,11 +163,12 @@ describe("Accusés de réception de politiques RH (suite du 2026-08-02)", () => 
   test("assignation refusée pour un employé introuvable, RBAC hérité du routeur RH", async () => {
     const org = await createTestOrganisation({ nom: "HR Policy Ack E2E Missing/RBAC" });
     mockState.organisationId = org.id;
+    const user = await createTestUser({ organisation_id: org.id, role: "admin" });
 
     const missingEmployee = await request(app)
       .post("/api/hr/policy-acknowledgements")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ employeeId: 999999999, policyCode: "X", policyVersion: "1.0", idempotencyKey: "policy-missing-0001" });
     expect(missingEmployee.status).toBe(404);
 
@@ -182,18 +186,20 @@ describe("Accusés de réception de politiques RH (suite du 2026-08-02)", () => 
     const orgB = await createTestOrganisation({ nom: "HR Policy Ack E2E Org B" });
 
     mockState.organisationId = orgA.id;
+    const userA = await createTestUser({ organisation_id: orgA.id, role: "admin" });
     const employeeA = await seedEmployee(orgA.id, "iso-a");
     const assigned = await request(app)
       .post("/api/hr/policy-acknowledgements")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(userA.id))
       .send({ employeeId: employeeA.id, policyCode: "X", policyVersion: "1.0", idempotencyKey: "policy-iso-0001" });
 
     mockState.organisationId = orgB.id;
+    const userB = await createTestUser({ organisation_id: orgB.id, role: "admin" });
     const crossOrgDecide = await request(app)
       .post(`/api/hr/policy-acknowledgements/${assigned.body.acknowledgement.id}/acknowledge`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(userB.id))
       .send({ idempotencyKey: "policy-iso-0002" });
     expect(crossOrgDecide.status).toBe(404);
   });

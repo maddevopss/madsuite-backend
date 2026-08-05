@@ -9,7 +9,7 @@
 const express = require("express");
 const request = require("supertest");
 const db = require("../../db");
-const { createTestOrganisation } = require("./helpers/testData");
+const { createTestOrganisation, createTestUser } = require("./helpers/testData");
 
 const mockState = { organisationId: null };
 
@@ -42,10 +42,14 @@ function buildApp() {
 describe("RBAC de sst.routes.js", () => {
   let app;
   let org;
+  let managerUser;
+  let adminUser;
 
   beforeAll(async () => {
     org = await createTestOrganisation({ nom: "SST RBAC E2E" });
     mockState.organisationId = org.id;
+    managerUser = await createTestUser({ organisation_id: org.id, role: "manager" });
+    adminUser = await createTestUser({ organisation_id: org.id, role: "admin" });
     app = buildApp();
   });
 
@@ -95,28 +99,28 @@ describe("RBAC de sst.routes.js", () => {
     const incident = await request(app)
       .post("/api/sst/incidents")
       .set("x-test-role", "manager")
-      .set("x-test-user-id", "2")
+      .set("x-test-user-id", String(managerUser.id))
       .send({ incidentType: "near_miss", occurredAt: new Date().toISOString(), location: "Atelier", description: "Test manager", severity: 2, idempotencyKey: "rbac-incident-0001" });
     expect(incident.status).toBe(201);
 
     const action = await request(app)
       .post("/api/sst/corrective-actions")
       .set("x-test-role", "manager")
-      .set("x-test-user-id", "2")
+      .set("x-test-user-id", String(managerUser.id))
       .send({ sourceType: "incident", sourceId: incident.body.incident.id, title: "Corriger", description: "Corriger le problème", priority: "medium", dueAt: "2026-12-31" });
     expect(action.status).toBe(201);
 
     const transition = await request(app)
       .post(`/api/sst/corrective-actions/${action.body.id}/close`)
       .set("x-test-role", "manager")
-      .set("x-test-user-id", "2")
+      .set("x-test-user-id", String(managerUser.id))
       .send({ reason: "Test", idempotencyKey: "rbac-action-close-0001" });
     expect(transition.status).toBe(403);
 
     const transitionByAdmin = await request(app)
       .post(`/api/sst/corrective-actions/${action.body.id}/close`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "3")
+      .set("x-test-user-id", String(adminUser.id))
       .send({ reason: "Test", idempotencyKey: "rbac-action-close-0002" });
     expect(transitionByAdmin.status).toBe(200);
   });

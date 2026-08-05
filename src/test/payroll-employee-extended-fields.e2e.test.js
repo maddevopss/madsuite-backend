@@ -15,7 +15,7 @@
 const express = require("express");
 const request = require("supertest");
 const db = require("../../db");
-const { createTestOrganisation } = require("./helpers/testData");
+const { createTestOrganisation, createTestUser } = require("./helpers/testData");
 
 const mockState = { organisationId: null };
 
@@ -54,11 +54,12 @@ describe("Fiche employé étendue (suite #698)", () => {
   test("création avec fiche étendue complète : normalisation et gestionnaire validé", async () => {
     const org = await createTestOrganisation({ nom: "Payroll Extended Fields E2E Full" });
     mockState.organisationId = org.id;
+    const user = await createTestUser({ organisation_id: org.id, role: "manager" });
 
     const manager = await request(app)
       .post("/api/payroll/employees")
       .set("x-test-role", "manager")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({
         employeeNumber: "MGR-001",
         legalName: "Alex Gestionnaire",
@@ -71,7 +72,7 @@ describe("Fiche employé étendue (suite #698)", () => {
     const created = await request(app)
       .post("/api/payroll/employees")
       .set("x-test-role", "manager")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({
         employeeNumber: "EMP-EXT-001",
         legalName: "Marie Tremblay",
@@ -100,7 +101,7 @@ describe("Fiche employé étendue (suite #698)", () => {
     const list = await request(app)
       .get("/api/payroll/employees")
       .set("x-test-role", "manager")
-      .set("x-test-user-id", "1");
+      .set("x-test-user-id", String(user.id));
     const fetched = list.body.employees.find((e) => e.id === employee.id);
     expect(fetched.department_code).toBe("FIN");
     expect(fetched.metadata).toEqual({ source: "onboarding", cohort: "2026-Q3" });
@@ -109,11 +110,12 @@ describe("Fiche employé étendue (suite #698)", () => {
   test("création minimale sans champ étendu : rétrocompatibilité", async () => {
     const org = await createTestOrganisation({ nom: "Payroll Extended Fields E2E Minimal" });
     mockState.organisationId = org.id;
+    const user = await createTestUser({ organisation_id: org.id, role: "manager" });
 
     const created = await request(app)
       .post("/api/payroll/employees")
       .set("x-test-role", "manager")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({
         employeeNumber: "EMP-MIN-001",
         legalName: "Sam Ordinaire",
@@ -131,11 +133,12 @@ describe("Fiche employé étendue (suite #698)", () => {
   test("rejette un statut d'emploi invalide à la création", async () => {
     const org = await createTestOrganisation({ nom: "Payroll Extended Fields E2E Validation" });
     mockState.organisationId = org.id;
+    const user = await createTestUser({ organisation_id: org.id, role: "manager" });
 
     const badStatus = await request(app)
       .post("/api/payroll/employees")
       .set("x-test-role", "manager")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({
         employeeNumber: "EMP-BAD-001",
         legalName: "Test Invalide",
@@ -150,18 +153,19 @@ describe("Fiche employé étendue (suite #698)", () => {
   test("rejette une fin d'emploi antérieure à l'embauche lors d'une mise à jour", async () => {
     const org = await createTestOrganisation({ nom: "Payroll Extended Fields E2E Validation Patch" });
     mockState.organisationId = org.id;
+    const user = await createTestUser({ organisation_id: org.id, role: "manager" });
 
     const created = await request(app)
       .post("/api/payroll/employees")
       .set("x-test-role", "manager")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ employeeNumber: "EMP-BAD-003", legalName: "Test Dates", hireDate: "2026-07-20", payType: "hourly", hourlyRate: 20 });
     expect(created.status).toBe(201);
 
     const badDates = await request(app)
       .patch(`/api/payroll/employees/${created.body.employee.id}`)
       .set("x-test-role", "manager")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ terminationDate: "2026-07-19" });
     expect(badDates.status).toBe(400);
 
@@ -174,37 +178,39 @@ describe("Fiche employé étendue (suite #698)", () => {
     const orgB = await createTestOrganisation({ nom: "Payroll Extended Fields E2E Org B" });
 
     mockState.organisationId = orgB.id;
+    const userB = await createTestUser({ organisation_id: orgB.id, role: "manager" });
     const foreignManager = await request(app)
       .post("/api/payroll/employees")
       .set("x-test-role", "manager")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(userB.id))
       .send({ employeeNumber: "MGR-B-001", legalName: "Gestionnaire OrgB", hireDate: "2020-01-01", payType: "salary", annualSalary: 80000 });
 
     mockState.organisationId = orgA.id;
+    const userA = await createTestUser({ organisation_id: orgA.id, role: "manager" });
 
     const missingManager = await request(app)
       .post("/api/payroll/employees")
       .set("x-test-role", "manager")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(userA.id))
       .send({ employeeNumber: "EMP-A-001", legalName: "Test A", hireDate: "2026-01-15", payType: "hourly", hourlyRate: 20, managerEmployeeId: 999999 });
     expect(missingManager.status).toBe(400);
 
     const crossOrgManager = await request(app)
       .post("/api/payroll/employees")
       .set("x-test-role", "manager")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(userA.id))
       .send({ employeeNumber: "EMP-A-002", legalName: "Test A2", hireDate: "2026-01-15", payType: "hourly", hourlyRate: 20, managerEmployeeId: foreignManager.body.employee.id });
     expect(crossOrgManager.status).toBe(400);
 
     const created = await request(app)
       .post("/api/payroll/employees")
       .set("x-test-role", "manager")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(userA.id))
       .send({ employeeNumber: "EMP-A-003", legalName: "Test A3", hireDate: "2026-01-15", payType: "hourly", hourlyRate: 20 });
     const selfManager = await request(app)
       .patch(`/api/payroll/employees/${created.body.employee.id}`)
       .set("x-test-role", "manager")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(userA.id))
       .send({ managerEmployeeId: created.body.employee.id });
     expect(selfManager.status).toBe(400);
   });
@@ -212,11 +218,12 @@ describe("Fiche employé étendue (suite #698)", () => {
   test("mise à jour partielle : préserve les champs étendus non touchés, permet d'effacer explicitement une date de fin d'emploi", async () => {
     const org = await createTestOrganisation({ nom: "Payroll Extended Fields E2E Patch" });
     mockState.organisationId = org.id;
+    const user = await createTestUser({ organisation_id: org.id, role: "manager" });
 
     const created = await request(app)
       .post("/api/payroll/employees")
       .set("x-test-role", "manager")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({
         employeeNumber: "EMP-PATCH-001",
         legalName: "Casey Test",
@@ -235,7 +242,7 @@ describe("Fiche employé étendue (suite #698)", () => {
     const withTermination = await request(app)
       .patch(`/api/payroll/employees/${id}`)
       .set("x-test-role", "manager")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ terminationDate: "2026-06-30" });
     expect(withTermination.status).toBe(200);
     expect(withTermination.body.employee.termination_date).not.toBeNull();
@@ -244,7 +251,7 @@ describe("Fiche employé étendue (suite #698)", () => {
     const patched = await request(app)
       .patch(`/api/payroll/employees/${id}`)
       .set("x-test-role", "manager")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ positionTitle: "Coordonnateur" });
     expect(patched.status).toBe(200);
     expect(patched.body.employee.position_title).toBe("Coordonnateur");
@@ -257,13 +264,13 @@ describe("Fiche employé étendue (suite #698)", () => {
     const cleared = await request(app)
       .patch(`/api/payroll/employees/${id}`)
       .set("x-test-role", "manager")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ terminationDate: null });
     expect(cleared.status).toBe(200);
     expect(cleared.body.employee.termination_date).toBeNull();
 
     const persisted = await db.pool.query("SELECT termination_date, updated_by FROM payroll_employees WHERE id=$1", [id]);
     expect(persisted.rows[0].termination_date).toBeNull();
-    expect(Number(persisted.rows[0].updated_by)).toBe(1);
+    expect(Number(persisted.rows[0].updated_by)).toBe(Number(user.id));
   });
 });

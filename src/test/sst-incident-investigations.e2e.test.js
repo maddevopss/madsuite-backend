@@ -18,7 +18,7 @@
 const express = require("express");
 const request = require("supertest");
 const db = require("../../db");
-const { createTestOrganisation } = require("./helpers/testData");
+const { createTestOrganisation, createTestUser } = require("./helpers/testData");
 
 const mockState = { organisationId: null };
 
@@ -67,12 +67,13 @@ describe("Enquêtes d'incident SST (suite du 2026-08-02)", () => {
   test("cycle de vie complet : open -> collecting -> analysis -> review -> closed", async () => {
     const org = await createTestOrganisation({ nom: "SST Investigation E2E Lifecycle" });
     mockState.organisationId = org.id;
+    const user = await createTestUser({ organisation_id: org.id, role: "admin" });
     const incident = await seedIncident(org.id, "lifecycle");
 
     const opened = await request(app)
       .post(`/api/sst/incidents/${incident.id}/investigation`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ idempotencyKey: "inv-open-0001" });
     expect(opened.status).toBe(201);
     expect(opened.body.investigation.status).toBe("open");
@@ -82,7 +83,7 @@ describe("Enquêtes d'incident SST (suite du 2026-08-02)", () => {
     const duplicateOpen = await request(app)
       .post(`/api/sst/incidents/${incident.id}/investigation`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ idempotencyKey: "inv-open-0002" });
     expect(duplicateOpen.status).toBe(409);
 
@@ -90,14 +91,14 @@ describe("Enquêtes d'incident SST (suite du 2026-08-02)", () => {
     const invalidJump = await request(app)
       .post(`/api/sst/investigations/${investigationId}/transitions/closed`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ idempotencyKey: "inv-invalid-jump-0001" });
     expect(invalidJump.status).toBe(409);
 
     const toCollecting = await request(app)
       .post(`/api/sst/investigations/${investigationId}/transitions/collecting`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ witnessStatements: [{ name: "J. Tremblay", statement: "J’ai vu la palette tomber." }], idempotencyKey: "inv-transition-0001" });
     expect(toCollecting.status).toBe(201);
     expect(toCollecting.body.investigation.status).toBe("collecting");
@@ -105,7 +106,7 @@ describe("Enquêtes d'incident SST (suite du 2026-08-02)", () => {
     const toAnalysis = await request(app)
       .post(`/api/sst/investigations/${investigationId}/transitions/analysis`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ immediateCauses: [{ cause: "Arrimage insuffisant" }], idempotencyKey: "inv-transition-0002" });
     expect(toAnalysis.status).toBe(201);
 
@@ -113,7 +114,7 @@ describe("Enquêtes d'incident SST (suite du 2026-08-02)", () => {
     const toReview = await request(app)
       .post(`/api/sst/investigations/${investigationId}/transitions/review`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ idempotencyKey: "inv-transition-0003" });
     expect(toReview.status).toBe(201);
     expect(toReview.body.investigation.reviewed_at).toBeTruthy();
@@ -121,7 +122,7 @@ describe("Enquêtes d'incident SST (suite du 2026-08-02)", () => {
     const closeIncomplete = await request(app)
       .post(`/api/sst/investigations/${investigationId}/transitions/closed`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ idempotencyKey: "inv-transition-0004" });
     expect(closeIncomplete.status).toBe(409);
 
@@ -129,21 +130,21 @@ describe("Enquêtes d'incident SST (suite du 2026-08-02)", () => {
     const action = await request(app)
       .post("/api/sst/corrective-actions")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ sourceType: "incident", sourceId: incident.id, title: "Réarrimer les palettes", description: "Revoir la procédure d’arrimage.", priority: "high", dueAt: "2026-12-31" });
     expect(action.status).toBe(201);
 
     const closeStillBlocked = await request(app)
       .post(`/api/sst/investigations/${investigationId}/transitions/closed`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ rootCauses: [{ cause: "Absence de procédure d’arrimage" }], evidence: [{ type: "photo", url: "https://example.test/photo.jpg" }], idempotencyKey: "inv-transition-0005" });
     expect(closeStillBlocked.status).toBe(409);
 
     const closedAction = await request(app)
       .post(`/api/sst/corrective-actions/${action.body.id}/close`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ reason: "Arrimage corrigé", idempotencyKey: "action-close-0001" });
     expect(closedAction.status).toBe(200);
 
@@ -153,7 +154,7 @@ describe("Enquêtes d'incident SST (suite du 2026-08-02)", () => {
     const closed = await request(app)
       .post(`/api/sst/investigations/${investigationId}/transitions/closed`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ rootCauses: [{ cause: "Absence de procédure d’arrimage" }], evidence: [{ type: "photo", url: "https://example.test/photo.jpg" }], idempotencyKey: "inv-transition-0006" });
     expect(closed.status).toBe(201);
     expect(closed.body.investigation.status).toBe("closed");
@@ -163,26 +164,27 @@ describe("Enquêtes d'incident SST (suite du 2026-08-02)", () => {
   test("idempotence : rejouer la même clé de transition ne modifie rien de plus", async () => {
     const org = await createTestOrganisation({ nom: "SST Investigation E2E Idempotency" });
     mockState.organisationId = org.id;
+    const user = await createTestUser({ organisation_id: org.id, role: "admin" });
     const incident = await seedIncident(org.id, "idempotency");
 
     const opened = await request(app)
       .post(`/api/sst/incidents/${incident.id}/investigation`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ idempotencyKey: "inv-idem-open-0001" });
     const investigationId = opened.body.investigation.id;
 
     const first = await request(app)
       .post(`/api/sst/investigations/${investigationId}/transitions/collecting`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ idempotencyKey: "inv-idem-transition-0001" });
     expect(first.status).toBe(201);
 
     const replay = await request(app)
       .post(`/api/sst/investigations/${investigationId}/transitions/collecting`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ idempotencyKey: "inv-idem-transition-0001" });
     expect(replay.status).toBe(200);
     expect(replay.body.duplicate).toBe(true);
@@ -194,11 +196,12 @@ describe("Enquêtes d'incident SST (suite du 2026-08-02)", () => {
   test("ouverture refusée pour un incident introuvable", async () => {
     const org = await createTestOrganisation({ nom: "SST Investigation E2E Missing Incident" });
     mockState.organisationId = org.id;
+    const user = await createTestUser({ organisation_id: org.id, role: "admin" });
 
     const attempt = await request(app)
       .post("/api/sst/incidents/999999999/investigation")
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(user.id))
       .send({ idempotencyKey: "inv-missing-incident-0001" });
     expect(attempt.status).toBe(404);
   });
@@ -208,25 +211,27 @@ describe("Enquêtes d'incident SST (suite du 2026-08-02)", () => {
     const orgB = await createTestOrganisation({ nom: "SST Investigation E2E Org B" });
 
     mockState.organisationId = orgA.id;
+    const userA = await createTestUser({ organisation_id: orgA.id, role: "admin" });
     const incidentA = await seedIncident(orgA.id, "iso-a");
     const opened = await request(app)
       .post(`/api/sst/incidents/${incidentA.id}/investigation`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(userA.id))
       .send({ idempotencyKey: "inv-iso-open-0001" });
     const investigationId = opened.body.investigation.id;
 
     mockState.organisationId = orgB.id;
+    const userB = await createTestUser({ organisation_id: orgB.id, role: "admin" });
     const crossOrgGet = await request(app)
       .get(`/api/sst/incidents/${incidentA.id}/investigation`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1");
+      .set("x-test-user-id", String(userB.id));
     expect(crossOrgGet.status).toBe(404);
 
     const crossOrgTransition = await request(app)
       .post(`/api/sst/investigations/${investigationId}/transitions/collecting`)
       .set("x-test-role", "admin")
-      .set("x-test-user-id", "1")
+      .set("x-test-user-id", String(userB.id))
       .send({ idempotencyKey: "inv-iso-transition-0001" });
     expect(crossOrgTransition.status).toBe(404);
   });
