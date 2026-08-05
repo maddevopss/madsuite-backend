@@ -34,13 +34,23 @@ function notFound(code) {
   return error;
 }
 
+// Un id valide pour une autre organisation ne doit pas pouvoir être référencé :
+// l'INSERT seul ne vérifie que l'existence de la ligne (FK), pas son organisation.
+async function assertInOrg(client, table, id, organisationId, code) {
+  const row = (await client.query(`SELECT id FROM ${table} WHERE id=$1 AND organisation_id=$2`, [id, organisationId])).rows[0];
+  if (!row) throw notFound(code);
+}
+
 router.get('/programs', (req,res,next) => handle(res,next,async () => (await db.query('SELECT * FROM internal_audit_programs WHERE organisation_id=$1 ORDER BY period_start DESC',[org(req)])).rows));
 router.post('/programs', (req,res,next) => handle(res,next,() => transactionalWrite(req,'audit.program.create','audit.program.create',req.body,async ({ client, organisationId, idempotencyKey }) => (await client.query(`INSERT INTO internal_audit_programs (organisation_id,program_number,title,period_start,period_end,objectives,scope,risk_basis,owner_user_id,status,approval_evidence,idempotency_key) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,[organisationId,req.body.programNumber,req.body.title,req.body.periodStart,req.body.periodEnd,req.body.objectives,JSON.stringify(req.body.scope||[]),JSON.stringify(req.body.riskBasis||[]),req.body.ownerUserId,req.body.status||'draft',JSON.stringify(req.body.approvalEvidence||[]),idempotencyKey])).rows[0]),201));
 
 router.get('/engagements', (req,res,next) => handle(res,next,async () => (await db.query('SELECT * FROM internal_audit_engagements WHERE organisation_id=$1 ORDER BY created_at DESC',[org(req)])).rows));
 router.post('/engagements', (req,res,next) => {
   if (!requireKey(req, res)) return;
-  return handle(res,next,() => transactionalWrite(req,'audit.engagement.create',null,req.body,async ({ client, organisationId, idempotencyKey }) => (await client.query(`INSERT INTO internal_audit_engagements (organisation_id,program_id,engagement_number,title,audit_type,objective,scope,criteria,lead_auditor_user_id,auditee_owner_user_id,planned_start_at,planned_end_at,idempotency_key) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,[organisationId,req.body.programId||null,req.body.engagementNumber,req.body.title,req.body.auditType,req.body.objective,JSON.stringify(req.body.scope||[]),JSON.stringify(req.body.criteria||[]),req.body.leadAuditorUserId||actor(req),req.body.auditeeOwnerUserId,req.body.plannedStartAt||null,req.body.plannedEndAt||null,idempotencyKey])).rows[0]),201);
+  return handle(res,next,() => transactionalWrite(req,'audit.engagement.create',null,req.body,async ({ client, organisationId, idempotencyKey }) => {
+    if (req.body.programId) await assertInOrg(client, 'internal_audit_programs', req.body.programId, organisationId, 'audit.program_not_found');
+    return (await client.query(`INSERT INTO internal_audit_engagements (organisation_id,program_id,engagement_number,title,audit_type,objective,scope,criteria,lead_auditor_user_id,auditee_owner_user_id,planned_start_at,planned_end_at,idempotency_key) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING *`,[organisationId,req.body.programId||null,req.body.engagementNumber,req.body.title,req.body.auditType,req.body.objective,JSON.stringify(req.body.scope||[]),JSON.stringify(req.body.criteria||[]),req.body.leadAuditorUserId||actor(req),req.body.auditeeOwnerUserId,req.body.plannedStartAt||null,req.body.plannedEndAt||null,idempotencyKey])).rows[0];
+  }),201);
 });
 router.post('/engagements/:id/complete', (req,res,next) => handle(res,next,() => {
   const input = { ...req.body, engagementId: req.params.id };
@@ -53,7 +63,10 @@ router.post('/engagements/:id/complete', (req,res,next) => handle(res,next,() =>
 }));
 
 router.get('/findings', (req,res,next) => handle(res,next,async () => (await db.query('SELECT * FROM internal_audit_findings WHERE organisation_id=$1 ORDER BY created_at DESC',[org(req)])).rows));
-router.post('/findings', (req,res,next) => handle(res,next,() => transactionalWrite(req,'audit.finding.create','audit.finding.create',req.body,async ({ client, organisationId, idempotencyKey }) => (await client.query(`INSERT INTO internal_audit_findings (organisation_id,engagement_id,finding_number,classification,title,description,criterion,root_cause,owner_user_id,due_at,evidence,idempotency_key) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,[organisationId,req.body.engagementId,req.body.findingNumber,req.body.classification,req.body.title,req.body.description,req.body.criterion,req.body.rootCause||null,req.body.ownerUserId,req.body.dueAt||null,JSON.stringify(req.body.evidence||[]),idempotencyKey])).rows[0]),201));
+router.post('/findings', (req,res,next) => handle(res,next,() => transactionalWrite(req,'audit.finding.create','audit.finding.create',req.body,async ({ client, organisationId, idempotencyKey }) => {
+  await assertInOrg(client, 'internal_audit_engagements', req.body.engagementId, organisationId, 'audit.engagement_not_found');
+  return (await client.query(`INSERT INTO internal_audit_findings (organisation_id,engagement_id,finding_number,classification,title,description,criterion,root_cause,owner_user_id,due_at,evidence,idempotency_key) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,[organisationId,req.body.engagementId,req.body.findingNumber,req.body.classification,req.body.title,req.body.description,req.body.criterion,req.body.rootCause||null,req.body.ownerUserId,req.body.dueAt||null,JSON.stringify(req.body.evidence||[]),idempotencyKey])).rows[0];
+}),201));
 router.post('/findings/:id/close', (req,res,next) => handle(res,next,() => transactionalWrite(req,'audit.finding.close',null,{...req.body,findingId:req.params.id},async ({ client, organisationId, idempotencyKey }) => {
   const finding = (await client.query('SELECT id,status FROM internal_audit_findings WHERE id=$1 AND organisation_id=$2 FOR UPDATE',[req.params.id,organisationId])).rows[0];
   if (!finding) throw notFound('audit.finding_not_found');
@@ -72,7 +85,10 @@ router.post('/findings/:id/close', (req,res,next) => handle(res,next,() => trans
 router.get('/actions', (req,res,next) => handle(res,next,async () => (await db.query('SELECT * FROM internal_audit_actions WHERE organisation_id=$1 ORDER BY created_at DESC',[org(req)])).rows));
 router.post('/actions', (req,res,next) => {
   if (!requireKey(req, res)) return;
-  return handle(res,next,() => transactionalWrite(req,'audit.action.create',null,req.body,async ({ client, organisationId, idempotencyKey }) => (await client.query(`INSERT INTO internal_audit_actions (organisation_id,finding_id,action_number,description,owner_user_id,due_at,idempotency_key) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,[organisationId,req.body.findingId,req.body.actionNumber,req.body.description,req.body.ownerUserId,req.body.dueAt||null,idempotencyKey])).rows[0]),201);
+  return handle(res,next,() => transactionalWrite(req,'audit.action.create',null,req.body,async ({ client, organisationId, idempotencyKey }) => {
+    await assertInOrg(client, 'internal_audit_findings', req.body.findingId, organisationId, 'audit.finding_not_found');
+    return (await client.query(`INSERT INTO internal_audit_actions (organisation_id,finding_id,action_number,description,owner_user_id,due_at,idempotency_key) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *`,[organisationId,req.body.findingId,req.body.actionNumber,req.body.description,req.body.ownerUserId,req.body.dueAt||null,idempotencyKey])).rows[0];
+  }),201);
 });
 router.post('/actions/:id/transition', (req,res,next) => handle(res,next,() => {
   const input = { ...req.body, actionId: req.params.id };
@@ -87,7 +103,10 @@ router.post('/actions/:id/transition', (req,res,next) => handle(res,next,() => {
 router.use('/corrective-action-links', auditCorrectiveActionLinksRoutes);
 
 router.get('/followups', (req,res,next) => handle(res,next,async () => (await db.query('SELECT * FROM internal_audit_followups WHERE organisation_id=$1 ORDER BY reviewed_at DESC',[org(req)])).rows));
-router.post('/followups', (req,res,next) => handle(res,next,() => transactionalWrite(req,'audit.followup.complete','audit.followup.complete',{...req.body,reviewerUserId:req.body.reviewerUserId||actor(req)},async ({ client, organisationId, idempotencyKey }) => (await client.query(`INSERT INTO internal_audit_followups (organisation_id,engagement_id,followup_number,reviewer_user_id,conclusion,residual_risk,next_followup_at,evidence,status,idempotency_key) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,[organisationId,req.body.engagementId,req.body.followupNumber,req.body.reviewerUserId||actor(req),req.body.conclusion,req.body.residualRisk||null,req.body.nextFollowupAt||null,JSON.stringify(req.body.evidence||[]),req.body.status||'completed',idempotencyKey])).rows[0]),201));
+router.post('/followups', (req,res,next) => handle(res,next,() => transactionalWrite(req,'audit.followup.complete','audit.followup.complete',{...req.body,reviewerUserId:req.body.reviewerUserId||actor(req)},async ({ client, organisationId, idempotencyKey }) => {
+  await assertInOrg(client, 'internal_audit_engagements', req.body.engagementId, organisationId, 'audit.engagement_not_found');
+  return (await client.query(`INSERT INTO internal_audit_followups (organisation_id,engagement_id,followup_number,reviewer_user_id,conclusion,residual_risk,next_followup_at,evidence,status,idempotency_key) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,[organisationId,req.body.engagementId,req.body.followupNumber,req.body.reviewerUserId||actor(req),req.body.conclusion,req.body.residualRisk||null,req.body.nextFollowupAt||null,JSON.stringify(req.body.evidence||[]),req.body.status||'completed',idempotencyKey])).rows[0];
+}),201));
 
 router.get('/alerts', (req,res,next) => handle(res,next,async () => (await db.query(`SELECT 'finding_due' AS alert_type,id,finding_number AS reference,due_at FROM internal_audit_findings WHERE organisation_id=$1 AND due_at<=NOW() AND status NOT IN ('closed','cancelled') UNION ALL SELECT 'action_due',id,action_number,due_at FROM internal_audit_actions WHERE organisation_id=$1 AND due_at<=NOW() AND status NOT IN ('closed','cancelled') ORDER BY due_at`,[org(req)])).rows));
 
