@@ -1,10 +1,12 @@
 # MADSuite Backend
 
+**Version du package : 2.0.0.**
+
 Backend officiel de MADSuite.
 
-Source de vérité documentaire : `bleeband/SYSTEME_MAD`.
+Source de vérité documentaire : `maddevopss/SYSTEME_MAD`.
 
-Avant toute décision structurante, consulter les documents officiels à la racine du dépôt `bleeband/SYSTEME_MAD` :
+Avant toute décision structurante, consulter les documents officiels à la racine du dépôt `maddevopss/SYSTEME_MAD` :
 
 ```text
 MANIFEST.md
@@ -33,7 +35,7 @@ Les capacités déjà présentes couvrent notamment :
 - isolation multi-organisation par contexte applicatif, politiques RLS et garde automatique des routeurs;
 - certification V1, registres de preuves et contrôles MADPROOF.
 
-La source institutionnelle du constat V1 demeure `bleeband/SYSTEME_MAD`. Les documents locaux décrivent l’implémentation et les preuves propres au backend.
+La source institutionnelle du constat V1 demeure `maddevopss/SYSTEME_MAD`. Les documents locaux décrivent l’implémentation et les preuves propres au backend.
 
 ## Stack
 
@@ -108,7 +110,7 @@ Les guards bloquent notamment :
 
 Le backend applique aussi `FORCE ROW LEVEL SECURITY` aux tables protégées afin de réduire le risque de contournement involontaire par le propriétaire des tables. Le rôle applicatif ne doit jamais être superutilisateur PostgreSQL.
 
-Si un guard tombe rouge, corriger le code ou la politique plutôt que de contourner le guard. Une exception doit être documentée dans `bleeband/SYSTEME_MAD` avant fusion.
+Si un guard tombe rouge, corriger le code ou la politique plutôt que de contourner le guard. Une exception doit être documentée dans `maddevopss/SYSTEME_MAD` avant fusion.
 
 ## Contrat modules
 
