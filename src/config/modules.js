@@ -68,6 +68,7 @@ const MODULES = {
   operational_service_levels: { label: "Niveaux de service et objectifs", plan: "internal", price: 0, matrix_status: "foundation_alpha" },
   operational_capacity: { label: "Coûts et capacité", plan: "internal", price: 0, matrix_status: "foundation_alpha" },
   operational_reviews: { label: "Revues d'exploitation", plan: "internal", price: 0, matrix_status: "foundation_alpha" },
+  ai_use_cases: { label: "Cas d'usage assistés (IA)", plan: "internal", price: 0, matrix_status: "foundation_alpha" },
 };
 
 const INTERNAL_PLAN_TYPES = new Set(["admin", "internal", "master_admin", "platform_admin"]);
