@@ -106,3 +106,6 @@ jobs:
 
       - name: Run backend security tests
         run: npm run test:security -- --runInBand
+
+      - name: Run Stage 6 security tests
+        run: npm run test:stage6

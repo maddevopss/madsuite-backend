@@ -14,6 +14,7 @@
     "test:db:reset": "cross-env NODE_ENV=test node src/test/setupInvoicesTestDB.js",
     "test:modules": "cross-env NODE_ENV=test jest src/test/modulesRegistry.test.js src/test/modulesService.test.js src/test/requireModule.test.js --runInBand --detectOpenHandles --forceExit",
     "test:security": "cross-env NODE_ENV=test jest src/test/requireSuperAdmin.security.test.js src/test/migrations.integration.test.js src/test/multiTenantJobs.security.test.js --detectOpenHandles --forceExit",
+    "test:stage6": "cross-env NODE_ENV=test jest src/test/stage6Authorization.integration.test.js src/test/tenant-isolation.contract.test.js src/test/sensitive-transition-guard.contract.test.js src/test/sensitive-data-policy.contract.test.js src/test/session-security.contract.test.js src/test/supply-chain-policy.contract.test.js src/test/abuse-protection.contract.test.js src/test/stage6-security-closure.contract.test.js --runInBand --detectOpenHandles --forceExit",
     "guard:gitignore": "node scripts/guard-gitignore-policy.js",
     "guard:hygiene": "node scripts/guard-repo-hygiene.js",
     "guard:routes": "node scripts/guard-route-security.js",
