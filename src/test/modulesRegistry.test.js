@@ -2,8 +2,10 @@ const {
   MODULES,
   FREE_MODULES,
   PRO_MODULES,
+  SOLO_MODULES,
   ADDON_MODULES,
   INTERNAL_MODULES,
+  isModuleEligibleForPlan,
   isModuleIncludedInPlan,
   getModuleRegistryDiagnostics,
 } = require("../config/modules");
@@ -27,7 +29,8 @@ describe("modules registry", () => {
 
   test("classifies modules by plan", () => {
     expect(FREE_MODULES).toEqual(expect.arrayContaining(["clients", "projects", "time_tracking"]));
-    expect(PRO_MODULES).toEqual(expect.arrayContaining(["invoices", "reports"]));
+    expect(PRO_MODULES).toEqual(expect.arrayContaining(["reports", "kiosk_punch"]));
+    expect(SOLO_MODULES).toEqual(["invoices"]);
     expect(ADDON_MODULES).toEqual(expect.arrayContaining(["estimates", "quotes", "payments"]));
     expect(INTERNAL_MODULES).toEqual(expect.arrayContaining(["cognitive_engine", "desktop_agent"]));
   });
@@ -39,26 +42,35 @@ describe("modules registry", () => {
     expect(isModuleIncludedInPlan("desktop_agent", "free")).toBe(false);
   });
 
+  test("includes invoices for Trial, Solo, Pro and internal plans", () => {
+    expect(isModuleIncludedInPlan("invoices", "trial")).toBe(true);
+    expect(isModuleIncludedInPlan("invoices", "solo")).toBe(true);
+    expect(isModuleIncludedInPlan("invoices", "pro")).toBe(true);
+    expect(isModuleIncludedInPlan("invoices", "free")).toBe(false);
+  });
+
   test("includes pro modules for pro and enterprise", () => {
     expect(isModuleIncludedInPlan("invoices", "pro")).toBe(true);
     expect(isModuleIncludedInPlan("invoices", "enterprise")).toBe(true);
     expect(isModuleIncludedInPlan("invoices", "free")).toBe(false);
   });
 
-  test("enterprise plan includes ADDON modules but NOT INTERNAL", () => {
-    expect(isModuleIncludedInPlan("estimates", "enterprise")).toBe(true);
-    expect(isModuleIncludedInPlan("quotes", "enterprise")).toBe(true);
-    expect(isModuleIncludedInPlan("expenses", "enterprise")).toBe(true);
-    expect(isModuleIncludedInPlan("activity_intelligence", "enterprise")).toBe(true);
-    expect(isModuleIncludedInPlan("billing_assistant", "enterprise")).toBe(true);
+  test("enterprise plan exposes ADDON modules as optional but not included", () => {
+    expect(isModuleIncludedInPlan("estimates", "enterprise")).toBe(false);
+    expect(isModuleIncludedInPlan("quotes", "enterprise")).toBe(false);
+    expect(isModuleIncludedInPlan("expenses", "enterprise")).toBe(false);
+    expect(isModuleIncludedInPlan("activity_intelligence", "enterprise")).toBe(false);
+    expect(isModuleIncludedInPlan("billing_assistant", "enterprise")).toBe(false);
     expect(isModuleIncludedInPlan("cognitive_engine", "enterprise")).toBe(false);
     expect(isModuleIncludedInPlan("desktop_agent", "enterprise")).toBe(false);
   });
 
-  test("pro plan does NOT include ADDON modules", () => {
-    expect(isModuleIncludedInPlan("estimates", "pro")).toBe(false);
+  test("Solo and Pro plans may activate ADDON modules", () => {
+    expect(isModuleEligibleForPlan("estimates", "solo")).toBe(true);
+    expect(isModuleEligibleForPlan("quotes", "pro")).toBe(true);
+    expect(isModuleEligibleForPlan("expenses", "pro")).toBe(true);
+    expect(isModuleIncludedInPlan("estimates", "solo")).toBe(false);
     expect(isModuleIncludedInPlan("quotes", "pro")).toBe(false);
-    expect(isModuleIncludedInPlan("expenses", "pro")).toBe(false);
   });
 
   test("returns registry diagnostics", () => {

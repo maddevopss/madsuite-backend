@@ -1,5 +1,6 @@
 const {
   MODULES,
+  isModuleEligibleForPlan,
   isModuleIncludedInPlan,
 } = require("../config/modules");
 
@@ -62,14 +63,14 @@ describe("modules registry - admin plan access", () => {
     expect(isModuleIncludedInPlan("desktop_agent", "enterprise")).toBe(false);
   });
 
-  test("enterprise plan includes ADDON modules", () => {
-    expect(isModuleIncludedInPlan("calcul_km", "enterprise")).toBe(true);
-    expect(isModuleIncludedInPlan("kiosk_km", "enterprise")).toBe(true);
-    expect(isModuleIncludedInPlan("estimates", "enterprise")).toBe(true);
-    expect(isModuleIncludedInPlan("quotes", "enterprise")).toBe(true);
-    expect(isModuleIncludedInPlan("expenses", "enterprise")).toBe(true);
-    expect(isModuleIncludedInPlan("payments", "enterprise")).toBe(true);
-    expect(isModuleIncludedInPlan("activity_intelligence", "enterprise")).toBe(true);
-    expect(isModuleIncludedInPlan("billing_assistant", "enterprise")).toBe(true);
+  test("enterprise plan may activate ADDON modules", () => {
+    expect(isModuleEligibleForPlan("calcul_km", "enterprise")).toBe(true);
+    expect(isModuleEligibleForPlan("kiosk_km", "enterprise")).toBe(true);
+    expect(isModuleEligibleForPlan("estimates", "enterprise")).toBe(true);
+    expect(isModuleEligibleForPlan("quotes", "enterprise")).toBe(true);
+    expect(isModuleEligibleForPlan("expenses", "enterprise")).toBe(true);
+    expect(isModuleEligibleForPlan("payments", "enterprise")).toBe(true);
+    expect(isModuleEligibleForPlan("activity_intelligence", "enterprise")).toBe(true);
+    expect(isModuleEligibleForPlan("billing_assistant", "enterprise")).toBe(true);
   });
 });
