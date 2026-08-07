@@ -5,6 +5,7 @@ const {
   SOLO_MODULES,
   ADDON_MODULES,
   INTERNAL_MODULES,
+  isModuleEligibleForPlan,
   isModuleIncludedInPlan,
   getModuleRegistryDiagnostics,
 } = require("../config/modules");
@@ -65,9 +66,11 @@ describe("modules registry", () => {
   });
 
   test("Solo and Pro plans may activate ADDON modules", () => {
-    expect(isModuleIncludedInPlan("estimates", "solo")).toBe(true);
-    expect(isModuleIncludedInPlan("quotes", "pro")).toBe(true);
-    expect(isModuleIncludedInPlan("expenses", "pro")).toBe(true);
+    expect(isModuleEligibleForPlan("estimates", "solo")).toBe(true);
+    expect(isModuleEligibleForPlan("quotes", "pro")).toBe(true);
+    expect(isModuleEligibleForPlan("expenses", "pro")).toBe(true);
+    expect(isModuleIncludedInPlan("estimates", "solo")).toBe(false);
+    expect(isModuleIncludedInPlan("quotes", "pro")).toBe(false);
   });
 
   test("returns registry diagnostics", () => {
