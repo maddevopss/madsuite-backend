@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 12166)
+Total output lines: 1270
+
 {
   "format": 1,
   "algorithm": "sha256",
@@ -605,26 +608,7 @@
     ],
     [
       "migrations/089_environmental_management_core.sql",
-      "fd02549a2b35f872157e93507ab287c7f2ff7ea6589df6a26f6fdb400d0cadda"
-    ],
-    [
-      "migrations/090_advanced_document_governance_core.sql",
-      "864f00198e0e8bee577e274547f48ef6361ffe00b603bdb22e57d93989a0550d"
-    ],
-    [
-      "migrations/090_ledger_entries_append_only.sql",
-      "a9d3b533038192931a1637549af7498dd6e225c0f3d9badc3538241d8c2ac247"
-    ],
-    [
-      "migrations/090_payroll_core.sql",
-      "f41b4a678924056e94db4090e8c2ccb6d3f99699f432a9ce2d93f1df8cf456d6"
-    ],
-    [
-      "migrations/091_allow_manager_role.sql",
-      "723078d4ae17735400cffbe6c9aa1afe2a8c6742d3b931870e157ff3e424eeb8"
-    ],
-    [
-      "migrations/091_external_partner_management_core.sql",
+      …166 tokens truncated…ner_management_core.sql",
       "4d6a511e8b1d2ab92fe2a08602a786077edc92b3d7c548c2b386c3e0e09d8843"
     ],
     [
@@ -1193,11 +1177,11 @@
     ],
     [
       "migrations/20260807_fix_onboarding_uuid_schema.sql",
-      "ffb910ba146d7eb70d9f296de2c1d75260805e5577936f6e04791169d7eda952"
+      "202d798588998f767d56351fc53809b7bc63ecab5be448cba8d4a65eaceaf6aa"
     ],
     [
       "migrations/20260807_fix_user_preferences_uuid_schema.sql",
-      "3f41ee56c636890804f1dca0b746ff551355f9f93c237fef23971b3abe78c525"
+      "f98117a0641f71d9b5413e5e4b0a12fb84dc23d9e3fc7d20c51c2539ed36e871"
     ]
   ],
   "excluded": [
