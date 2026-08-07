@@ -4,6 +4,7 @@
 -- 
 -- CRITICAL FIX: Migration 20260806_create_onboarding.sql used UUID instead of INTEGER
 -- This migration provides a safe conversion path without data loss
+-- ROLLBACK-ACKNOWLEDGED: UUID columns are removed only after every organisation/user mapping is validated; the transaction aborts on any unmapped row.
 --
 -- Tables affected:
 -- - onboarding_progress
@@ -30,6 +31,16 @@ WHERE organisation_id_new IS NULL;
 UPDATE onboarding_progress 
 SET user_id_new = (SELECT id FROM utilisateurs WHERE utilisateurs.id::TEXT = onboarding_progress.user_id::TEXT LIMIT 1)
 WHERE user_id_new IS NULL;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM onboarding_progress
+    WHERE organisation_id_new IS NULL OR user_id_new IS NULL
+  ) THEN
+    RAISE EXCEPTION 'onboarding_progress UUID conversion incomplete';
+  END IF;
+END $$;
 
 -- Drop old UUID columns and rename new ones
 ALTER TABLE onboarding_progress 
@@ -83,6 +94,16 @@ UPDATE tutorial_completion
 SET user_id_new = (SELECT id FROM utilisateurs WHERE utilisateurs.id::TEXT = tutorial_completion.user_id::TEXT LIMIT 1)
 WHERE user_id_new IS NULL;
 
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM tutorial_completion
+    WHERE organisation_id_new IS NULL OR user_id_new IS NULL
+  ) THEN
+    RAISE EXCEPTION 'tutorial_completion UUID conversion incomplete';
+  END IF;
+END $$;
+
 ALTER TABLE tutorial_completion 
 DROP COLUMN IF EXISTS id CASCADE,
 DROP COLUMN IF EXISTS organisation_id CASCADE,
@@ -127,6 +148,16 @@ UPDATE feature_discovery
 SET user_id_new = (SELECT id FROM utilisateurs WHERE utilisateurs.id::TEXT = feature_discovery.user_id::TEXT LIMIT 1)
 WHERE user_id_new IS NULL;
 
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM feature_discovery
+    WHERE organisation_id_new IS NULL OR user_id_new IS NULL
+  ) THEN
+    RAISE EXCEPTION 'feature_discovery UUID conversion incomplete';
+  END IF;
+END $$;
+
 ALTER TABLE feature_discovery 
 DROP COLUMN IF EXISTS id CASCADE,
 DROP COLUMN IF EXISTS organisation_id CASCADE,
@@ -165,6 +196,13 @@ ADD COLUMN IF NOT EXISTS organisation_id_new INTEGER;
 UPDATE help_articles 
 SET organisation_id_new = (SELECT id FROM organisations WHERE organisations.id::TEXT = help_articles.organisation_id::TEXT LIMIT 1)
 WHERE organisation_id_new IS NULL;
+
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM help_articles WHERE organisation_id_new IS NULL) THEN
+    RAISE EXCEPTION 'help_articles UUID conversion incomplete';
+  END IF;
+END $$;
 
 ALTER TABLE help_articles 
 DROP COLUMN IF EXISTS id CASCADE,
