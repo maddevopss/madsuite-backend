@@ -34,7 +34,15 @@ describe('Stage 14 PR 14A — Distributed Tracing Contract Tests', () => {
     const organisation = await prisma.query(`
       SELECT id FROM organisations LIMIT 1
     `);
-    testOrganisationId = organisation.rows[0]?.id || uuidv4();
+    if (organisation.rows[0]?.id) {
+      testOrganisationId = organisation.rows[0].id;
+    } else {
+      const createdOrganisation = await prisma.query(
+        "INSERT INTO organisations (nom) VALUES ($1) RETURNING id",
+        [`stage14-tracing-${uuidv4()}`],
+      );
+      testOrganisationId = createdOrganisation.rows[0].id;
+    }
   });
 
   describe('Trace ID Propagation', () => {
