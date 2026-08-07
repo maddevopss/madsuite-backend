@@ -17,7 +17,7 @@ function readManifest() {
   try {
     manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
   } catch (error) {
-    throw new Error(`Manifest de migrations invalide: ${error.message}`);
+    throw new Error(`Manifest de migrations invalide: ${error.message}`, { cause: error });
   }
 
   if (
