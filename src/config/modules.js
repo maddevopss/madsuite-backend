@@ -93,6 +93,22 @@ const INTERNAL_MODULES = Object.keys(MODULES).filter(k => MODULES[k].plan === "i
  * @param {string} planType - "free", "trial", "solo", "pro", "enterprise", "admin", "internal"
  * @returns {boolean}
  */
+function isModuleEligibleForPlan(moduleKey, planType) {
+  const mod = MODULES[moduleKey];
+  if (!mod) return false;
+
+  const normalizedPlan = String(planType || "free").toLowerCase();
+
+  if (mod.plan === "free") return true;
+  if (mod.plan === "trial" && ["trial", "solo", "pro", "enterprise"].includes(normalizedPlan)) return true;
+  if (moduleKey === "invoices" && ["trial", "solo", "pro", "enterprise", "admin", "internal", "master_admin", "platform_admin"].includes(normalizedPlan)) return true;
+  if (mod.plan === "pro" && ["pro", "enterprise", "admin", "internal", "master_admin", "platform_admin"].includes(normalizedPlan)) return true;
+  if (mod.plan === "addon" && ADDON_ELIGIBLE_PLANS.has(normalizedPlan)) return true;
+  if (mod.plan === "internal" && INTERNAL_PLAN_TYPES.has(normalizedPlan)) return true;
+
+  return false;
+}
+
 function isModuleIncludedInPlan(moduleKey, planType) {
   const mod = MODULES[moduleKey];
   if (!mod) return false;
@@ -131,6 +147,7 @@ module.exports = {
   ADDON_MODULES,
   INTERNAL_MODULES,
   INTERNAL_PLAN_TYPES,
+  isModuleEligibleForPlan,
   isModuleIncludedInPlan,
   getModuleRegistryDiagnostics,
 };
