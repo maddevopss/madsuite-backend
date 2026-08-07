@@ -200,25 +200,35 @@ class AlertingService {
       if (currentIndex < escalationTimes.length) {
         const delayMs = escalationTimes[currentIndex] * 60 * 1000;
 
+        const timerKey = `${alertId}:${currentIndex}`;
         const timer = setTimeout(async () => {
-          // Check if still unacked
-          const alert = await prisma.query(
-            `
-            SELECT ack_at FROM observability.active_alerts
-            WHERE id = $1 AND organisation_id = $2
-            `,
-            [alertId, organisationId],
-          );
+          try {
+            // Check if still unacked
+            const alert = await prisma.query(
+              `
+              SELECT ack_at FROM observability.active_alerts
+              WHERE id = $1 AND organisation_id = $2
+              `,
+              [alertId, organisationId],
+            );
 
-          if (alert.rows[0] && !alert.rows[0].ack_at) {
-            // Still unacked, escalate
-            await this.escalateAlert(alertId, organisationId, currentIndex + 1);
-            currentIndex += 1;
-            checkEscalation(); // Schedule next escalation
+            if (alert.rows[0] && !alert.rows[0].ack_at) {
+              // Still unacked, escalate
+              await this.escalateAlert(alertId, organisationId, currentIndex + 1);
+              currentIndex += 1;
+              checkEscalation(); // Schedule next escalation
+            }
+          } catch (error) {
+            // A timer may outlive a test/request pool; never leak an unhandled rejection.
+            console.error('Failed to check alert escalation:', error.message);
+          } finally {
+            this.escalationTimers.delete(timerKey);
           }
         }, delayMs);
 
-        this.escalationTimers.set(`${alertId}:${currentIndex}`, timer);
+        // Escalation must not keep a short-lived test/worker process alive.
+        if (typeof timer.unref === 'function') timer.unref();
+        this.escalationTimers.set(timerKey, timer);
       }
     };
 
