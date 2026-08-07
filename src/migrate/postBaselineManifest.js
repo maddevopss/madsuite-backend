@@ -17,7 +17,7 @@ function getPostBaselineMigrations(baselineVersion) {
   try {
     manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
   } catch (error) {
-    throw new Error(`Manifest post-baseline v2 invalide: ${error.message}`);
+    throw new Error(`Manifest post-baseline v2 invalide: ${error.message}`, { cause: error });
   }
 
   if (manifest.format !== 1 || manifest.baseline !== baselineVersion || !Array.isArray(manifest.migrations)) {
