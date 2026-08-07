@@ -27,7 +27,7 @@ describe("modules registry", () => {
 
   test("classifies modules by plan", () => {
     expect(FREE_MODULES).toEqual(expect.arrayContaining(["clients", "projects", "time_tracking"]));
-    expect(PRO_MODULES).toEqual(expect.arrayContaining(["invoices", "reports"]));
+    expect(PRO_MODULES).toEqual(expect.arrayContaining(["reports", "kiosk_punch"]));\n    expect(SOLO_MODULES).toEqual(["invoices"]);
     expect(ADDON_MODULES).toEqual(expect.arrayContaining(["estimates", "quotes", "payments"]));
     expect(INTERNAL_MODULES).toEqual(expect.arrayContaining(["cognitive_engine", "desktop_agent"]));
   });
@@ -39,7 +39,7 @@ describe("modules registry", () => {
     expect(isModuleIncludedInPlan("desktop_agent", "free")).toBe(false);
   });
 
-  test("includes pro modules for pro and enterprise", () => {
+  test("includes invoices for Trial, Solo, Pro and internal plans", () => {\n    expect(isModuleIncludedInPlan("invoices", "trial")).toBe(true);\n    expect(isModuleIncludedInPlan("invoices", "solo")).toBe(true);\n    expect(isModuleIncludedInPlan("invoices", "pro")).toBe(true);\n    expect(isModuleIncludedInPlan("invoices", "free")).toBe(false);\n  });\n\n  test("includes pro modules for pro and enterprise", () => {
     expect(isModuleIncludedInPlan("invoices", "pro")).toBe(true);
     expect(isModuleIncludedInPlan("invoices", "enterprise")).toBe(true);
     expect(isModuleIncludedInPlan("invoices", "free")).toBe(false);
