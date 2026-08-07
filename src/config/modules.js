@@ -81,7 +81,8 @@ const ADDON_ELIGIBLE_PLANS = new Set(["solo", "pro", "enterprise", "admin", "int
 
 // Les modules "free" sont toujours autorisés
 const FREE_MODULES = Object.keys(MODULES).filter(k => MODULES[k].plan === "free");
-const PRO_MODULES = Object.keys(MODULES).filter(k => MODULES[k].plan === "pro");\nconst SOLO_MODULES = ["invoices"];
+const PRO_MODULES = Object.keys(MODULES).filter(k => MODULES[k].plan === "pro");
+const SOLO_MODULES = ["invoices"];
 const ADDON_MODULES = Object.keys(MODULES).filter(k => MODULES[k].plan === "addon");
 const INTERNAL_MODULES = Object.keys(MODULES).filter(k => MODULES[k].plan === "internal");
 
@@ -99,7 +100,8 @@ function isModuleIncludedInPlan(moduleKey, planType) {
 
   if (mod.plan === "free") return true;
   if (mod.plan === "trial" && ["trial", "solo", "pro", "enterprise"].includes(normalizedPlan)) return true;
-  if (moduleKey === "invoices" && ["trial", "solo", "pro", "enterprise", "admin", "internal", "master_admin", "platform_admin"].includes(normalizedPlan)) return true;\n  if (mod.plan === "pro" && ["pro", "enterprise", "admin", "internal", "master_admin", "platform_admin"].includes(normalizedPlan)) return true;
+  if (moduleKey === "invoices" && ["trial", "solo", "pro", "enterprise", "admin", "internal", "master_admin", "platform_admin"].includes(normalizedPlan)) return true;
+  if (mod.plan === "pro" && ["pro", "enterprise", "admin", "internal", "master_admin", "platform_admin"].includes(normalizedPlan)) return true;
   if (mod.plan === "addon" && ADDON_ELIGIBLE_PLANS.has(normalizedPlan)) return true;
   if (mod.plan === "internal" && INTERNAL_PLAN_TYPES.has(normalizedPlan)) return true;
 
