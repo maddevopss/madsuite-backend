@@ -285,24 +285,41 @@ jobs:
           SKIP_MIGRATIONS: "1"
           PORT: "5050"
         run: |
-          node server.js > artifacts/backup-restore/restored-backend.log 2>&1 &
+          mkdir -p artifacts/backup-restore
+          node server.js > artifacts/backup-restore/restored-backend.log \
+            2> artifacts/backup-restore/restored-backend-error.log &
           server_pid=$!
           trap 'kill $server_pid 2>/dev/null || true' EXIT
+          backend_ready=false
 
-          for attempt in $(seq 1 30); do
+          for attempt in $(seq 1 60); do
             if curl --fail --silent http://127.0.0.1:5050/api/health > artifacts/backup-restore/restored-health.json; then
+              backend_ready=true
               break
             fi
 
             if ! kill -0 "$server_pid" 2>/dev/null; then
-              cat artifacts/backup-restore/restored-backend.log
+              echo "Backend arrêté prématurément (PID $server_pid)"
+              echo "--- restored-backend-error.log ---"
+              tail -n 30 artifacts/backup-restore/restored-backend-error.log || true
+              echo "--- restored-backend.log ---"
+              tail -n 30 artifacts/backup-restore/restored-backend.log || true
               exit 1
             fi
 
             sleep 1
           done
 
-          curl --fail --silent http://127.0.0.1:5050/api/health | tee artifacts/backup-restore/restored-health.json
+          if [ "$backend_ready" != "true" ]; then
+            echo "Backend non prêt après 60 secondes : http://127.0.0.1:5050/api/health"
+            echo "--- restored-backend-error.log ---"
+            tail -n 30 artifacts/backup-restore/restored-backend-error.log || true
+            echo "--- restored-backend.log ---"
+            tail -n 30 artifacts/backup-restore/restored-backend.log || true
+            exit 1
+          fi
+
+          cat artifacts/backup-restore/restored-health.json
           grep -q '"status":"ok"' artifacts/backup-restore/restored-health.json
           grep -q '"database":"ok"' artifacts/backup-restore/restored-health.json
 
