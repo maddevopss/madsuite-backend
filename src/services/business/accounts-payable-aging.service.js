@@ -12,12 +12,21 @@ function money(value) {
   return Number(Number(value || 0).toFixed(2));
 }
 
-function normalizeAsOf(value) {
-  const asOf = value ? new Date(value) : new Date();
-  if (Number.isNaN(asOf.getTime())) {
+function toUtcDateOnly(value) {
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [year, month, day] = value.split("-").map(Number);
+    return new Date(Date.UTC(year, month - 1, day));
+  }
+
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) {
     throw Object.assign(new Error("La date de référence (asOf) est invalide."), { statusCode: 400 });
   }
-  return asOf;
+  return new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+}
+
+function normalizeAsOf(value) {
+  return toUtcDateOnly(value || new Date());
 }
 
 // Solde impayé par facture fournisseur, calculé à la volée (aucune table de
@@ -62,7 +71,8 @@ async function computeAccountsPayableAging(db, organisationId, { asOf, supplierI
     const balanceDue = money(Math.max(0, Number(bill.total) - Number(bill.paid_total) - Number(bill.credited_total)));
     if (balanceDue <= 0) continue;
 
-    const daysPastDue = Math.floor((referenceDate - new Date(bill.due_date)) / 86400000);
+    const dueDate = toUtcDateOnly(bill.due_date);
+    const daysPastDue = Math.floor((referenceDate - dueDate) / 86400000);
     const bucket = bucketFor(daysPastDue);
 
     totals[bucket] = money(totals[bucket] + balanceDue);

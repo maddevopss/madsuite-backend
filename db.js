@@ -100,30 +100,8 @@ const poolConfig = connectionString
     };
 
 Object.assign(poolConfig, {
-  // max:1 en test causait un deadlock déterministe : de nombreux fichiers font
-  // `client = await db.pool.connect()` (retient l'unique connexion) PUIS
-  // appellent un helper (ex. createTestOrganisation) qui utilise pool.query()
-  // sur ce même pool — avec max:1, ce pool.query() attend indéfiniment une
-  // connexion déjà retenue par `client`, jusqu'au timeout du hook (5000ms).
-  // Reproduit en isolation totale (un seul fichier, une seule requête) —
-  // ce n'est pas une question de charge cumulée. Une petite valeur >1 laisse
-  // de la place pour ce pattern courant (client explicite + quelques
-  // pool.query() concurrents) sans revenir à un pool par fichier trop gourmand.
-  max: process.env.NODE_ENV === "test"
-    ? Number(process.env.DB_POOL_MAX_TEST || 5)
-    : Number(process.env.DB_POOL_MAX || 10),
   connectionTimeoutMillis: Number(process.env.DB_CONNECTION_TIMEOUT_MS || 5000),
-  // En test, chaque fichier Jest recrée son propre pool (module rechargé à neuf
-  // par fichier) et ne le ferme jamais explicitement (cf. src/test/setup.js) :
-  // sans un idleTimeoutMillis court, les connexions inutilisées de chaque
-  // fichier ne sont récupérées qu'après 30s, ce qui épuise max_connections
-  // Postgres quand une suite complète enchaîne des centaines de fichiers plus
-  // vite que ce délai. Une valeur courte ne touche que les connexions vraiment
-  // idle (pool.query terminé et client rendu) — jamais une connexion active ou
-  // en transaction — donc sans risque pour un travail asynchrone légitime.
-  idleTimeoutMillis: Number(
-    process.env.DB_IDLE_TIMEOUT_MS || (process.env.NODE_ENV === "test" ? 2000 : 30000),
-  ),
+  idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS || 30000),
   query_timeout: Number(process.env.DB_QUERY_TIMEOUT_MS || 15000),
   statement_timeout: Number(process.env.DB_STATEMENT_TIMEOUT_MS || 15000),
 });

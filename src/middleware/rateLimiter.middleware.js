@@ -4,11 +4,12 @@
 // Adjust limits as needed for production.
 
 const rateLimit = require('express-rate-limit');
+const isDevelopment = process.env.NODE_ENV === "development";
 
 // Basic limiter: max 5 requests per minute per IP
 const authRateLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
-  max: 5,
+  max: isDevelopment ? 500 : 5,
   skip: () => process.env.NODE_ENV === "test",
   message: 'Too many attempts, please try again later.',
   standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers

@@ -1,6 +1,7 @@
 const { Pool } = require("pg");
 const fs = require("fs");
 const path = require("path");
+const { getManifestMigrations } = require("../migrate/migrationManifest");
 
 const MIGRATION_DB_NAME = process.env.MIGRATION_TEST_DB_NAME || "madsuite_migrations_test";
 const originalDatabaseEnv = {
@@ -34,29 +35,7 @@ function buildDatabaseUrl(dbName) {
 }
 
 function getMigrationFiles() {
-  const migrationSources = [
-    path.join(__dirname, "../../db/archive/migrations"),
-    path.join(__dirname, "../../db/migrations"),
-  ];
-  const seen = new Set();
-  const files = [];
-
-  for (const migrationsDir of migrationSources) {
-    if (!fs.existsSync(migrationsDir)) continue;
-
-    const entries = fs
-      .readdirSync(migrationsDir)
-      .filter((f) => /^\d+[a-z]?_.+\.sql$/i.test(f))
-      .sort();
-
-    for (const file of entries) {
-      if (seen.has(file)) continue;
-      seen.add(file);
-      files.push({ file, fullPath: path.join(migrationsDir, file) });
-    }
-  }
-
-  return files;
+  return getManifestMigrations();
 }
 
 function configureMigrationDatabase() {

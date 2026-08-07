@@ -13,6 +13,17 @@ function positiveId(value, label) {
   return id;
 }
 
+function formatDateOnlyAsUtc(value) {
+  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    return `${value}T00:00:00.000Z`;
+  }
+
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) throw Object.assign(new Error('Date de relevé d’emploi invalide.'), { statusCode: 400 });
+
+  return new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate())).toISOString();
+}
+
 router.get('/', async (req, res, next) => {
   try {
     const { rows } = await req.db.query(
@@ -88,8 +99,8 @@ router.post('/:id/:action', requireRole('admin'), async (req, res, next) => {
       roePayload = {
         ...buildRoePayload({
           employeeNumber: current.rows[0].employee_number,
-          lastDayWorked: current.rows[0].last_day_worked,
-          finalPayDate: current.rows[0].final_pay_date,
+          lastDayWorked: formatDateOnlyAsUtc(current.rows[0].last_day_worked),
+          finalPayDate: formatDateOnlyAsUtc(current.rows[0].final_pay_date),
           reasonCode: current.rows[0].reason_code,
         }),
         roeReference: String(req.body.roeReference),

@@ -59,7 +59,6 @@ class RunbooksService {
     if (alert_trigger) {
       query += ` AND alert_trigger = $${paramIndex}`;
       params.push(alert_trigger);
-      paramIndex += 1;
     }
 
     query += ` ORDER BY priority DESC, created_at DESC`;

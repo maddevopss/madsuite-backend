@@ -1,9 +1,9 @@
 -- Ajout de la colonne de synchronisation
 ALTER TABLE utilisateurs 
-ADD COLUMN last_sync_at TIMESTAMPTZ;
+ADD COLUMN IF NOT EXISTS last_sync_at TIMESTAMPTZ;
 
 -- Index optimisé pour le listing Admin (Multi-tenant + Tri)
-CREATE INDEX idx_utilisateurs_org_sync 
+CREATE INDEX IF NOT EXISTS idx_utilisateurs_org_sync 
 ON utilisateurs (organisation_id, last_sync_at DESC)
 WHERE deleted_at IS NULL;
 

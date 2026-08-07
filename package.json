@@ -48,6 +48,11 @@
     "db:migrate": "node src/migrate/runMigrationsFromFiles.js",
     "deploy:migrate": "cross-env NODE_ENV=production npm run db:migrate",
     "verify:migration-order": "node src/migrate/verifyMigrationOrder.js",
+    "verify:migration-manifest": "node -e \"const { getManifestMigrations } = require('./src/migrate/migrationManifest'); console.log('Manifest valide:', getManifestMigrations().length, 'migrations');\"",
+    "audit:migration-manifest": "node -e \"const { getManifestMigrations, auditPendingMigrations } = require('./src/migrate/migrationManifest'); const violations = auditPendingMigrations(getManifestMigrations(), new Set()); console.error(violations); process.exit(violations.length ? 1 : 0);\"",
+    "db:baseline:v2:build": "node scripts/buildBaselineV2.js",
+    "db:baseline:v2:bootstrap": "node src/migrate/runBootstrapBaselineV2.js",
+    "db:baseline:v2:verify": "node scripts/verifyBaselineV2.js",
     "verify:schema-inventory": "cross-env NODE_ENV=test LOG_SCHEMA_INVENTORY=1 npm run db:migrate"
   },
   "keywords": [],
