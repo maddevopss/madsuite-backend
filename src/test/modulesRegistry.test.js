@@ -54,12 +54,12 @@ describe("modules registry", () => {
     expect(isModuleIncludedInPlan("invoices", "free")).toBe(false);
   });
 
-  test("enterprise plan includes ADDON modules but NOT INTERNAL", () => {
-    expect(isModuleIncludedInPlan("estimates", "enterprise")).toBe(true);
-    expect(isModuleIncludedInPlan("quotes", "enterprise")).toBe(true);
-    expect(isModuleIncludedInPlan("expenses", "enterprise")).toBe(true);
-    expect(isModuleIncludedInPlan("activity_intelligence", "enterprise")).toBe(true);
-    expect(isModuleIncludedInPlan("billing_assistant", "enterprise")).toBe(true);
+  test("enterprise plan exposes ADDON modules as optional but not included", () => {
+    expect(isModuleIncludedInPlan("estimates", "enterprise")).toBe(false);
+    expect(isModuleIncludedInPlan("quotes", "enterprise")).toBe(false);
+    expect(isModuleIncludedInPlan("expenses", "enterprise")).toBe(false);
+    expect(isModuleIncludedInPlan("activity_intelligence", "enterprise")).toBe(false);
+    expect(isModuleIncludedInPlan("billing_assistant", "enterprise")).toBe(false);
     expect(isModuleIncludedInPlan("cognitive_engine", "enterprise")).toBe(false);
     expect(isModuleIncludedInPlan("desktop_agent", "enterprise")).toBe(false);
   });
