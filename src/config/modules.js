@@ -77,7 +77,8 @@ const MODULES = {
 };
 
 const INTERNAL_PLAN_TYPES = new Set(["admin", "internal", "master_admin", "platform_admin"]);
-const ADDON_ELIGIBLE_PLANS = new Set(["solo", "pro", "enterprise", "admin", "internal", "master_admin", "platform_admin"]);\nconst ADDON_INCLUDED_PLANS = new Set(["admin", "internal", "master_admin", "platform_admin"]);
+const ADDON_ELIGIBLE_PLANS = new Set(["solo", "pro", "enterprise", "admin", "internal", "master_admin", "platform_admin"]);
+const ADDON_INCLUDED_PLANS = new Set(["admin", "internal", "master_admin", "platform_admin"]);
 
 // Les modules "free" sont toujours autorisés
 const FREE_MODULES = Object.keys(MODULES).filter(k => MODULES[k].plan === "free");
