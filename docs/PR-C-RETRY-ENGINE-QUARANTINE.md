@@ -6,7 +6,7 @@ PR C implements a generalized retry and quarantine system for handling transient
 
 ## Components Delivered
 
-### 1. Retry Engine Database Schema (`20260803_retry_engine_quarantine.sql`)
+### 1. Retry Engine Database Schema (`20260802_99_retry_engine_quarantine.sql` + `20260803_00_retry_engine_quarantine.sql`)
 
 **Main Tables**
 
@@ -367,7 +367,8 @@ When `jobLockTracker.detectStuckLocks()` finds a lock held too long:
 ## Files Modified/Created
 
 ### Created
-- `db/migrations/20260803_retry_engine_quarantine.sql` — Schema (400+ lines)
+- `db/migrations/20260802_99_retry_engine_quarantine.sql` — Structure fondatrice
+- `db/migrations/20260803_00_retry_engine_quarantine.sql` — Normalisation additive
 - `src/services/retryEngine.js` — Retry engine service (500+ lines)
 - `src/test/retryEngine.integration.test.js` — Integration tests (600+ lines)
 - `docs/PR-C-RETRY-ENGINE-QUARANTINE.md` — This documentation

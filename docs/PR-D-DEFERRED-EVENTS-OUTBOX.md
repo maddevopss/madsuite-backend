@@ -11,7 +11,7 @@ PR D implements reliable event delivery with the outbox pattern, integrating the
 
 ## Components Delivered
 
-### 1. Enhanced Outbox Schema (`20260803_outbox_enhanced.sql`)
+### 1. Enhanced Outbox Schema (`20260803_01_outbox_enhanced.sql`)
 
 **Enhanced `outbox_events` Table**
 ```sql
@@ -408,7 +408,7 @@ ELSE (unknown) → RETRY (safer default)
 
 ## Deployment Checklist
 
-- ✅ Schema migration applied (20260803_outbox_enhanced.sql)
+- ✅ Schema migration applied (20260803_01_outbox_enhanced.sql)
 - ✅ Event handlers registered (5 predefined)
 - ✅ Retry policies configured (from PR C)
 - ✅ Job registry has outboxWorkerTask (from PR B)
@@ -451,7 +451,7 @@ ELSE (unknown) → RETRY (safer default)
 ## Files Modified/Created
 
 ### Created
-- `db/migrations/20260803_outbox_enhanced.sql` — Schema (250+ lines)
+- `db/migrations/20260803_01_outbox_enhanced.sql` — Schema (250+ lines)
 - `src/config/eventHandlers.js` — Handler registry (400+ lines)
 - `src/services/outboxProcessor.js` — Event processor (500+ lines)
 - `src/test/outboxProcessor.integration.test.js` — Integration tests (600+ lines)

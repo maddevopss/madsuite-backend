@@ -6,7 +6,8 @@ const crypto = require("crypto");
  * Detect migration integrity issues:
  * 1. Exact filename collisions between db/archive/migrations/ and db/migrations/
  * 2. Duplicate filenames within db/migrations/ (same full filename)
- * 3. Format validation
+ * 3. Duplicate contents within db/migrations/ (different names, same SQL)
+ * 4. Format validation
  *
  * Historical numeric prefixes (e.g., 033, 034, 035) are allowed if filenames are unique.
  * Archives are never executed but must not shadow active migrations.
@@ -18,6 +19,7 @@ function detectDuplicateMigrations() {
   const archiveFiles = new Set();
   const activeFiles = new Set();
   const collisions = [];
+  const activeHashes = new Map();
 
   // Load archive filenames
   if (fs.existsSync(archiveDir)) {
@@ -44,6 +46,18 @@ function detectDuplicateMigrations() {
       }
       activeFiles.add(file);
 
+      const contentHash = hashFile(path.join(activeDir, file));
+      if (contentHash && activeHashes.has(contentHash)) {
+        collisions.push({
+          type: "duplicate_active_content",
+          file,
+          duplicateOf: activeHashes.get(contentHash),
+          message: `Contenu dupliqué dans db/migrations/: ${file} est identique à ${activeHashes.get(contentHash)}`,
+        });
+      } else if (contentHash) {
+        activeHashes.set(contentHash, file);
+      }
+
       // Check for collision with archive
       if (archiveFiles.has(file)) {
         const archivePath = path.join(archiveDir, file);
@@ -69,6 +83,7 @@ function detectDuplicateMigrations() {
   const blockingErrors = collisions.filter((c) => c.type === "collision_archive_active" && !c.identical);
   const warnings = collisions.filter((c) => c.type === "collision_archive_active" && c.identical);
   const duplicates = collisions.filter((c) => c.type === "duplicate_active");
+  const duplicateContents = collisions.filter((c) => c.type === "duplicate_active_content");
 
   // Block on divergent collisions
   if (blockingErrors.length > 0) {
@@ -89,6 +104,13 @@ function detectDuplicateMigrations() {
 
     throw new Error(
       `Fichiers dupliqués dans db/migrations/ :\n${message}\n\nChaque fichier doit avoir un nom unique.`,
+    );
+  }
+
+  if (duplicateContents.length > 0) {
+    const message = duplicateContents.map((c) => `  ${c.message}`).join("\n");
+    throw new Error(
+      `Contenus de migrations dupliqués détectés :\n${message}\n\nConserver une seule migration par changement de schéma.`,
     );
   }
 
