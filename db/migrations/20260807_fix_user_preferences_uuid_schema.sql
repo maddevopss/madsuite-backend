@@ -4,6 +4,7 @@
 -- 
 -- CRITICAL FIX: Migration 20260806_create_user_preferences.sql used UUID instead of INTEGER
 -- This migration provides a safe conversion path without data loss
+-- ROLLBACK-ACKNOWLEDGED: UUID columns are removed only after every organisation/user mapping is validated; the transaction aborts on any unmapped row.
 --
 -- Tables affected:
 -- - user_preferences
@@ -27,6 +28,16 @@ WHERE organisation_id_new IS NULL;
 UPDATE user_preferences 
 SET user_id_new = (SELECT id FROM utilisateurs WHERE utilisateurs.id::TEXT = user_preferences.user_id::TEXT LIMIT 1)
 WHERE user_id_new IS NULL;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM user_preferences
+    WHERE organisation_id_new IS NULL OR user_id_new IS NULL
+  ) THEN
+    RAISE EXCEPTION 'user_preferences UUID conversion incomplete';
+  END IF;
+END $$;
 
 ALTER TABLE user_preferences 
 DROP COLUMN IF EXISTS id CASCADE,
@@ -74,6 +85,16 @@ UPDATE user_behavior_tracking
 SET user_id_new = (SELECT id FROM utilisateurs WHERE utilisateurs.id::TEXT = user_behavior_tracking.user_id::TEXT LIMIT 1)
 WHERE user_id_new IS NULL;
 
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM user_behavior_tracking
+    WHERE organisation_id_new IS NULL OR user_id_new IS NULL
+  ) THEN
+    RAISE EXCEPTION 'user_behavior_tracking UUID conversion incomplete';
+  END IF;
+END $$;
+
 ALTER TABLE user_behavior_tracking 
 DROP COLUMN IF EXISTS id CASCADE,
 DROP COLUMN IF EXISTS organisation_id CASCADE,
@@ -118,6 +139,16 @@ WHERE organisation_id_new IS NULL;
 UPDATE personalization_settings 
 SET user_id_new = (SELECT id FROM utilisateurs WHERE utilisateurs.id::TEXT = personalization_settings.user_id::TEXT LIMIT 1)
 WHERE user_id_new IS NULL;
+
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM personalization_settings
+    WHERE organisation_id_new IS NULL OR user_id_new IS NULL
+  ) THEN
+    RAISE EXCEPTION 'personalization_settings UUID conversion incomplete';
+  END IF;
+END $$;
 
 ALTER TABLE personalization_settings 
 DROP COLUMN IF EXISTS id CASCADE,
