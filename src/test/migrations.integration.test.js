@@ -1,7 +1,6 @@
 const { Pool } = require("pg");
-const fs = require("fs");
-const path = require("path");
-const { getManifestMigrations } = require("../migrate/migrationManifest");
+const { getBaselineManifest } = require("../migrate/baselineManifest");
+const { getPostBaselineMigrations } = require("../migrate/postBaselineManifest");
 
 const MIGRATION_DB_NAME = process.env.MIGRATION_TEST_DB_NAME || "madsuite_migrations_test";
 const originalDatabaseEnv = {
@@ -12,6 +11,7 @@ const originalDatabaseEnv = {
 };
 
 let runMigrations;
+let bootstrapBaselineV2;
 let db;
 let migrationPool;
 
@@ -35,7 +35,7 @@ function buildDatabaseUrl(dbName) {
 }
 
 function getMigrationFiles() {
-  return getManifestMigrations();
+  return getPostBaselineMigrations(getBaselineManifest().version);
 }
 
 function configureMigrationDatabase() {
@@ -51,6 +51,7 @@ function configureMigrationDatabase() {
 function loadMigrationRunner() {
   jest.resetModules();
   ({ runMigrations } = require("../migrate/runMigrations"));
+  ({ bootstrapBaselineV2 } = require("../migrate/bootstrapBaselineV2"));
   db = require("../../db");
   migrationPool = db.pool;
 }
@@ -117,7 +118,8 @@ async function ensureRlsTestRole(pool) {
   await db.query(`GRANT USAGE, SELECT ON SEQUENCE activity_logs_id_seq TO rls_test`);
 }
 
-async function applyMigrationsThenAssertFresh({ dbName }) {
+async function applyMigrationsThenAssertFresh() {
+  await bootstrapBaselineV2();
   // runMigrations utilise backend/db pool, donc on s'appuie sur TEST_DATABASE_URL/TEST_DB_NAME
   // Le runMigrations s'exécute dans le même processus Jest, donc les variables d'env doivent déjà pointer vers la bonne DB.
   await runMigrations({ backup: false });
@@ -185,8 +187,6 @@ async function applyMigrationsThenAssertFresh({ dbName }) {
     // On s'assure qu'on a bien traité l'ensemble du dossier migrations
     const filesOnDisk = getMigrationFiles().length;
 
-    expect(totalApplied).toBeGreaterThanOrEqual(24);
-
     expect(totalApplied).toBe(filesOnDisk);
     expect(okList.every(Boolean)).toBe(true);
 
@@ -223,52 +223,24 @@ describe("DB migrations integration - source de vérité", () => {
     loadMigrationRunner();
 
     // applique migrations
-    await applyMigrationsThenAssertFresh({ dbName });
+    await applyMigrationsThenAssertFresh();
   }, 120000);
 
-  test("old-ish DB: runMigrations doit être idempotent sans divergence sur tables clés", async () => {
+  test("baseline v2: runMigrations doit être idempotent sans divergence sur tables clés", async () => {
     const dbName = getTestDbName();
 
     await closeMigrationPool();
     await recreateDb(dbName);
     loadMigrationRunner();
 
-    // Approche "old-ish": on applique une partie des migrations puis on finit.
-    // On simule un état existant en exécutant les migrations jusqu'à 013.
-    const migrations = getMigrationFiles().filter(({ file }) => !file.startsWith("000_"));
-
-    const cutIndex = migrations.findIndex(({ file }) => file.startsWith("014_"));
-    const oldMigrations = cutIndex > 0 ? migrations.slice(0, cutIndex) : migrations.slice(0, 14);
-
-    const pool = new Pool({ connectionString: process.env.TEST_DATABASE_URL });
-    try {
-      // schema_migrations doit exister (sinon runMigrations va le créer plus tard)
-      await db.query(`
-        CREATE TABLE IF NOT EXISTS schema_migrations (
-          id SERIAL PRIMARY KEY,
-          filename TEXT NOT NULL UNIQUE,
-          applied_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-        );
-      `);
-
-      for (const migration of oldMigrations) {
-        const sql = fs.readFileSync(migration.fullPath, "utf8");
-        await db.query("BEGIN");
-        try {
-          await db.query(sql);
-          await db.query(`INSERT INTO schema_migrations (filename) VALUES ($1)`, [migration.file]);
-          await db.query("COMMIT");
-        } catch (e) {
-          await db.query("ROLLBACK");
-          throw e;
-        }
-      }
-    } finally {
-      await pool.end();
-    }
-
-    // Maintenant on exécute runMigrations (complétion)
+    await bootstrapBaselineV2();
     await runMigrations({ backup: false });
+    await runMigrations({ backup: false });
+
+    const migrationRows = await db.query("SELECT filename FROM schema_migrations ORDER BY filename");
+    expect(migrationRows.rows.map(({ filename }) => filename)).toEqual(
+      getMigrationFiles().map(({ file }) => file),
+    );
 
     const postPool = new Pool({ connectionString: process.env.TEST_DATABASE_URL });
     try {

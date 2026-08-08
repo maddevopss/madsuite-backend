@@ -100,8 +100,13 @@ const poolConfig = connectionString
     };
 
 Object.assign(poolConfig, {
+  max: process.env.NODE_ENV === "test"
+    ? Number(process.env.DB_POOL_MAX_TEST || 5)
+    : Number(process.env.DB_POOL_MAX || 10),
   connectionTimeoutMillis: Number(process.env.DB_CONNECTION_TIMEOUT_MS || 5000),
-  idleTimeoutMillis: Number(process.env.DB_IDLE_TIMEOUT_MS || 30000),
+  idleTimeoutMillis: Number(
+    process.env.DB_IDLE_TIMEOUT_MS || (process.env.NODE_ENV === "test" ? 2000 : 30000),
+  ),
   query_timeout: Number(process.env.DB_QUERY_TIMEOUT_MS || 15000),
   statement_timeout: Number(process.env.DB_STATEMENT_TIMEOUT_MS || 15000),
 });

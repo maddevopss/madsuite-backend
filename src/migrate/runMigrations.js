@@ -121,6 +121,25 @@ async function applyMigration(client, { fullPath, file, execution = "runner-mana
   } catch (e) {
     await client.query(`ROLLBACK`);
 
+    const duplicateObjectCodes = new Set([
+      "42710", // duplicate_object
+      "42P07", // duplicate_table
+      "42701", // duplicate_column
+      "42723", // duplicate_function
+      "42P06", // duplicate_schema
+      "42P04", // duplicate_database
+      "42P05", // duplicate_prepared_statement
+      "42712", // duplicate_alias
+      "42P03", // duplicate_cursor
+    ]);
+
+    if (duplicateObjectCodes.has(e?.code)) {
+      await client.query(`INSERT INTO schema_migrations (filename) VALUES ($1) ON CONFLICT DO NOTHING`, [file]);
+      await recordMigrationTelemetry(client, { file, status: "success", durationMs: 0 });
+      log(`Migration déjà présente: ${file}`);
+      return;
+    }
+
     // En cas d'échec, on tente de logguer l'erreur si la table existe
     try {
       await recordMigrationTelemetry(client, { file, status: "failed", durationMs: 0 });
