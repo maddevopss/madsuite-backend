@@ -96,6 +96,7 @@ const notificationsRoutes = require("./routes/notifications.routes");
 const analyticsRoutes = require("./routes/analytics.routes");
 const exportRoutes = require("./integrations/export/export.routes");
 const systemRoutes = require("./routes/system.routes");
+const helpChatRoutes = require("./routes/help-chat.routes");
 const { requireOrganisation } = require("./middleware/organization.middleware");
 const { createHealthRoutes } = require("./observability/healthRoutes");
 const { createMetricsRoutes } = require("./observability/metricsRoutes");
@@ -310,6 +311,7 @@ app.use("/api/integrations/export", auth, exportRoutes);
 app.use("/api/analytics", auth, analyticsRoutes);
 app.use("/api/master-admin", auth, masterAdminRoutes);
 app.use("/api/system", auth, systemRoutes);
+app.use("/api/help/chat", auth, helpChatRoutes);
 
 // Stage 14 - Observability: health checks publics (probes infra), dashboards
 // metrics/alerting/runbooks authentifies et scopes par organisation.

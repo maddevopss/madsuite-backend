@@ -8,5 +8,5 @@ ADD COLUMN subscription_status VARCHAR(50) DEFAULT 'trialing',
 ADD COLUMN trial_ends_at TIMESTAMPTZ;
 
 -- Index pour accélérer les recherches lors des webhooks Stripe
-CREATE INDEX idx_org_stripe_customer_id ON organisations(stripe_customer_id);
-CREATE INDEX idx_org_stripe_subscription_id ON organisations(stripe_subscription_id);
+CREATE INDEX IF NOT EXISTS idx_org_stripe_customer_id ON organisations(stripe_customer_id);
+CREATE INDEX IF NOT EXISTS idx_org_stripe_subscription_id ON organisations(stripe_subscription_id);

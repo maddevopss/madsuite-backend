@@ -33,7 +33,7 @@ describe("activation du verrou des ajustements comptables", () => {
     expect(remediationSource).toContain(
       'require("./accounting-governance-period-guarded.service")',
     );
-    expect(remediationSource).toContain("governanceService.createPostedAdjustment({\n    db,");
+    expect(remediationSource).toMatch(/governanceService\.createPostedAdjustment\(\{\s+db,/);
     expect(remediationSource).not.toContain(
       'const governanceService = require("./accounting-governance.service")',
     );

@@ -5,7 +5,9 @@ const { performance } = require("perf_hooks");
 const db = require("../../db");
 const { runOrganisationScopePreflight } = require("./preflightOrganisationScope");
 const { diagnosticDatabaseConnection } = require("./diagnosticDb");
-const { detectDuplicateMigrations } = require("./detectDuplicateMigrations");
+const { getManifestMigrations, assertPendingMigrationsAreRunnerSafe } = require("./migrationManifest");
+const { getBaselineManifest } = require("./baselineManifest");
+const { getPostBaselineMigrations } = require("./postBaselineManifest");
 const { getSchemaInventory, validateInventory } = require("./schemaInventory");
 
 function log(message, details) {
@@ -20,37 +22,6 @@ function fileExists(p) {
   } catch {
     return false;
   }
-}
-
-function getMigrationFiles() {
-  const sources = [path.join(__dirname, "../../db/archive/migrations"), path.join(__dirname, "../../db/migrations")];
-
-  const seen = new Set();
-  const entries = [];
-
-  for (const migrationsDir of sources) {
-    if (!fs.existsSync(migrationsDir)) continue;
-
-    const files = fs
-      .readdirSync(migrationsDir)
-      .filter((f) => /^\d+[a-z]?_.+\.sql$/i.test(f))
-      .sort();
-
-    for (const file of files) {
-      if (seen.has(file)) continue;
-      seen.add(file);
-      entries.push({
-        file,
-        fullPath: path.join(migrationsDir, file),
-      });
-    }
-  }
-
-  if (!entries.length) {
-    throw new Error(`Aucune migration SQL trouvée dans ${sources.join(", ")}`);
-  }
-
-  return entries;
 }
 
 async function ensureMigrationsTable(client) {
@@ -98,42 +69,45 @@ async function recordMigrationTelemetry(client, { file, status, durationMs = nul
 }
 
 async function getAppliedMigrations(client) {
-  // On vérifie d'abord si la nouvelle table existe, sinon on se rabat sur l'ancienne
-  const tableExists = await hasMigrationTelemetryTable(client);
-
-  const tableName = tableExists ? "schema_migrations_executed" : "schema_migrations";
-  const column = tableExists ? "version" : "filename";
-
-  const { rows } = await client.query(`SELECT ${column} as file FROM ${tableName}`);
+  const { rows } = await client.query(`SELECT filename AS file FROM schema_migrations`);
   return new Set(rows.map((r) => r.file));
 }
 
-function getMigrationsSnapshotPath() {
-  if (process.env.NODE_ENV === "test") return null;
-  const snapshotPath = path.join(__dirname, "../../db/schema_current.sql");
-  return fileExists(snapshotPath) ? snapshotPath : null;
-}
+async function getActiveBaseline(client) {
+  const exists = await client.query("SELECT to_regclass('public.schema_baselines') AS table_name");
+  if (!exists.rows[0]?.table_name) return null;
 
-async function applyBaselineSnapshot(client, snapshotPath) {
-  const sql = fs.readFileSync(snapshotPath, "utf8");
-  await client.query(sql);
-}
+  const applied = await client.query("SELECT version, checksum FROM schema_baselines ORDER BY applied_at");
+  if (applied.rowCount === 0) return null;
+  if (applied.rowCount !== 1) throw new Error("Historique de baseline invalide: une seule baseline active est permise.");
 
-async function recordMigrationSnapshot(client, files) {
-  for (const file of files) {
-    await client.query(`INSERT INTO schema_migrations (filename) VALUES ($1) ON CONFLICT DO NOTHING`, [file]);
-    await recordMigrationTelemetry(client, { file, status: "success", durationMs: 0 });
+  const baseline = getBaselineManifest();
+  const record = applied.rows[0];
+  if (record.version !== baseline.version || record.checksum !== baseline.sha256) {
+    throw new Error("Baseline active inconnue ou checksum divergent; migration refusée.");
   }
+  return baseline;
 }
 
-async function applyMigration(client, { fullPath, file }) {
+async function applyMigration(client, { fullPath, file, execution = "runner-managed" }) {
   const sql = fs.readFileSync(fullPath, "utf8");
   const startTime = performance.now();
+  const selfManaged = execution === "self-managed";
 
-  await client.query(`BEGIN`);
+  if (!selfManaged) {
+    await client.query(`BEGIN`);
+  }
+
   try {
-    log(`Migration en cours: ${file}`);
+    log(`Migration en cours: ${file}${selfManaged ? " (legacy self-managed)" : ""}`);
     await client.query(sql);
+
+    // Une migration legacy qui gère déjà sa transaction doit être consignée
+    // dans une transaction séparée. Une interruption entre les deux exige une
+    // intervention manuelle plutôt qu'un rejeu implicite.
+    if (selfManaged) {
+      await client.query(`BEGIN`);
+    }
 
     // On insère dans les deux tables pour la compatibilité descendante
     await client.query(`INSERT INTO schema_migrations (filename) VALUES ($1) ON CONFLICT DO NOTHING`, [file]);
@@ -147,10 +121,7 @@ async function applyMigration(client, { fullPath, file }) {
   } catch (e) {
     await client.query(`ROLLBACK`);
 
-    // Codes Postgres "duplicate_*" uniquement — pas de fallback texte, car des messages
-    // d'erreur légitimes (ex: colonne inexistante "n'existe pas") contiennent aussi "existe"
-    // et seraient faussement classés comme non-fatals (cf. incident 20260803_stage5_metrics).
-    const DUPLICATE_OBJECT_CODES = new Set([
+    const duplicateObjectCodes = new Set([
       "42710", // duplicate_object
       "42P07", // duplicate_table
       "42701", // duplicate_column
@@ -162,12 +133,9 @@ async function applyMigration(client, { fullPath, file }) {
       "42P03", // duplicate_cursor
     ]);
 
-    const duplicateMigrationObject = DUPLICATE_OBJECT_CODES.has(e?.code);
-
-    if (duplicateMigrationObject) {
+    if (duplicateObjectCodes.has(e?.code)) {
       await client.query(`INSERT INTO schema_migrations (filename) VALUES ($1) ON CONFLICT DO NOTHING`, [file]);
       await recordMigrationTelemetry(client, { file, status: "success", durationMs: 0 });
-
       log(`Migration déjà présente: ${file}`);
       return;
     }
@@ -317,69 +285,48 @@ function maybeBackupDatabase() {
 }
 
 async function runMigrations({ backup = false } = {}) {
-  // Detect duplicate migrations at startup
-  detectDuplicateMigrations();
-
   const client = await db.pool.connect();
-  let tableLockAcquired = false;
-  const runnerId = process.env.HOSTNAME || "local-runner";
+  let advisoryLockAcquired = false;
 
   try {
-    // 1. Tenter d'acquérir le verrou via la table (Step 6)
-    // On vérifie d'abord si la table existe
-    const hasLockTable = await client.query(
-      `SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'schema_migration_lock')`,
+    const lockResult = await client.query(
+      `SELECT pg_try_advisory_lock(hashtext($1)) AS acquired`,
+      ["madsuite:migrations:v1"],
     );
 
-    if (hasLockTable.rows[0].exists) {
-      const lockRes = await client.query(
-        `
-        UPDATE schema_migration_lock 
-        SET is_locked = TRUE, locked_at = NOW(), locked_by = $1
-        WHERE id = 1 AND is_locked = FALSE
-        RETURNING *
-      `,
-        [runnerId],
-      );
-
-      if (lockRes.rows.length === 0) {
-        throw new Error("Une autre instance de migration est déjà en cours (verrou table actif).");
-      }
-      tableLockAcquired = true;
-      log("Verrou de migration acquis (table).");
+    if (!lockResult.rows[0]?.acquired) {
+      throw new Error("Une autre instance de migration est déjà en cours (advisory lock actif).");
     }
+    advisoryLockAcquired = true;
+    log("Verrou de migration acquis (advisory lock).");
 
     if (backup) {
       maybeBackupDatabase();
     }
 
-    await ensureMigrationsTable(client);
-
-    const migrations = getMigrationFiles();
-    const applied = await getAppliedMigrations(client);
-    let appliedCount = 0;
-    let skippedCount = 0;
-    const snapshotPath = getMigrationsSnapshotPath();
-
-    if (applied.size === 0 && snapshotPath) {
-      log("Base vide détectée, application du snapshot courant...");
-      await client.query(`BEGIN`);
-      try {
-        await applyBaselineSnapshot(client, snapshotPath);
-        await recordMigrationSnapshot(
-          client,
-          migrations.map((m) => m.file),
-        );
-        await client.query(`COMMIT`);
-        await assertRuntimeSchema(client);
-        log(`Snapshot appliqué: ${path.basename(snapshotPath)}; migrations marquées: ${migrations.length}`);
-        return;
-      } catch (e) {
-        await client.query(`ROLLBACK`);
-        throw e;
-      }
+    const baseline = await getActiveBaseline(client);
+    // A bootstrapped v2 database already owns its immutable migration ledger.
+    // Runtime must only read it; issuing CREATE TABLE here would force the
+    // application role to have schema-creation rights.
+    if (!baseline) {
+      await ensureMigrationsTable(client);
     }
 
+    const applied = await getAppliedMigrations(client);
+    if (!baseline && applied.size === 0) {
+      throw new Error(
+        "Base sans historique détectée. Utilise npm run db:baseline:v2:bootstrap sur une base vide; le rejeu legacy est interdit.",
+      );
+    }
+
+    const migrations = baseline
+      ? getPostBaselineMigrations(baseline.version)
+      : getManifestMigrations();
+    assertPendingMigrationsAreRunnerSafe(migrations, applied, {
+      allowLegacySelfManaged: process.env.ALLOW_LEGACY_SELF_MANAGED_MIGRATIONS === "1",
+    });
+    let appliedCount = 0;
+    let skippedCount = 0;
     // Appliquer seulement les non-appliquées
     for (const m of migrations) {
       if (applied.has(m.file)) {
@@ -402,10 +349,8 @@ async function runMigrations({ backup = false } = {}) {
     await assertRuntimeSchema(client);
   } finally {
     try {
-      if (tableLockAcquired) {
-        await client.query(`
-          UPDATE schema_migration_lock SET is_locked = FALSE, locked_by = NULL WHERE id = 1
-        `);
+      if (advisoryLockAcquired) {
+        await client.query(`SELECT pg_advisory_unlock(hashtext($1))`, ["madsuite:migrations:v1"]);
         log("Verrou de migration libéré.");
       }
     } finally {

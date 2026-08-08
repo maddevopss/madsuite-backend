@@ -194,6 +194,7 @@ async function startBackendTestCluster() {
     dataDir,
     "-U",
     "postgres",
+    "--encoding=UTF8",
     "--auth-local=trust",
     "--auth-host=trust",
     "--no-instructions",
@@ -212,25 +213,27 @@ async function startBackendTestCluster() {
   );
 
   const logFile = path.join(dataDir, "postgresql.log");
-  const logStream = fs.createWriteStream(logFile, { flags: "a" });
-  const postgres = spawn(
-    getBinPath(getExeName("postgres")),
-    ["-D", dataDir, "-p", String(port), "-h", "127.0.0.1"],
-    {
-      stdio: ["ignore", "pipe", "pipe"],
-      windowsHide: true,
-    },
-  );
-  postgres.stdout?.pipe(logStream);
-  postgres.stderr?.pipe(logStream);
+  const logFd = fs.openSync(logFile, "a");
+  let postgres;
+
+  try {
+    postgres = spawn(
+      getBinPath(getExeName("postgres")),
+      ["-D", dataDir, "-p", String(port), "-h", "127.0.0.1"],
+      {
+        // Aucun terminal Windows ne doit être créé pendant les tests.
+        stdio: ["ignore", logFd, logFd],
+        windowsHide: true,
+      },
+    );
+  } finally {
+    fs.closeSync(logFd);
+  }
+
+  postgres.unref();
 
   const started = await waitForPort(port);
   if (!started) {
-    try {
-      logStream.end();
-    } catch {
-      // ignore
-    }
     try {
       spawnSync("taskkill", ["/PID", String(postgres.pid), "/T", "/F"], { windowsHide: true });
     } catch {
@@ -239,8 +242,6 @@ async function startBackendTestCluster() {
     const logContent = fs.existsSync(logFile) ? fs.readFileSync(logFile, "utf8") : "";
     throw new Error(`PostgreSQL test cluster did not open port ${port} in time.${logContent ? `\n${logContent}` : ""}`);
   }
-  logStream.end();
-
   const state = { dataDir, port, pid: postgres.pid };
   writeState(state);
   process.env.BACKEND_TEST_PG_PORT = String(port);

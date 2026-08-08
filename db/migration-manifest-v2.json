@@ -1,0 +1,10 @@
+{
+  "format": 1,
+  "baseline": "madsuite-schema-v2-20260807",
+  "migrations": [
+    [
+      "migrations/v2/001_runtime_reference_data_and_rls.sql",
+      "8af6fbdbd867f4d44db29cc3fd366aaf46d8b07fefee4a4adfa8cd3a7fb26d7f"
+    ]
+  ]
+}

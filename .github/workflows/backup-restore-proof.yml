@@ -80,7 +80,10 @@ jobs:
           CREATE DATABASE madsuite_backup_target_test;
           SQL
 
-      - name: Apply real migrations to source
+      - name: Bootstrap baseline v2 on source
+        run: npm run db:baseline:v2:bootstrap
+
+      - name: Apply post-baseline migrations to source
         run: npm run db:migrate
 
       - name: Seed representative multi-tenant and financial data

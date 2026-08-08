@@ -144,7 +144,6 @@ describe("Étage 7 PR E — essais de performance", () => {
     } while (cursor);
     const elapsedMs = Date.now() - start;
 
-    // eslint-disable-next-line no-console
     console.log(`[perf] parcours de ${REGISTRY_SIZE} liens en ${pages} pages : ${elapsedMs}ms`);
     expect(seenIds.size).toBe(REGISTRY_SIZE);
     expect(pages).toBe(Math.ceil(REGISTRY_SIZE / 100));
@@ -207,7 +206,6 @@ describe("Étage 7 PR E — essais de performance", () => {
     const start = Date.now();
     const alerts = await request(app).get("/api/risks/alerts");
     const elapsedMs = Date.now() - start;
-    // eslint-disable-next-line no-console
     console.log(`[perf] GET /api/risks/alerts sous ${RISK_COUNT} risques : ${elapsedMs}ms`);
 
     expect(alerts.status).toBe(200);

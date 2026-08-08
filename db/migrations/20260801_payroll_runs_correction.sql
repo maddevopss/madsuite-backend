@@ -8,8 +8,7 @@
 -- une trace distincte de l'annulation pré-paiement.
 
 ALTER TABLE payroll_runs DROP CONSTRAINT IF EXISTS payroll_runs_status_check;
-ALTER TABLE payroll_runs ADD CONSTRAINT payroll_runs_status_check
-  CHECK (status IN ('draft', 'calculated', 'approved', 'paid', 'void', 'corrected'));
+ALTER TABLE payroll_runs ADD CONSTRAINT IF NOT EXISTS payroll_runs_status_check CHECK (status IN ('draft', 'calculated', 'approved', 'paid', 'void', 'corrected'));
 
 ALTER TABLE payroll_runs
   ADD COLUMN IF NOT EXISTS corrected_at TIMESTAMPTZ,

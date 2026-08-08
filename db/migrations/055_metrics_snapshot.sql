@@ -13,4 +13,4 @@ CREATE TABLE IF NOT EXISTS metrics_snapshot (
   UNIQUE(organisation_id, date)
 );
 
-CREATE INDEX idx_metrics_snapshot_org_date ON metrics_snapshot(organisation_id, date);
+CREATE INDEX IF NOT EXISTS idx_metrics_snapshot_org_date ON metrics_snapshot(organisation_id, date);

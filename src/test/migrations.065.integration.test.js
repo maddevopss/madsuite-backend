@@ -1,6 +1,4 @@
 const { Pool } = require("pg");
-const fs = require("fs");
-const path = require("path");
 
 const MIGRATION_DB_NAME = process.env.MIGRATION_TEST_DB_NAME || "madsuite_migrations_065_test";
 const originalDatabaseEnv = {
@@ -11,6 +9,7 @@ const originalDatabaseEnv = {
 };
 
 let runMigrations;
+let bootstrapBaselineV2;
 let db;
 let migrationPool;
 
@@ -33,32 +32,6 @@ function buildDatabaseUrl(dbName) {
   return `postgresql://${user}:${password}@${host}:${port}/${dbName}`;
 }
 
-function getMigrationFiles() {
-  const migrationSources = [
-    path.join(__dirname, "../../db/archive/migrations"),
-    path.join(__dirname, "../../db/migrations"),
-  ];
-  const seen = new Set();
-  const files = [];
-
-  for (const migrationsDir of migrationSources) {
-    if (!fs.existsSync(migrationsDir)) continue;
-
-    const entries = fs
-      .readdirSync(migrationsDir)
-      .filter((f) => /^\d+[a-z]?_.+\.sql$/i.test(f))
-      .sort();
-
-    for (const file of entries) {
-      if (seen.has(file)) continue;
-      seen.add(file);
-      files.push({ file, fullPath: path.join(migrationsDir, file) });
-    }
-  }
-
-  return files;
-}
-
 function configureMigrationDatabase() {
   const dbName = getTestDbName();
   const databaseUrl = buildDatabaseUrl(dbName);
@@ -72,6 +45,7 @@ function configureMigrationDatabase() {
 function loadMigrationRunner() {
   jest.resetModules();
   ({ runMigrations } = require("../migrate/runMigrations"));
+  ({ bootstrapBaselineV2 } = require("../migrate/bootstrapBaselineV2"));
   db = require("../../db");
   migrationPool = db.pool;
 }
@@ -135,61 +109,13 @@ describe("Migration 065: Repair Critical Runtime Schema", () => {
     restoreDatabaseEnvironment();
   });
 
-  test("065 crée les tables critiques si elles manquent", async () => {
+  test("la baseline v2 crée les tables critiques", async () => {
     const dbName = getTestDbName();
 
     await recreateDb(dbName);
     loadMigrationRunner();
 
-    // Appliquer les migrations jusqu'à 064 (avant 065)
-    const migrations = getMigrationFiles();
-    const beforeMigration065 = migrations.filter(({ file }) => {
-      const num = parseInt(file.match(/^\d+/)[0], 10);
-      return num < 65;
-    });
-
-    const pool = new Pool({ connectionString: process.env.TEST_DATABASE_URL });
-    try {
-      // Créer la table schema_migrations
-      await db.query(`
-        CREATE TABLE IF NOT EXISTS schema_migrations (
-          id SERIAL PRIMARY KEY,
-          filename TEXT NOT NULL UNIQUE,
-          applied_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-        );
-      `);
-
-      // Appliquer les migrations jusqu'à 064
-      for (const migration of beforeMigration065) {
-        const sql = fs.readFileSync(migration.fullPath, "utf8");
-        await db.query("BEGIN");
-        try {
-          await db.query(sql);
-          await db.query(`INSERT INTO schema_migrations (filename) VALUES ($1)`, [migration.file]);
-          await db.query("COMMIT");
-        } catch (e) {
-          await db.query("ROLLBACK");
-          // Ignorer les erreurs de migrations déjà appliquées
-          if (!/already exists|existe/i.test(e.message)) {
-            throw e;
-          }
-        }
-      }
-    } finally {
-      await pool.end();
-    }
-
-    // Vérifier que les tables critiques n'existent pas
-    const checkBefore = await db.query(`
-      SELECT table_name
-      FROM information_schema.tables
-      WHERE table_schema = current_schema()
-        AND table_name IN ('notifications', 'outbox_events', 'cron_execution_logs')
-    `);
-    const tablesBefore = checkBefore.rows.map((r) => r.table_name);
-    console.log("Tables avant 065:", tablesBefore);
-
-    // Appliquer la migration 065
+    await bootstrapBaselineV2();
     await runMigrations({ backup: false });
 
     // Vérifier que les tables existent maintenant
@@ -212,7 +138,7 @@ describe("Migration 065: Repair Critical Runtime Schema", () => {
     await recreateDb(dbName);
     loadMigrationRunner();
 
-    // Appliquer toutes les migrations
+    await bootstrapBaselineV2();
     await runMigrations({ backup: false });
 
     // Vérifier les colonnes de outbox_events
@@ -247,7 +173,7 @@ describe("Migration 065: Repair Critical Runtime Schema", () => {
     await recreateDb(dbName);
     loadMigrationRunner();
 
-    // Appliquer toutes les migrations
+    await bootstrapBaselineV2();
     await runMigrations({ backup: false });
 
     // Vérifier les index de outbox_events
@@ -283,7 +209,7 @@ describe("Migration 065: Repair Critical Runtime Schema", () => {
     await recreateDb(dbName);
     loadMigrationRunner();
 
-    // Première application
+    await bootstrapBaselineV2();
     await runMigrations({ backup: false });
 
     // Vérifier l'état après la première application
@@ -296,11 +222,7 @@ describe("Migration 065: Repair Critical Runtime Schema", () => {
     const count1 = parseInt(check1.rows[0].cnt, 10);
     expect(count1).toBe(3);
 
-    // Deuxième application (simule une réexécution)
-    // On marque 065 comme non appliquée et on réexécute
-    await db.query(`DELETE FROM schema_migrations WHERE filename = '065_repair_critical_runtime_schema.sql'`);
-
-    // Réappliquer les migrations
+    // Deuxième application : aucune migration ne doit être rejouée.
     await runMigrations({ backup: false });
 
     // Vérifier que l'état est identique
@@ -332,7 +254,7 @@ describe("Migration 065: Repair Critical Runtime Schema", () => {
     await recreateDb(dbName);
     loadMigrationRunner();
 
-    // Appliquer toutes les migrations
+    await bootstrapBaselineV2();
     await runMigrations({ backup: false });
 
     // assertRuntimeSchema() est appelée à la fin de runMigrations

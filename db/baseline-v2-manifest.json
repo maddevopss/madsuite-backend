@@ -1,0 +1,14 @@
+{
+  "format": 1,
+  "version": "madsuite-schema-v2-20260807",
+  "file": "baselines/madsuite-schema-v2.sql",
+  "sha256": "df5a980f11119ac470ba7a499bd0abd73fcd8a763111a2bd8302c93d2a2167db",
+  "source": {
+    "database": "madsuite_migrations_test",
+    "appliedLegacyMigrations": 260
+  },
+  "curatedAdditions": [
+    "migrations/20260806_help_chat.sql",
+    "migrations/20260806_help_search_index.sql"
+  ]
+}

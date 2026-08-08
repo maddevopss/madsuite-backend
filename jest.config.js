@@ -4,6 +4,8 @@ module.exports = {
   globalTeardown: "<rootDir>/jest.globalTeardown.js",
   setupFiles: ["<rootDir>/src/test/jest.env.js"],
   setupFilesAfterEnv: ["<rootDir>/src/test/setupOrganisationDefaults.js", "<rootDir>/src/test/setup.js"],
+  // Les worktrees d'agents sont des dépôts auxiliaires, jamais des suites de ce backend.
+  testPathIgnorePatterns: ["[/\\\\]\\.claude[/\\\\]"],
   coverageThreshold: {
     global: {
       branches: 75,

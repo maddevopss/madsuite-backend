@@ -9,38 +9,10 @@
  * 5. Filenames that would be skipped by regex
  */
 
-const fs = require("fs");
-const path = require("path");
+const { getManifestMigrations } = require("./migrationManifest");
 
 function getMigrationFiles() {
-  const sources = [
-    path.join(__dirname, "../../db/archive/migrations"),
-    path.join(__dirname, "../../db/migrations")
-  ];
-
-  const seen = new Set();
-  const files = [];
-
-  for (const dir of sources) {
-    if (!fs.existsSync(dir)) continue;
-
-    const entries = fs
-      .readdirSync(dir)
-      .filter(f => /^\d+[a-z]?_.+\.sql$/i.test(f))
-      .sort();
-
-    for (const file of entries) {
-      if (seen.has(file)) continue;
-      seen.add(file);
-      files.push({
-        file,
-        fullPath: path.join(dir, file),
-        isArchive: dir.includes("archive")
-      });
-    }
-  }
-
-  return files;
+  return getManifestMigrations();
 }
 
 function extractMigrationNumber(filename) {

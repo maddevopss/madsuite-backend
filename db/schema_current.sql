@@ -1210,7 +1210,7 @@ ALTER TABLE activity_app_rules
   ALTER COLUMN organisation_id SET NOT NULL;
 
 ALTER TABLE activity_app_rules
-  ADD CONSTRAINT chk_activity_app_rules_org_not_null
+  ADD CONSTRAINT IF NOT EXISTS chk_activity_app_rules_org_not_null
   CHECK (organisation_id IS NOT NULL);
 
 ALTER TABLE activity_context_rules

@@ -1,5 +1,7 @@
 # Archive migrations
 
-This folder keeps a copy of the current migration history for reference.
-Fresh installations should use `backend/db/schema_current.sql`.
-The active migration runner still lives in `backend/src/migrate/runMigrations.js`.
+This folder is part of the immutable migration history used by
+`backend/src/migrate/runMigrations.js`.
+
+`backend/db/schema_current.sql` is documentation only and is never an input to
+the migration runner.

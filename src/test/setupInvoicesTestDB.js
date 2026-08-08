@@ -153,9 +153,15 @@ async function applySchemaToTestDatabase() {
     // (cela permet à db.js de lire la bonne DATABASE_URL et évite les hangs)
     const { execSync } = require("child_process");
     const backendDir = path.resolve(__dirname, "../..");
+    const bootstrapScript = path.join(backendDir, "src/migrate/runBootstrapBaselineV2.js");
     const migrationScript = path.join(backendDir, "src/migrate/runMigrations.js");
     // Utiliser des chemins relatifs avec forward slashes pour éviter les problèmes de backslash sur Windows
     const relativeScript = path.relative(backendDir, migrationScript).replace(/\\/g, "/");
+    execSync(`node "${bootstrapScript}"`, {
+      env: { ...process.env, DATABASE_URL: process.env.TEST_DATABASE_URL },
+      stdio: "inherit",
+      cwd: backendDir
+    });
     execSync(`node -e "require('./${relativeScript}').runMigrations({ backup: false }).then(()=>process.exit(0)).catch(e=>{ console.error(e.message); process.exit(1); })"`, {
       env: { ...process.env, DATABASE_URL: process.env.TEST_DATABASE_URL },
       stdio: "inherit",

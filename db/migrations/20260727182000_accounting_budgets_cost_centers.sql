@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS accounting_budget_lines (
   FOREIGN KEY (organisation_id,cost_center_id) REFERENCES accounting_cost_centers(organisation_id,id)
 );
 ALTER TABLE accounting_entry_lines ADD COLUMN IF NOT EXISTS cost_center_id BIGINT;
-ALTER TABLE accounting_entry_lines ADD CONSTRAINT accounting_entry_lines_cost_center_fk FOREIGN KEY (organisation_id,cost_center_id) REFERENCES accounting_cost_centers(organisation_id,id);
+ALTER TABLE accounting_entry_lines ADD CONSTRAINT IF NOT EXISTS accounting_entry_lines_cost_center_fk FOREIGN KEY (organisation_id,cost_center_id) REFERENCES accounting_cost_centers(organisation_id,id);
 ALTER TABLE accounting_cost_centers ENABLE ROW LEVEL SECURITY;
 ALTER TABLE accounting_budgets ENABLE ROW LEVEL SECURITY;
 ALTER TABLE accounting_budget_lines ENABLE ROW LEVEL SECURITY;

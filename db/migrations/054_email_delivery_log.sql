@@ -7,4 +7,4 @@ CREATE TABLE IF NOT EXISTS email_delivery_log (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_email_delivery_log_idempotency_key ON email_delivery_log(idempotency_key);
+CREATE INDEX IF NOT EXISTS idx_email_delivery_log_idempotency_key ON email_delivery_log(idempotency_key);
